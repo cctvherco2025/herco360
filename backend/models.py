@@ -14,6 +14,7 @@ class RegisterInput(BaseModel):
     password: str = Field(min_length=4)
     position: Optional[str] = 'Colaborador'
     area: Optional[str] = ''
+    sucursal: Optional[str] = ''
 
 
 class LoginInput(BaseModel):
@@ -26,6 +27,7 @@ class ProfileUpdate(BaseModel):
     name: Optional[str] = None
     position: Optional[str] = None
     area: Optional[str] = None
+    sucursal: Optional[str] = None
     avatar_url: Optional[str] = None
     phone: Optional[str] = None
 
@@ -87,3 +89,16 @@ class InventoryMovementInput(BaseModel):
 
 class CatalogItemInput(BaseModel):
     name: str
+
+
+# ---- Reports ----
+REPORT_TYPES = [
+    {'id': 'auditoria_etiqueta', 'label': 'Auditoría de etiqueta de precio', 'color': '#712146', 'icon': 'Tag'},
+    {'id': 'productos_faltantes', 'label': 'Productos faltantes', 'color': '#ec9032', 'icon': 'PackageX'},
+    {'id': 'recorrido_tienda', 'label': 'Recorrido tienda', 'color': '#00a5df', 'icon': 'Footprints'},
+]
+
+
+class ReportReviewInput(BaseModel):
+    comment: Optional[str] = ''
+

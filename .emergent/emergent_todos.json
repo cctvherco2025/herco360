@@ -1,26 +1,34 @@
 [
   {
-    "content": "Quitar generación con IA del endpoint de imagen",
+    "content": "Backend: storage.py (helper Emergent object storage)",
     "status": "completed"
   },
   {
-    "content": "Backend: parser de imágenes incrustadas en Excel + endpoints /import-images y /images-template",
+    "content": "Backend: models (REPORT_TYPES, ReportReviewInput, sucursal en Register/Profile)",
     "status": "completed"
   },
   {
-    "content": "Frontend: actualizar ArticleImage (sin IA) y crear ImageImportCard",
+    "content": "Backend: routes_reports.py (upload/list/download/review/delete) + montar en server.py + init storage",
     "status": "completed"
   },
   {
-    "content": "Renderizar tarjetas de importación (artículos + imágenes) en pestaña Productos",
+    "content": "Backend: guardar sucursal en registro (routes_auth)",
     "status": "completed"
   },
   {
-    "content": "Probar backend (parser/endpoint) y verificar UI con screenshot",
+    "content": "Frontend: constants (REPORT_TYPES, canAccessReports) + ruta /reportes + item sidebar",
     "status": "completed"
   },
   {
-    "content": "Limpiar datos e imágenes de prueba",
+    "content": "Frontend: campo Tienda en Register y Configuracion",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: página Reportes.js (Enviar + Recibidos, subir con progreso, descargar, revisar)",
+    "status": "completed"
+  },
+  {
+    "content": "Probar backend (upload/list/download/review) y verificar UI con screenshot",
     "status": "completed"
   }
 ]

@@ -55,6 +55,17 @@ export const AREAS = [
 // Inventory branches (sucursales)
 export const SUCURSALES = ['H1', 'H2', 'H4', 'H5', 'H6'];
 
+// Report types delivered by ECCP coordinators (mirror of backend models.REPORT_TYPES)
+export const REPORT_TYPES = [
+  { id: 'auditoria_etiqueta', label: 'Auditoría de etiqueta de precio', color: '#712146', icon: 'Tag' },
+  { id: 'productos_faltantes', label: 'Productos faltantes', color: '#ec9032', icon: 'PackageX' },
+  { id: 'recorrido_tienda', label: 'Recorrido tienda', color: '#00a5df', icon: 'Footprints' },
+];
+
+export function reportTypeMeta(id) {
+  return REPORT_TYPES.find((t) => t.id === id) || { id, label: id, color: '#1e395e', icon: 'FileText' };
+}
+
 // Inventario module access: Tienda staff, store managers, Jefe ECCP,
 // Operación manager, Director comercial (and admins to supervise).
 export function canAccessInventory(user) {
@@ -67,4 +78,9 @@ export function canAccessInventory(user) {
   if (cargo === 'Jefe' && area === 'ECCP') return true;
   if (cargo === 'Gerente' && (area === 'Operación Tienda' || area === 'Tienda')) return true;
   return false;
+}
+
+// Reportes module: same access group as Inventario (Tienda staff & managers).
+export function canAccessReports(user) {
+  return canAccessInventory(user);
 }

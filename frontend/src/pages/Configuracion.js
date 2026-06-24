@@ -11,12 +11,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { CARGOS, AREAS } from '@/lib/constants';
+import { CARGOS, AREAS, SUCURSALES } from '@/lib/constants';
 
 export default function Configuracion() {
   const { user, refreshUser } = useAuth();
   const { theme, isDark, setTheme } = useTheme();
-  const [form, setForm] = useState({ name: user?.name || '', position: user?.position || '', area: user?.area || '', phone: user?.phone || '' });
+  const [form, setForm] = useState({ name: user?.name || '', position: user?.position || '', area: user?.area || '', sucursal: user?.sucursal || '', phone: user?.phone || '' });
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const setVal = (k) => (v) => setForm({ ...form, [k]: v });
@@ -65,6 +65,13 @@ export default function Configuracion() {
                 <Select value={form.area} onValueChange={setVal('area')}>
                   <SelectTrigger className="h-11" data-testid="config-area-select"><SelectValue placeholder="Selecciona un área" /></SelectTrigger>
                   <SelectContent>{AREAS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Tienda / Sucursal</Label>
+                <Select value={form.sucursal} onValueChange={setVal('sucursal')}>
+                  <SelectTrigger className="h-11" data-testid="config-sucursal-select"><SelectValue placeholder="Selecciona tu tienda" /></SelectTrigger>
+                  <SelectContent>{SUCURSALES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5"><Label>Teléfono</Label><Input value={form.phone} onChange={set('phone')} placeholder="Opcional" className="h-11" /></div>

@@ -12,6 +12,7 @@ import Dashboard from '@/pages/Dashboard';
 import Agenda from '@/pages/Agenda';
 import SalaDeJuntas from '@/pages/SalaDeJuntas';
 import Inventario from '@/pages/Inventario';
+import Reportes from '@/pages/Reportes';
 import Usuarios from '@/pages/Usuarios';
 import Configuracion from '@/pages/Configuracion';
 import Notificaciones from '@/pages/Notificaciones';
@@ -31,6 +32,7 @@ function App() {
               <Route path="/agenda" element={<Agenda />} />
               <Route path="/sala-de-juntas" element={<SalaDeJuntas />} />
               <Route path="/inventario" element={<Inventario />} />
+              <Route path="/reportes" element={<Reportes />} />
               <Route path="/usuarios" element={<Usuarios />} />
               <Route path="/configuracion" element={<Configuracion />} />
               <Route path="/notificaciones" element={<Notificaciones />} />

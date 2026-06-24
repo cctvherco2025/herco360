@@ -9,12 +9,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CARGOS, AREAS } from '@/lib/constants';
+import { CARGOS, AREAS, SUCURSALES } from '@/lib/constants';
 
 export default function Register() {
   const { register } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: '', email: '', position: '', area: '', password: '' });
+  const [form, setForm] = useState({ name: '', email: '', position: '', area: '', sucursal: '', password: '' });
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -104,6 +104,20 @@ export default function Register() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Tienda / Sucursal <span className="text-muted-foreground font-normal">(opcional)</span></Label>
+              <Select value={form.sucursal} onValueChange={setVal('sucursal')}>
+                <SelectTrigger className="h-11" data-testid="register-sucursal-select">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Building className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <SelectValue placeholder="Selecciona tu tienda" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  {SUCURSALES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password">Contraseña</Label>

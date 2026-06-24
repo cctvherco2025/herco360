@@ -1,10 +1,10 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun, Boxes } from 'lucide-react';
+import { Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun, Boxes, FileText } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
-import { canAccessInventory } from '@/lib/constants';
+import { canAccessInventory, canAccessReports } from '@/lib/constants';
 import { Logo } from '@/components/Logo';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
@@ -21,10 +21,14 @@ function SidebarContent({ onNavigate }) {
   const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
-  // Build nav: insert "Inventario" (Tienda-only) right after Sala de Juntas
+  // Build nav: insert "Inventario" and "Reportes" (Tienda-only) right after Sala de Juntas
   const navItems = [...baseNavItems];
   if (canAccessInventory(user)) {
     navItems.splice(3, 0, { to: '/inventario', label: 'Inventario', icon: Boxes, testid: 'sidebar-nav-inventario' });
+  }
+  if (canAccessReports(user)) {
+    const idx = navItems.findIndex((n) => n.to === '/inventario');
+    navItems.splice(idx >= 0 ? idx + 1 : 3, 0, { to: '/reportes', label: 'Reportes', icon: FileText, testid: 'sidebar-nav-reportes' });
   }
 
   return (
