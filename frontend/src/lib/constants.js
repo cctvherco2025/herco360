@@ -22,3 +22,25 @@ export function catStyle(category, isDark) {
   const c = CATEGORIES[category] || CATEGORIES['Reunión'];
   return { solid: c.solid, tint: isDark ? c.tintDark : c.tintLight };
 }
+
+
+// Color palette the user can pick for an activity (replaces fixed categories).
+// HERCO institutional + complementary tones. No purple/pink per brand guidelines.
+export const ACTIVITY_COLORS = [
+  { name: 'Cian HERCO', value: '#00a5df' },
+  { name: 'Azul claro', value: '#3cbef6' },
+  { name: 'Azul marino', value: '#1e395e' },
+  { name: 'Verde', value: '#16a34a' },
+  { name: 'Amarillo', value: '#e0a800' },
+  { name: 'Naranja', value: '#ec9032' },
+  { name: 'Vino', value: '#712146' },
+  { name: 'Rojo', value: '#dc2626' },
+  { name: 'Teal', value: '#0d9488' },
+  { name: 'Gris', value: '#64748b' },
+];
+
+export const DEFAULT_ACTIVITY_COLOR = '#00a5df';
+
+export function colorTint(hex, isDark) {
+  return `${hex}${isDark ? '33' : '1f'}`;
+}

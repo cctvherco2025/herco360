@@ -5,6 +5,12 @@ from core import db, hash_password, new_id, now_iso
 
 DEMO_PASSWORD = 'Herco360!'
 
+# Map legacy categories -> colors (used for seeding & migrating existing data)
+CATEGORY_COLOR = {
+    'Reunión': '#00a5df', 'Auditoría': '#712146', 'Capacitación': '#e0a800',
+    'Seguimiento': '#3cbef6', 'Reporte': '#1e395e', 'Personal': '#ec9032',
+}
+
 
 def avatar(name, bg='1e395e'):
     return f"https://ui-avatars.com/api/?name={quote(name)}&background={bg}&color=fff&bold=true"
@@ -107,7 +113,7 @@ async def seed_if_needed():
 
     for a in activities:
         doc = {
-            'id': new_id(), 'title': a['title'], 'category': a['category'], 'date': a['date'],
+            'id': new_id(), 'title': a['title'], 'color': CATEGORY_COLOR.get(a['category'], '#00a5df'), 'date': a['date'],
             'start_time': a['start_time'], 'end_time': a['end_time'], 'description': a['desc'],
             'location': room['name'] if a['room'] else '', 'participants': a['parts'],
             'uses_meeting_room': a['room'], 'created_by': a['creator']['id'],
@@ -165,3 +171,14 @@ async def seed_if_needed():
         })
 
     print('[SEED] HERCO360 demo data created successfully.')
+
+
+
+async def migrate_activity_colors():
+    """Backfill `color` on activities created before the color feature (derive from legacy category)."""
+    legacy = await db.activities.find({'color': {'$exists': False}}, {'_id': 0, 'id': 1, 'category': 1}).to_list(2000)
+    for a in legacy:
+        color = CATEGORY_COLOR.get(a.get('category'), '#00a5df')
+        await db.activities.update_one({'id': a['id']}, {'$set': {'color': color}, '$unset': {'category': ''}})
+    if legacy:
+        print(f'[MIGRATE] Backfilled color on {len(legacy)} activities.')

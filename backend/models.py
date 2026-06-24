@@ -41,7 +41,7 @@ class Participant(BaseModel):
 
 class ActivityInput(BaseModel):
     title: str
-    category: str = 'Reunión'
+    color: str = '#00a5df'  # user-picked color (replaces fixed categories)
     date: str  # YYYY-MM-DD
     start_time: str  # HH:MM
     end_time: str  # HH:MM

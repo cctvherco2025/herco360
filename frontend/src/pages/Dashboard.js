@@ -110,7 +110,7 @@ export default function Dashboard() {
               </div>
             )}
             {(data?.today_activities || []).map((a, i) => {
-              const { solid, tint } = catStyle(a.category, isDark);
+              const solid = a.color || '#00a5df';
               return (
                 <button key={a.id} onClick={() => openEvent(a)} className="w-full flex gap-4 rounded-xl p-3 hover:bg-muted/50 transition-colors text-left">
                   <div className="flex flex-col items-center pt-0.5">
@@ -123,8 +123,8 @@ export default function Dashboard() {
                   </div>
                   <div className="flex-1 min-w-0 pb-2">
                     <div className="flex items-center gap-2 flex-wrap">
+                      <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: solid }} />
                       <span className="font-medium text-foreground">{a.title}</span>
-                      <span className="rounded-full px-2 py-0.5 text-[11px] font-medium" style={{ background: tint, color: solid }}>{a.category}</span>
                     </div>
                     {a.participants?.length > 0 && (
                       <p className="text-xs text-muted-foreground mt-1 truncate">Participantes: {a.participants.map((p) => p.name).join(', ')}</p>

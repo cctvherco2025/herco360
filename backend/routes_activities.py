@@ -67,7 +67,7 @@ async def get_activity(activity_id: str, user=Depends(get_current_user)):
 async def create_activity(data: ActivityInput, user=Depends(get_current_user)):
     participants = await _build_participants(data.participant_ids)
     activity = {
-        'id': new_id(), 'title': data.title, 'category': data.category,
+        'id': new_id(), 'title': data.title, 'color': data.color,
         'date': data.date, 'start_time': data.start_time, 'end_time': data.end_time,
         'description': data.description or '', 'location': data.location or '',
         'participants': participants, 'uses_meeting_room': data.uses_meeting_room,
@@ -102,7 +102,7 @@ async def update_activity(activity_id: str, data: ActivityInput, user=Depends(ge
         if p['user_id'] in prev:
             p['status'] = prev[p['user_id']]
     updates = {
-        'title': data.title, 'category': data.category, 'date': data.date,
+        'title': data.title, 'color': data.color, 'date': data.date,
         'start_time': data.start_time, 'end_time': data.end_time,
         'description': data.description or '', 'location': data.location or '',
         'participants': participants, 'uses_meeting_room': data.uses_meeting_room,

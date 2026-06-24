@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { Check, Trash2, Users as UsersIcon } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { CATEGORY_LIST, CATEGORIES } from '@/lib/constants';
+import { ACTIVITY_COLORS, DEFAULT_ACTIVITY_COLOR } from '@/lib/constants';
 import { ymd } from '@/lib/time';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const empty = (date) => ({
-  title: '', category: 'Reunión', date: date || ymd(new Date()),
+  title: '', color: DEFAULT_ACTIVITY_COLOR, date: date || ymd(new Date()),
   start_time: '09:00', end_time: '10:00', description: '', location: '',
   participant_ids: [], uses_meeting_room: false,
 });
@@ -32,7 +32,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
       api.get('/users?status=approved').then(({ data }) => setUsers(data.filter((u) => u.id !== user?.id))).catch(() => {});
       if (activity) {
         setForm({
-          title: activity.title, category: activity.category, date: activity.date,
+          title: activity.title, color: activity.color || DEFAULT_ACTIVITY_COLOR, date: activity.date,
           start_time: activity.start_time, end_time: activity.end_time,
           description: activity.description || '', location: activity.location || '',
           participant_ids: (activity.participants || []).map((p) => p.user_id),
@@ -84,19 +84,25 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
           </div>
 
           <div className="space-y-1.5">
-            <Label>Categoría</Label>
-            <div className="flex flex-wrap gap-2" data-testid="activity-form-category-select">
-              {CATEGORY_LIST.map((cat) => {
-                const active = form.category === cat;
+            <Label>Color</Label>
+            <div className="flex flex-wrap items-center gap-2.5" data-testid="activity-form-color-select">
+              {ACTIVITY_COLORS.map((c) => {
+                const active = (form.color || '').toLowerCase() === c.value.toLowerCase();
                 return (
-                  <button key={cat} type="button" onClick={() => set('category', cat)}
-                    className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border transition-all ${active ? 'text-white border-transparent' : 'text-foreground bg-card hover:bg-muted'}`}
-                    style={active ? { background: CATEGORIES[cat].solid } : {}}>
-                    <span className="h-2 w-2 rounded-full" style={{ background: active ? '#fff' : CATEGORIES[cat].solid }} />
-                    {cat}
+                  <button key={c.value} type="button" title={c.name} onClick={() => set('color', c.value)}
+                    aria-label={c.name}
+                    className={`h-8 w-8 rounded-full transition-transform hover:scale-110 grid place-items-center ${active ? 'ring-2 ring-offset-2 ring-offset-background scale-110' : ''}`}
+                    style={{ background: c.value, boxShadow: active ? `0 0 0 2px ${c.value}` : 'none' }}>
+                    {active && <Check className="h-4 w-4 text-white" />}
                   </button>
                 );
               })}
+              {/* Custom color */}
+              <label className="relative h-8 w-8 rounded-full cursor-pointer border-2 border-dashed border-border grid place-items-center overflow-hidden hover:border-foreground/40" title="Color personalizado">
+                <span className="text-[10px] font-bold text-muted-foreground">+</span>
+                <input type="color" value={form.color} onChange={(e) => set('color', e.target.value)}
+                  className="absolute inset-0 opacity-0 cursor-pointer" data-testid="activity-form-color-custom" />
+              </label>
             </div>
           </div>
 

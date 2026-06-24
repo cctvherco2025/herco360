@@ -5,18 +5,15 @@ import { Plus, ChevronLeft, ChevronRight, CalendarDays, Check, X as XIcon } from
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { CATEGORIES, CATEGORY_LIST, catStyle } from '@/lib/constants';
 import { fullDateEs, capitalize, ymd, MESES, MESES_CORTO } from '@/lib/time';
 import ActivityModal from '@/components/ActivityModal';
 import { WeekView, DayView, MonthView, startOfWeek, addDays } from '@/components/CalendarViews';
-import { useTheme } from '@/context/ThemeContext';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 export default function Agenda() {
   const { user } = useAuth();
-  const { isDark } = useTheme();
   const [params, setParams] = useSearchParams();
   const [view, setView] = useState('Semana');
   const [anchor, setAnchor] = useState(new Date());
@@ -24,7 +21,6 @@ export default function Agenda() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [pendingDate, setPendingDate] = useState(ymd(new Date()));
-  const [activeCats, setActiveCats] = useState(CATEGORY_LIST);
 
   const load = useCallback(async () => {
     const s = ymd(addDays(startOfWeek(anchor), -7));
@@ -37,10 +33,9 @@ export default function Agenda() {
     if (params.get('new') === '1') { setEditing(null); setModalOpen(true); setParams({}); }
   }, [params, setParams]);
 
-  const filtered = activities.filter((a) => activeCats.includes(a.category));
+  const filtered = activities;
   const openEvent = (ev) => { setEditing(ev); setModalOpen(true); };
   const openNew = (dateStr) => { setEditing(null); setPendingDate(typeof dateStr === 'string' ? dateStr : ymd(anchor)); setModalOpen(true); };
-  const toggleCat = (c) => setActiveCats((p) => p.includes(c) ? p.filter((x) => x !== c) : [...p, c]);
 
   const upcoming = activities
     .filter((a) => a.date >= ymd(new Date()))
@@ -106,36 +101,19 @@ export default function Agenda() {
 
         {/* Right rail */}
         <div className="space-y-4">
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.06 }}
-            className="rounded-[18px] bg-card border shadow-card p-5">
-            <h3 className="font-heading font-semibold mb-3">Categorías</h3>
-            <div className="space-y-1.5">
-              {CATEGORY_LIST.map((c) => {
-                const active = activeCats.includes(c);
-                return (
-                  <button key={c} onClick={() => toggleCat(c)} className={`w-full flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition-colors ${active ? 'hover:bg-muted' : 'opacity-40 hover:opacity-70'}`}>
-                    <span className="h-3 w-3 rounded-full" style={{ background: CATEGORIES[c].solid }} />
-                    <span className="flex-1 text-left">{c}</span>
-                    {active && <Check className="h-3.5 w-3.5 text-muted-foreground" />}
-                  </button>
-                );
-              })}
-            </div>
-          </motion.div>
-
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.12 }}
             className="rounded-[18px] bg-card border shadow-card p-5">
             <h3 className="font-heading font-semibold mb-3">Próximas actividades</h3>
             <div className="space-y-2">
               {upcoming.length === 0 && <p className="text-sm text-muted-foreground py-4 text-center">Sin actividades próximas</p>}
               {upcoming.map((a) => {
-                const { solid, tint } = catStyle(a.category, isDark);
+                const solid = a.color || '#00a5df';
                 const invite = myInvite(a);
                 return (
                   <div key={a.id} onClick={() => openEvent(a)} className="rounded-xl border p-3 cursor-pointer hover:shadow-card transition-shadow" style={{ borderLeft: `3px solid ${solid}` }}>
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: solid }} />
                       <span className="text-sm font-medium truncate">{a.title}</span>
-                      <span className="text-[11px] rounded-full px-2 py-0.5 shrink-0" style={{ background: tint, color: solid }}>{a.category}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">{capitalize(fullDateEs(a.date))} · {a.start_time}</p>
                     {invite && (

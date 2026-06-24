@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 from core import client
-from seed import seed_if_needed
+from seed import seed_if_needed, migrate_activity_colors
 import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard
 
 ROOT_DIR = Path(__file__).parent
@@ -50,6 +50,7 @@ logger = logging.getLogger(__name__)
 async def startup():
     try:
         await seed_if_needed()
+        await migrate_activity_colors()
     except Exception as e:
         logger.error(f'Seed error: {e}')
 
