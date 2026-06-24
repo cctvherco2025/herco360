@@ -43,7 +43,7 @@ export default function Dashboard() {
   const [anchor, setAnchor] = useState(new Date());
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-
+  const [pendingDate, setPendingDate] = useState(ymd(new Date()));
   const load = useCallback(async () => {
     try {
       const [dash, acts] = await Promise.all([
@@ -58,7 +58,7 @@ export default function Dashboard() {
   useEffect(() => { load(); }, [load]);
 
   const openEvent = (ev) => { setEditing(ev); setModalOpen(true); };
-  const openNew = () => { setEditing(null); setModalOpen(true); };
+  const openNew = (dateStr) => { setEditing(null); setPendingDate(typeof dateStr === 'string' ? dateStr : ymd(anchor)); setModalOpen(true); };
 
   const stats = data?.stats || {};
   const roomState = ROOM_STATES[stats.room_status] || ROOM_STATES['Disponible'];
@@ -188,13 +188,13 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="overflow-hidden">
-          {view === 'Semana' && <WeekView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => { setEditing(null); setModalOpen(true); }} />}
-          {view === 'Día' && <DayView anchor={anchor} activities={weekActs} onEventClick={openEvent} />}
-          {view === 'Mes' && <MonthView anchor={anchor} activities={weekActs} onEventClick={openEvent} />}
+          {view === 'Semana' && <WeekView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} />}
+          {view === 'Día' && <DayView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} />}
+          {view === 'Mes' && <MonthView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} />}
         </div>
       </motion.div>
 
-      <ActivityModal open={modalOpen} onOpenChange={setModalOpen} activity={editing} defaultDate={ymd(anchor)} onSaved={load} />
+      <ActivityModal open={modalOpen} onOpenChange={setModalOpen} activity={editing} defaultDate={pendingDate} onSaved={load} />
     </div>
   );
 }

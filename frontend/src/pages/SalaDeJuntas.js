@@ -1,15 +1,17 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Building2, Plus, MapPin, Users as UsersIcon, CircleCheck, CircleX, Bookmark, Ban, Flag, Clock, Calendar } from 'lucide-react';
+import { Building2, Plus, MapPin, Users as UsersIcon, CircleCheck, CircleX, Bookmark, Ban, Flag, Clock, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { ROOM_STATES } from '@/lib/constants';
-import { capitalize, fullDateEs, ymd } from '@/lib/time';
+import { capitalize, fullDateEs, ymd, MESES, MESES_CORTO } from '@/lib/time';
+import { WeekView, DayView, MonthView, startOfWeek, addDays } from '@/components/CalendarViews';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 const ICONS = { CircleCheck, CircleX, Bookmark, Ban, Flag };
@@ -32,10 +34,12 @@ export default function SalaDeJuntas() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ title: '', date: ymd(new Date()), start_time: '09:00', end_time: '10:00', notes: '' });
   const [saving, setSaving] = useState(false);
+  const [view, setView] = useState('Mes');
+  const [anchor, setAnchor] = useState(new Date());
 
   const load = useCallback(async () => {
     try {
-      const [r, res] = await Promise.all([api.get('/rooms'), api.get('/reservations?upcoming=true')]);
+      const [r, res] = await Promise.all([api.get('/rooms'), api.get('/reservations')]);
       setRooms(r.data); setReservations(res.data);
     } catch (e) {}
   }, []);
@@ -44,11 +48,26 @@ export default function SalaDeJuntas() {
   const room = rooms[0];
   const status = room?.current_status || 'Disponible';
 
+  // Calendar events from reservations (color by status), excludes cancelled to keep the calendar clean
+  const calendarEvents = reservations
+    .filter((r) => r.status !== 'Cancelada')
+    .map((r) => ({
+      id: r.id, title: r.title, date: r.date,
+      start_time: r.start_time, end_time: r.end_time,
+      color: (ROOM_STATES[r.status] || ROOM_STATES['Reservada']).solid,
+      status: r.status,
+    }));
+
+  const openReserve = (dateStr) => {
+    setForm({ title: '', date: typeof dateStr === 'string' ? dateStr : ymd(new Date()), start_time: '09:00', end_time: '10:00', notes: '' });
+    setOpen(true);
+  };
+
   const save = async () => {
     if (!form.title.trim()) { toast.error('Ingresa un título'); return; }
     if (form.end_time <= form.start_time) { toast.error('La hora de fin debe ser mayor'); return; }
     setSaving(true);
-    try { await api.post('/reservations', { ...form, room_id: room?.id }); toast.success('Sala reservada'); setOpen(false); setForm({ title: '', date: ymd(new Date()), start_time: '09:00', end_time: '10:00', notes: '' }); load(); }
+    try { await api.post('/reservations', { ...form, room_id: room?.id }); toast.success('Sala reservada'); setOpen(false); load(); }
     catch (err) { toast.error(err?.response?.data?.detail || 'Error al reservar'); }
     finally { setSaving(false); }
   };
@@ -57,8 +76,22 @@ export default function SalaDeJuntas() {
   const finalize = async (id) => { try { await api.post(`/reservations/${id}/finalize`); toast.success('Reserva finalizada'); load(); } catch (e) { toast.error('Error'); } };
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
-  const activeRes = reservations.filter((r) => r.status === 'Reservada' || r.status === 'Ocupada');
-  const pastRes = reservations.filter((r) => r.status === 'Cancelada' || r.status === 'Finalizada');
+  const activeRes = reservations.filter((r) => r.status === 'Reservada' || r.status === 'Ocupada')
+    .sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time));
+  const pastRes = reservations.filter((r) => r.status === 'Cancelada' || r.status === 'Finalizada')
+    .sort((a, b) => (b.date + b.start_time).localeCompare(a.date + a.start_time));
+
+  const rangeLabel = () => {
+    if (view === 'Mes') return `${capitalize(MESES[anchor.getMonth()])} ${anchor.getFullYear()}`;
+    if (view === 'Día') return capitalize(fullDateEs(anchor));
+    const s = startOfWeek(anchor); const e = addDays(s, 6);
+    return `${s.getDate()} ${MESES_CORTO[s.getMonth()]} - ${e.getDate()} ${MESES_CORTO[e.getMonth()]} ${e.getFullYear()}`;
+  };
+  const move = (dir) => {
+    if (view === 'Mes') setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1));
+    else if (view === 'Día') setAnchor(addDays(anchor, dir));
+    else setAnchor(addDays(anchor, dir * 7));
+  };
 
   return (
     <div className="max-w-[1320px] mx-auto pt-2">
@@ -67,7 +100,7 @@ export default function SalaDeJuntas() {
           <h1 className="font-heading text-2xl sm:text-3xl font-semibold">Sala de Juntas</h1>
           <p className="text-muted-foreground text-sm mt-0.5">Consulta el estado y gestiona las reservas</p>
         </div>
-        <Button onClick={() => setOpen(true)} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="room-reserve-button"><Plus className="h-4 w-4 mr-1" /> Reservar sala</Button>
+        <Button onClick={() => openReserve()} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="room-reserve-button"><Plus className="h-4 w-4 mr-1" /> Reservar sala</Button>
       </div>
 
       {/* Hero status card */}
@@ -90,6 +123,44 @@ export default function SalaDeJuntas() {
               <p className="text-xs text-[#5b667a]">{room.current_reservation.title} · {room.current_reservation.start_time}-{room.current_reservation.end_time}</p>
             )}
           </div>
+        </div>
+      </motion.div>
+
+      {/* Calendar */}
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.04 }}
+        className="rounded-[18px] bg-card border shadow-card p-4 sm:p-5 mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 rounded-xl border bg-card p-1">
+              <button onClick={() => move(-1)} className="p-1.5 rounded-lg hover:bg-muted" data-testid="room-cal-prev"><ChevronLeft className="h-4 w-4" /></button>
+              <button onClick={() => setAnchor(new Date())} className="px-3 py-1 text-sm font-medium rounded-lg hover:bg-muted" data-testid="room-cal-today">Hoy</button>
+              <button onClick={() => move(1)} className="p-1.5 rounded-lg hover:bg-muted" data-testid="room-cal-next"><ChevronRight className="h-4 w-4" /></button>
+            </div>
+            <span className="text-sm font-medium">{rangeLabel()}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* status legend */}
+            <div className="hidden md:flex items-center gap-3">
+              {['Reservada', 'Ocupada', 'Finalizada'].map((st) => (
+                <span key={st} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: ROOM_STATES[st].solid }} /> {st}
+                </span>
+              ))}
+            </div>
+            <Tabs value={view} onValueChange={setView}>
+              <TabsList className="rounded-xl">
+                <TabsTrigger value="Día" className="rounded-lg text-xs" data-testid="room-view-dia">Día</TabsTrigger>
+                <TabsTrigger value="Semana" className="rounded-lg text-xs" data-testid="room-view-semana">Semana</TabsTrigger>
+                <TabsTrigger value="Mes" className="rounded-lg text-xs" data-testid="room-view-mes">Mes</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">Haz clic en una fecha para reservar la sala ese día.</p>
+        <div className="overflow-hidden">
+          {view === 'Mes' && <MonthView anchor={anchor} activities={calendarEvents} onEventClick={(ev) => openReserve(ev.date)} onSlotClick={(ds) => openReserve(ds)} />}
+          {view === 'Semana' && <WeekView anchor={anchor} activities={calendarEvents} onEventClick={(ev) => openReserve(ev.date)} onSlotClick={(ds) => openReserve(ds)} />}
+          {view === 'Día' && <DayView anchor={anchor} activities={calendarEvents} onEventClick={(ev) => openReserve(ev.date)} onSlotClick={(ds) => openReserve(ds)} />}
         </div>
       </motion.div>
 
@@ -150,7 +221,7 @@ export default function SalaDeJuntas() {
           <div className="space-y-4 py-2">
             <div className="space-y-1.5"><Label>Motivo / Título</Label><Input value={form.title} onChange={set('title')} placeholder="Ej. Reunión de planeación" className="h-11" data-testid="reservation-title-input" /></div>
             <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5"><Label>Fecha</Label><Input type="date" value={form.date} onChange={set('date')} className="h-11" /></div>
+              <div className="space-y-1.5"><Label>Fecha</Label><Input type="date" value={form.date} onChange={set('date')} className="h-11" data-testid="reservation-date-input" /></div>
               <div className="space-y-1.5"><Label>Inicio</Label><Input type="time" value={form.start_time} onChange={set('start_time')} className="h-11" /></div>
               <div className="space-y-1.5"><Label>Fin</Label><Input type="time" value={form.end_time} onChange={set('end_time')} className="h-11" /></div>
             </div>

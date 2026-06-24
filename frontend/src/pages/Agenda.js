@@ -23,6 +23,7 @@ export default function Agenda() {
   const [activities, setActivities] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [pendingDate, setPendingDate] = useState(ymd(new Date()));
   const [activeCats, setActiveCats] = useState(CATEGORY_LIST);
 
   const load = useCallback(async () => {
@@ -38,7 +39,7 @@ export default function Agenda() {
 
   const filtered = activities.filter((a) => activeCats.includes(a.category));
   const openEvent = (ev) => { setEditing(ev); setModalOpen(true); };
-  const openNew = () => { setEditing(null); setModalOpen(true); };
+  const openNew = (dateStr) => { setEditing(null); setPendingDate(typeof dateStr === 'string' ? dateStr : ymd(anchor)); setModalOpen(true); };
   const toggleCat = (c) => setActiveCats((p) => p.includes(c) ? p.filter((x) => x !== c) : [...p, c]);
 
   const upcoming = activities
@@ -97,9 +98,9 @@ export default function Agenda() {
             </Tabs>
           </div>
           <div className="overflow-hidden">
-            {view === 'Semana' && <WeekView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={() => openNew()} />}
-            {view === 'Día' && <DayView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={() => openNew()} />}
-            {view === 'Mes' && <MonthView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={() => openNew()} />}
+            {view === 'Semana' && <WeekView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} />}
+            {view === 'Día' && <DayView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} />}
+            {view === 'Mes' && <MonthView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} />}
           </div>
         </motion.div>
 
@@ -151,7 +152,7 @@ export default function Agenda() {
         </div>
       </div>
 
-      <ActivityModal open={modalOpen} onOpenChange={setModalOpen} activity={editing} defaultDate={ymd(anchor)} onSaved={load} />
+      <ActivityModal open={modalOpen} onOpenChange={setModalOpen} activity={editing} defaultDate={pendingDate} onSaved={load} />
     </div>
   );
 }

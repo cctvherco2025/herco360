@@ -15,8 +15,14 @@ export function startOfWeek(date) {
 }
 export function addDays(date, n) { const d = new Date(date); d.setDate(d.getDate() + n); return d; }
 
+// Allow events to provide an explicit `color` (e.g. reservation status) that overrides category color.
+function evStyle(ev, isDark) {
+  if (ev.color) return { solid: ev.color, tint: `${ev.color}${isDark ? '33' : '1f'}` };
+  return catStyle(ev.category, isDark);
+}
+
 function EventBlock({ ev, isDark, onClick, compact }) {
-  const { solid, tint } = catStyle(ev.category, isDark);
+  const { solid, tint } = evStyle(ev, isDark);
   const top = ((toMin(ev.start_time) - START_HOUR * 60) / 60) * HOUR_H;
   const height = Math.max(26, ((toMin(ev.end_time) - toMin(ev.start_time)) / 60) * HOUR_H - 4);
   return (
@@ -131,7 +137,7 @@ export function MonthView({ anchor, activities, onEventClick, onSlotClick }) {
               </div>
               <div className="space-y-1 mt-0.5">
                 {dayEvents.slice(0, 3).map((ev) => {
-                  const { solid, tint } = catStyle(ev.category, isDark);
+                  const { solid, tint } = evStyle(ev, isDark);
                   return (
                     <button key={ev.id} onClick={(e) => { e.stopPropagation(); onEventClick?.(ev); }}
                       className="w-full flex items-center gap-1 rounded-md px-1.5 py-0.5 text-left hover:opacity-90" style={{ background: tint }}>
