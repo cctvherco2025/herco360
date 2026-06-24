@@ -1,0 +1,24 @@
+// HERCO360 shared constants: event categories + meeting room states
+export const CATEGORIES = {
+  'Reunión':      { solid: '#00a5df', tintLight: 'rgba(0,165,223,0.12)',  tintDark: 'rgba(0,165,223,0.22)' },
+  'Auditoría':    { solid: '#712146', tintLight: 'rgba(113,33,70,0.10)',  tintDark: 'rgba(113,33,70,0.30)' },
+  'Capacitación': { solid: '#e0a800', tintLight: 'rgba(254,211,0,0.18)',  tintDark: 'rgba(254,211,0,0.18)' },
+  'Seguimiento':  { solid: '#3cbef6', tintLight: 'rgba(60,190,246,0.14)',  tintDark: 'rgba(60,190,246,0.22)' },
+  'Reporte':      { solid: '#1e395e', tintLight: 'rgba(30,57,94,0.10)',   tintDark: 'rgba(60,120,200,0.28)' },
+  'Personal':     { solid: '#ec9032', tintLight: 'rgba(236,144,50,0.14)', tintDark: 'rgba(236,144,50,0.22)' },
+};
+
+export const CATEGORY_LIST = Object.keys(CATEGORIES);
+
+export const ROOM_STATES = {
+  'Disponible': { solid: '#16a34a', icon: 'CircleCheck', bg: 'rgba(22,163,74,0.12)' },
+  'Ocupada':    { solid: '#dc2626', icon: 'CircleX',     bg: 'rgba(220,38,38,0.12)' },
+  'Reservada':  { solid: '#00a5df', icon: 'Bookmark',    bg: 'rgba(0,165,223,0.12)' },
+  'Cancelada':  { solid: '#8a8b8b', icon: 'Ban',         bg: 'rgba(138,139,139,0.14)' },
+  'Finalizada': { solid: '#1e395e', icon: 'Flag',        bg: 'rgba(30,57,94,0.12)' },
+};
+
+export function catStyle(category, isDark) {
+  const c = CATEGORIES[category] || CATEGORIES['Reunión'];
+  return { solid: c.solid, tint: isDark ? c.tintDark : c.tintLight };
+}

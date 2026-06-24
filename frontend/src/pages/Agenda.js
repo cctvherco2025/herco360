@@ -1,0 +1,157 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { Plus, ChevronLeft, ChevronRight, CalendarDays, Check, X as XIcon } from 'lucide-react';
+import { toast } from 'sonner';
+import api from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import { CATEGORIES, CATEGORY_LIST, catStyle } from '@/lib/constants';
+import { fullDateEs, capitalize, ymd, MESES, MESES_CORTO } from '@/lib/time';
+import ActivityModal from '@/components/ActivityModal';
+import { WeekView, DayView, MonthView, startOfWeek, addDays } from '@/components/CalendarViews';
+import { useTheme } from '@/context/ThemeContext';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+
+export default function Agenda() {
+  const { user } = useAuth();
+  const { isDark } = useTheme();
+  const [params, setParams] = useSearchParams();
+  const [view, setView] = useState('Semana');
+  const [anchor, setAnchor] = useState(new Date());
+  const [activities, setActivities] = useState([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [activeCats, setActiveCats] = useState(CATEGORY_LIST);
+
+  const load = useCallback(async () => {
+    const s = ymd(addDays(startOfWeek(anchor), -7));
+    const e = ymd(addDays(startOfWeek(anchor), 49));
+    try { const { data } = await api.get(`/activities?start=${s}&end=${e}`); setActivities(data); } catch (err) {}
+  }, [anchor]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (params.get('new') === '1') { setEditing(null); setModalOpen(true); setParams({}); }
+  }, [params, setParams]);
+
+  const filtered = activities.filter((a) => activeCats.includes(a.category));
+  const openEvent = (ev) => { setEditing(ev); setModalOpen(true); };
+  const openNew = () => { setEditing(null); setModalOpen(true); };
+  const toggleCat = (c) => setActiveCats((p) => p.includes(c) ? p.filter((x) => x !== c) : [...p, c]);
+
+  const upcoming = activities
+    .filter((a) => a.date >= ymd(new Date()))
+    .sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time))
+    .slice(0, 6);
+
+  const respond = async (activityId, response, e) => {
+    e.stopPropagation();
+    try { await api.post(`/activities/${activityId}/respond`, { response }); toast.success(response === 'accepted' ? 'Participación aceptada' : 'Participación rechazada'); load(); }
+    catch (err) { toast.error('Error al responder'); }
+  };
+
+  const myInvite = (a) => (a.participants || []).find((p) => p.user_id === user?.id && p.status === 'invited');
+
+  const rangeLabel = () => {
+    if (view === 'Mes') return `${capitalize(MESES[anchor.getMonth()])} ${anchor.getFullYear()}`;
+    if (view === 'Día') return capitalize(fullDateEs(anchor));
+    const s = startOfWeek(anchor); const e = addDays(s, 6);
+    return `${s.getDate()} ${MESES_CORTO[s.getMonth()]} - ${e.getDate()} ${MESES_CORTO[e.getMonth()]} ${e.getFullYear()}`;
+  };
+  const move = (dir) => {
+    if (view === 'Mes') setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1));
+    else if (view === 'Día') setAnchor(addDays(anchor, dir));
+    else setAnchor(addDays(anchor, dir * 7));
+  };
+
+  return (
+    <div className="max-w-[1320px] mx-auto pt-2">
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h1 className="font-heading text-2xl sm:text-3xl font-semibold">Agenda</h1>
+          <p className="text-muted-foreground text-sm mt-0.5">Gestiona las actividades y reuniones de tu equipo</p>
+        </div>
+        <Button onClick={openNew} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="agenda-new-activity-button"><Plus className="h-4 w-4 mr-1" /> Nueva actividad</Button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
+          className="lg:col-span-3 rounded-[18px] bg-card border shadow-card p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1 rounded-xl border bg-card p-1">
+                <button onClick={() => move(-1)} className="p-1.5 rounded-lg hover:bg-muted" data-testid="agenda-prev"><ChevronLeft className="h-4 w-4" /></button>
+                <button onClick={() => setAnchor(new Date())} className="px-3 py-1 text-sm font-medium rounded-lg hover:bg-muted" data-testid="agenda-today">Hoy</button>
+                <button onClick={() => move(1)} className="p-1.5 rounded-lg hover:bg-muted" data-testid="agenda-next"><ChevronRight className="h-4 w-4" /></button>
+              </div>
+              <span className="text-sm font-medium">{rangeLabel()}</span>
+            </div>
+            <Tabs value={view} onValueChange={setView}>
+              <TabsList className="rounded-xl">
+                <TabsTrigger value="Día" className="rounded-lg text-xs" data-testid="agenda-view-dia">Día</TabsTrigger>
+                <TabsTrigger value="Semana" className="rounded-lg text-xs" data-testid="agenda-view-semana">Semana</TabsTrigger>
+                <TabsTrigger value="Mes" className="rounded-lg text-xs" data-testid="agenda-view-mes">Mes</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+          <div className="overflow-hidden">
+            {view === 'Semana' && <WeekView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={() => openNew()} />}
+            {view === 'Día' && <DayView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={() => openNew()} />}
+            {view === 'Mes' && <MonthView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={() => openNew()} />}
+          </div>
+        </motion.div>
+
+        {/* Right rail */}
+        <div className="space-y-4">
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.06 }}
+            className="rounded-[18px] bg-card border shadow-card p-5">
+            <h3 className="font-heading font-semibold mb-3">Categorías</h3>
+            <div className="space-y-1.5">
+              {CATEGORY_LIST.map((c) => {
+                const active = activeCats.includes(c);
+                return (
+                  <button key={c} onClick={() => toggleCat(c)} className={`w-full flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition-colors ${active ? 'hover:bg-muted' : 'opacity-40 hover:opacity-70'}`}>
+                    <span className="h-3 w-3 rounded-full" style={{ background: CATEGORIES[c].solid }} />
+                    <span className="flex-1 text-left">{c}</span>
+                    {active && <Check className="h-3.5 w-3.5 text-muted-foreground" />}
+                  </button>
+                );
+              })}
+            </div>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.12 }}
+            className="rounded-[18px] bg-card border shadow-card p-5">
+            <h3 className="font-heading font-semibold mb-3">Próximas actividades</h3>
+            <div className="space-y-2">
+              {upcoming.length === 0 && <p className="text-sm text-muted-foreground py-4 text-center">Sin actividades próximas</p>}
+              {upcoming.map((a) => {
+                const { solid, tint } = catStyle(a.category, isDark);
+                const invite = myInvite(a);
+                return (
+                  <div key={a.id} onClick={() => openEvent(a)} className="rounded-xl border p-3 cursor-pointer hover:shadow-card transition-shadow" style={{ borderLeft: `3px solid ${solid}` }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium truncate">{a.title}</span>
+                      <span className="text-[11px] rounded-full px-2 py-0.5 shrink-0" style={{ background: tint, color: solid }}>{a.category}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">{capitalize(fullDateEs(a.date))} · {a.start_time}</p>
+                    {invite && (
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={(e) => respond(a.id, 'accepted', e)} className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-[rgba(22,163,74,0.12)] text-[#16a34a] text-xs font-medium py-1.5 hover:bg-[rgba(22,163,74,0.2)]" data-testid="agenda-accept"><Check className="h-3.5 w-3.5" /> Aceptar</button>
+                        <button onClick={(e) => respond(a.id, 'rejected', e)} className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-[rgba(220,38,38,0.1)] text-[#dc2626] text-xs font-medium py-1.5 hover:bg-[rgba(220,38,38,0.18)]" data-testid="agenda-reject"><XIcon className="h-3.5 w-3.5" /> Rechazar</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        </div>
+      </div>
+
+      <ActivityModal open={modalOpen} onOpenChange={setModalOpen} activity={editing} defaultDate={ymd(anchor)} onSaved={load} />
+    </div>
+  );
+}
