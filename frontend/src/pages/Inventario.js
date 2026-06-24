@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import {
   Boxes, PackagePlus, Store, ArrowDownUp, Save, MapPin, Search, Lock,
   TrendingDown, TrendingUp, Package, ClipboardList, FileSpreadsheet, FileText,
-  Download, Upload, Loader2, FileDown, Image as ImageIcon, ImageOff, RefreshCw,
+  Download, Upload, Loader2, FileDown, Image as ImageIcon, ImageOff,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -36,25 +36,26 @@ async function downloadFile(url, fallbackName) {
   } catch (e) { toast.error('No se pudo generar el archivo'); return false; }
 }
 
-/* ----------------- AI product image for a selected article ----------------- */
+/* ----------------- Product image for a selected article (uploaded via Excel) ----------------- */
 function ArticleImage({ article }) {
   const [loading, setLoading] = useState(false);
   const [src, setSrc] = useState(null);
   const [failed, setFailed] = useState(false);
 
-  const load = useCallback(async (regenerate = false) => {
+  useEffect(() => {
     if (!article) { setSrc(null); setFailed(false); return; }
-    setLoading(true); setFailed(false); if (regenerate) setSrc(null);
-    try {
-      const url = `/inventory/image?article=${encodeURIComponent(article)}${regenerate ? '&regenerate=true' : ''}`;
-      const { data } = await api.get(url);
-      if (data?.data) { setSrc(data.data); setFailed(false); }
-      else { setSrc(null); setFailed(true); }
-    } catch (e) { setSrc(null); setFailed(true); }
-    finally { setLoading(false); }
+    let active = true;
+    setLoading(true); setFailed(false); setSrc(null);
+    api.get(`/inventory/image?article=${encodeURIComponent(article)}`)
+      .then(({ data }) => {
+        if (!active) return;
+        if (data?.data) { setSrc(data.data); setFailed(false); }
+        else { setSrc(null); setFailed(true); }
+      })
+      .catch(() => { if (active) { setSrc(null); setFailed(true); } })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [article]);
-
-  useEffect(() => { load(false); }, [load]);
 
   if (!article) return null;
 
@@ -62,21 +63,14 @@ function ArticleImage({ article }) {
     <div className="rounded-xl border bg-muted/30 p-3" data-testid="article-image-card">
       <div className="flex items-center justify-between mb-2">
         <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-          <ImageIcon className="h-3.5 w-3.5 text-[#00a5df]" /> Vista del artículo
+          <ImageIcon className="h-3.5 w-3.5 text-[#00a5df]" /> Imagen del artículo
         </span>
-        {(src || failed) && (
-          <button type="button" onClick={() => load(true)} disabled={loading}
-            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-            data-testid="article-image-regenerate">
-            <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} /> Regenerar
-          </button>
-        )}
       </div>
       <div className="relative aspect-square w-full max-w-[220px] mx-auto overflow-hidden rounded-lg border bg-card grid place-items-center">
         {loading && (
           <div className="flex flex-col items-center gap-2 text-muted-foreground">
             <Loader2 className="h-6 w-6 animate-spin text-[#00a5df]" />
-            <span className="text-[11px]">Generando imagen…</span>
+            <span className="text-[11px]">Cargando…</span>
           </div>
         )}
         {!loading && src && (
@@ -85,7 +79,7 @@ function ArticleImage({ article }) {
         {!loading && !src && failed && (
           <div className="flex flex-col items-center gap-1.5 text-muted-foreground px-3 text-center">
             <ImageOff className="h-6 w-6" />
-            <span className="text-[11px]">Sin imagen disponible</span>
+            <span className="text-[11px]">Sin imagen · súbela por Excel</span>
           </div>
         )}
       </div>
@@ -195,6 +189,90 @@ function ImportCard({ onImported }) {
   );
 }
 
+/* ----------------- Import product images via Excel ----------------- */
+function ImageImportCard({ onImported }) {
+  const fileRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const onPick = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!f.name.toLowerCase().endsWith('.xlsx')) { toast.error('El archivo debe ser .xlsx'); return; }
+    setUploading(true); setResult(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      const { data } = await api.post('/inventory/import-images', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setResult(data);
+      toast.success(`Imágenes guardadas: ${data.images_saved} de ${data.images_found}`);
+      onImported?.();
+    } catch (err) { toast.error(err?.response?.data?.detail || 'Error al importar imágenes'); }
+    finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.14 }}
+      className="rounded-[18px] bg-card border shadow-card p-5" data-testid="image-import-card">
+      <div className="flex items-center gap-2 mb-1">
+        <ImageIcon className="h-5 w-5 text-[#00a5df]" />
+        <h3 className="font-heading font-semibold">Subir imágenes (Excel)</h3>
+      </div>
+      <p className="text-sm text-muted-foreground mb-4">Sube un .xlsx con el nombre del artículo y su foto en la misma fila. El sistema coloca cada imagen en su artículo.</p>
+
+      <div className="rounded-xl border bg-muted/40 p-4 mb-4">
+        <p className="text-xs font-semibold text-foreground mb-2">Cómo preparar el archivo:</p>
+        <div className="overflow-hidden rounded-lg border bg-card text-xs">
+          <div className="grid grid-cols-2 bg-[#00a5df] text-white font-semibold">
+            <span className="px-3 py-1.5">Articulo</span>
+            <span className="px-3 py-1.5 border-l border-white/20">Imagen</span>
+          </div>
+          <div className="grid grid-cols-2 border-t">
+            <span className="px-3 py-1.5 truncate">Dual hook</span>
+            <span className="px-3 py-1.5 border-l flex items-center gap-1 text-muted-foreground"><ImageIcon className="h-3.5 w-3.5" /> foto pegada</span>
+          </div>
+          <div className="grid grid-cols-2 border-t">
+            <span className="px-3 py-1.5 truncate">Wire basket, 1000mm*470*250mm</span>
+            <span className="px-3 py-1.5 border-l flex items-center gap-1 text-muted-foreground"><ImageIcon className="h-3.5 w-3.5" /> foto pegada</span>
+          </div>
+        </div>
+        <ul className="text-[11px] text-muted-foreground mt-2 space-y-0.5 list-disc pl-4">
+          <li><b>Articulo</b>: nombre exacto del artículo (columna A).</li>
+          <li><b>Imagen</b>: inserta la foto en Excel (Insertar &gt; Imágenes) en la <b>misma fila</b>.</li>
+          <li>Una imagen por fila · formatos PNG/JPG · si el artículo ya tenía foto, se reemplaza.</li>
+        </ul>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" className="rounded-xl" data-testid="img-download-template"
+          onClick={() => downloadFile('/inventory/images-template', 'plantilla_imagenes_herco360.xlsx')}>
+          <FileDown className="h-4 w-4 mr-1.5" /> Descargar plantilla
+        </Button>
+        <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={onPick} data-testid="img-import-file" />
+        <Button className="rounded-xl bg-[#00a5df] hover:bg-[#0090c4] text-white" disabled={uploading}
+          onClick={() => fileRef.current?.click()} data-testid="img-import-button">
+          {uploading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Upload className="h-4 w-4 mr-1.5" />}
+          {uploading ? 'Subiendo…' : 'Subir imágenes'}
+        </Button>
+      </div>
+
+      {result && (
+        <div className="mt-4 rounded-xl border bg-[rgba(0,165,223,0.06)] p-3 text-sm">
+          <p className="font-medium text-[#00a5df]">Imágenes importadas</p>
+          <p className="text-muted-foreground text-xs mt-1">{result.images_saved} guardadas · {result.images_found} encontradas en el archivo</p>
+          {result.errors?.length > 0 && (
+            <div className="mt-2 text-xs text-[#dc2626]">
+              <p className="font-medium">Avisos:</p>
+              <ul className="list-disc pl-4">{result.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+            </div>
+          )}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+
 /* ----------------- Productos (intake) ----------------- */
 function ProductosTab({ onChanged }) {
   const [article, setArticle] = useState('');
@@ -229,6 +307,7 @@ function ProductosTab({ onChanged }) {
   };
 
   return (
+    <div className="space-y-4">
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
         className="lg:col-span-3 rounded-[18px] bg-card border shadow-card p-5">
@@ -284,6 +363,12 @@ function ProductosTab({ onChanged }) {
           ))}
         </div>
       </motion.div>
+    </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ImportCard onImported={onChanged} />
+        <ImageImportCard onImported={onChanged} />
+      </div>
     </div>
   );
 }

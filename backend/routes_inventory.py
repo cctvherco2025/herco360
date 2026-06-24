@@ -39,64 +39,21 @@ async def add_catalog_item(data: CatalogItemInput, user=Depends(require_inventor
     return {'message': 'ok', 'name': name}
 
 
-# ---- Article image (AI-generated, cached) ----
+# ---- Article image (uploaded via Excel, stored in DB) ----
 logger = logging.getLogger("inventory")
 
 
-async def _generate_article_image(article: str):
-    """Generate a clean product photo for an article using Gemini Nano Banana.
-    Returns a data URL string (data:image/...;base64,...) or None on failure."""
-    try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
-        api_key = os.environ.get("EMERGENT_LLM_KEY")
-        if not api_key:
-            logger.warning("EMERGENT_LLM_KEY missing; cannot generate image")
-            return None
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=new_id(),
-            system_message="You generate clean, realistic e-commerce product catalog photos.",
-        )
-        chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
-        prompt = (
-            f"Professional e-commerce product photograph of '{article}', a retail hardware "
-            f"store item or store display fixture. Single product centered on a clean, plain "
-            f"white studio background, soft even lighting, sharp focus, high detail, realistic. "
-            f"No text, no logos, no watermark, no people. Square composition."
-        )
-        text, images = await chat.send_message_multimodal_response(UserMessage(text=prompt))
-        if images:
-            img = images[0]
-            return f"data:{img['mime_type']};base64,{img['data']}"
-        return None
-    except Exception as e:
-        logger.warning(f"Image generation failed for '{article}': {e}")
-        return None
-
-
 @router.get('/image')
-async def article_image(article: str = '', regenerate: bool = False, user=Depends(require_inventory_access)):
-    """Return a cached (or freshly generated) AI product image for an article as a data URL."""
+async def article_image(article: str = '', user=Depends(require_inventory_access)):
+    """Return the stored product image for an article as a data URL (uploaded via Excel)."""
     name = (article or '').strip()
     if not name:
         raise HTTPException(status_code=400, detail='Indica el artículo')
     key = name.lower()
-
-    if not regenerate:
-        cached = await db.inventory_images.find_one({'name_key': key}, {'_id': 0, 'data': 1})
-        if cached and cached.get('data'):
-            return {'article': name, 'data': cached['data'], 'cached': True}
-
-    data_url = await _generate_article_image(name)
-    if not data_url:
-        return {'article': name, 'data': None, 'cached': False}
-
-    await db.inventory_images.update_one(
-        {'name_key': key},
-        {'$set': {'name': name, 'name_key': key, 'data': data_url, 'updated_at': now_iso()},
-         '$setOnInsert': {'id': new_id(), 'created_at': now_iso()}},
-        upsert=True)
-    return {'article': name, 'data': data_url, 'cached': False}
+    cached = await db.inventory_images.find_one({'name_key': key}, {'_id': 0, 'data': 1})
+    if cached and cached.get('data'):
+        return {'article': name, 'data': cached['data']}
+    return {'article': name, 'data': None}
 
 
 # ---- Stock ----
@@ -462,5 +419,201 @@ async def import_articles(file: UploadFile = File(...), user=Depends(require_inv
         'message': 'Importación completada',
         'added_to_catalog': added_catalog,
         'stock_entries': stock_entries,
+        'errors': errors[:20],
+    }
+
+
+
+# ====================== IMPORT IMAGES (Excel with embedded pictures) ======================
+# Namespaces used inside an .xlsx archive for drawings / images.
+_NS_XDR = '{http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing}'
+_NS_A = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
+_NS_R = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
+_NS_REL = '{http://schemas.openxmlformats.org/package/2006/relationships}'
+
+_MIME_BY_EXT = {
+    'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+    'gif': 'image/gif', 'bmp': 'image/bmp', 'webp': 'image/webp',
+}
+
+
+def _parse_xlsx_images(content: bytes):
+    """Extract embedded images from an .xlsx file mapped to their anchor row.
+    Returns a list of tuples: (row_index_0based, mime_type, image_bytes)."""
+    import zipfile
+    import posixpath
+    import xml.etree.ElementTree as ET
+
+    results = []
+    with zipfile.ZipFile(io.BytesIO(content)) as zf:
+        names = zf.namelist()
+        drawings = [n for n in names if re.match(r'xl/drawings/drawing\d+\.xml$', n)]
+        for drawing in drawings:
+            # Map relationship ids -> media file path for this drawing.
+            rels_path = posixpath.join('xl/drawings/_rels', posixpath.basename(drawing) + '.rels')
+            rel_map = {}
+            if rels_path in names:
+                try:
+                    rels_root = ET.fromstring(zf.read(rels_path))
+                    for rel in rels_root.findall(_NS_REL + 'Relationship'):
+                        rid = rel.get('Id')
+                        target = rel.get('Target')
+                        if rid and target:
+                            if target.startswith('/'):
+                                # Absolute within the package (relative to archive root).
+                                rel_map[rid] = target.lstrip('/')
+                            else:
+                                # Relative to xl/drawings/
+                                rel_map[rid] = posixpath.normpath(posixpath.join('xl/drawings', target))
+                except Exception:
+                    pass
+            try:
+                root = ET.fromstring(zf.read(drawing))
+            except Exception:
+                continue
+            for anchor in list(root):
+                tag = anchor.tag.split('}')[-1]
+                if tag not in ('oneCellAnchor', 'twoCellAnchor', 'absoluteAnchor'):
+                    continue
+                from_el = anchor.find(_NS_XDR + 'from')
+                row_idx = 0
+                if from_el is not None:
+                    row_el = from_el.find(_NS_XDR + 'row')
+                    if row_el is not None and row_el.text is not None:
+                        try:
+                            row_idx = int(row_el.text)
+                        except Exception:
+                            row_idx = 0
+                blip = anchor.find('.//' + _NS_A + 'blip')
+                if blip is None:
+                    continue
+                embed = blip.get(_NS_R + 'embed')
+                media_path = rel_map.get(embed)
+                if not media_path or media_path not in names:
+                    continue
+                ext = media_path.rsplit('.', 1)[-1].lower()
+                mime = _MIME_BY_EXT.get(ext, 'image/png')
+                try:
+                    img_bytes = zf.read(media_path)
+                except Exception:
+                    continue
+                results.append((row_idx, mime, img_bytes))
+    return results
+
+
+@router.get('/images-template')
+async def images_template(user=Depends(require_inventory_access)):
+    """Downloadable Excel template explaining how to attach an image per article."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    wb = Workbook(); ws = wb.active; ws.title = 'Imagenes'
+    ws.append(['Articulo', 'Imagen'])
+    for c in ws[1]:
+        c.font = Font(bold=True, color='FFFFFF'); c.fill = PatternFill('solid', fgColor='00A5DF')
+        c.alignment = Alignment(horizontal='center')
+    ws.append(['Dual hook', '(pega aquí la imagen)'])
+    ws.append(['Wire basket, 1000mm*470*250mm', '(pega aquí la imagen)'])
+    ws.column_dimensions['A'].width = 55
+    ws.column_dimensions['B'].width = 40
+    for r in range(2, 30):
+        ws.row_dimensions[r].height = 90
+    ws2 = wb.create_sheet('Instrucciones')
+    for row in [
+        ['Cómo subir imágenes de artículos'],
+        [''],
+        ['1) En la columna A (Articulo) escribe el nombre EXACTO del artículo.'],
+        ['2) En la columna B (Imagen), inserta/pega la foto en la MISMA fila del artículo.'],
+        ['   (En Excel: Insertar > Imágenes, y colócala sobre la celda de esa fila).'],
+        ['3) Guarda el archivo como .xlsx y súbelo en el sistema.'],
+        [''],
+        ['Notas:'],
+        ['- El nombre del artículo debe coincidir con el del catálogo.'],
+        ['- Una imagen por fila. Formatos: PNG, JPG.'],
+        ['- Si subes una imagen para un artículo que ya tenía, se reemplaza.'],
+    ]:
+        ws2.append(row)
+    ws2.column_dimensions['A'].width = 80
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    return _stream(buf, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                   'plantilla_imagenes_herco360.xlsx')
+
+
+@router.post('/import-images')
+async def import_images(file: UploadFile = File(...), user=Depends(require_inventory_access)):
+    """Import an Excel file with embedded images and assign each image to its article (by row)."""
+    fn = (file.filename or '').lower()
+    if not fn.endswith('.xlsx'):
+        raise HTTPException(status_code=400, detail='El archivo debe ser .xlsx')
+    content = await file.read()
+
+    # 1) Read article names per row from the sheet.
+    from openpyxl import load_workbook
+    try:
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail='No se pudo leer el archivo Excel')
+    ws = wb['Imagenes'] if 'Imagenes' in wb.sheetnames else wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+    if not rows:
+        raise HTTPException(status_code=400, detail='El archivo está vacío')
+
+    header = [str(c).strip().lower() if c is not None else '' for c in rows[0]]
+    art_col = 0
+    for cand in ('articulo', 'artículo', 'article', 'descripcion', 'descripción', 'nombre'):
+        if cand in header:
+            art_col = header.index(cand)
+            break
+    # Map 0-based row index -> article name
+    row_to_article = {}
+    for i, row in enumerate(rows):
+        if i == 0 and any(h in header for h in ('articulo', 'artículo', 'article', 'descripcion', 'descripción', 'nombre')):
+            continue  # skip header row
+        if row and art_col < len(row) and row[art_col] is not None and str(row[art_col]).strip():
+            row_to_article[i] = str(row[art_col]).strip()
+
+    # 2) Extract embedded images mapped to their anchor row.
+    try:
+        images = _parse_xlsx_images(content)
+    except Exception as e:
+        logger.warning(f'image parse failed: {e}')
+        raise HTTPException(status_code=400, detail='No se pudieron leer las imágenes del Excel')
+
+    if not images:
+        raise HTTPException(status_code=400, detail='No se encontraron imágenes incrustadas en el Excel. Inserta las fotos dentro del archivo (Insertar > Imágenes).')
+
+    import base64
+    saved = 0
+    errors = []
+    matched_rows = set()
+    for row_idx, mime, img_bytes in images:
+        # The anchor row may sit on the article row or one below the picture's top edge.
+        article = row_to_article.get(row_idx) or row_to_article.get(row_idx + 1) or row_to_article.get(row_idx - 1)
+        if not article:
+            errors.append(f'Fila {row_idx + 1}: imagen sin artículo asociado')
+            continue
+        if len(img_bytes) > 5 * 1024 * 1024:
+            errors.append(f'{article}: imagen demasiado grande (>5MB)')
+            continue
+        b64 = base64.b64encode(img_bytes).decode('utf-8')
+        data_url = f'data:{mime};base64,{b64}'
+        key = article.lower()
+        await db.inventory_images.update_one(
+            {'name_key': key},
+            {'$set': {'name': article, 'name_key': key, 'data': data_url, 'updated_at': now_iso()},
+             '$setOnInsert': {'id': new_id(), 'created_at': now_iso()}},
+            upsert=True)
+        # Keep catalog in sync so the article is searchable.
+        await db.inventory_catalog.update_one(
+            {'name_key': key},
+            {'$setOnInsert': {'id': new_id(), 'name': article, 'name_key': key, 'created_at': now_iso()}},
+            upsert=True)
+        saved += 1
+        matched_rows.add(row_idx)
+
+    return {
+        'message': 'Importación de imágenes completada',
+        'images_found': len(images),
+        'images_saved': saved,
         'errors': errors[:20],
     }

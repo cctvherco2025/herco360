@@ -1,26 +1,26 @@
 [
   {
-    "content": "Agregar EMERGENT_LLM_KEY al backend/.env",
+    "content": "Quitar generación con IA del endpoint de imagen",
     "status": "completed"
   },
   {
-    "content": "Backend: endpoint /api/inventory/image con generación Gemini Nano Banana + caché en MongoDB",
+    "content": "Backend: parser de imágenes incrustadas en Excel + endpoints /import-images y /images-template",
     "status": "completed"
   },
   {
-    "content": "Frontend: componente ArticleImage (skeleton, imagen, fallback)",
+    "content": "Frontend: actualizar ArticleImage (sin IA) y crear ImageImportCard",
     "status": "completed"
   },
   {
-    "content": "Frontend: agregar onSelect a ArticleAutocomplete y mostrar foto al seleccionar en Productos y Movimientos",
+    "content": "Renderizar tarjetas de importación (artículos + imágenes) en pestaña Productos",
     "status": "completed"
   },
   {
-    "content": "Cambiar placeholder a 'Buscar artículo…' en ProductosTab",
+    "content": "Probar backend (parser/endpoint) y verificar UI con screenshot",
     "status": "completed"
   },
   {
-    "content": "Verificar compilación, probar endpoint y UI",
+    "content": "Limpiar datos e imágenes de prueba",
     "status": "completed"
   }
 ]
