@@ -182,3 +182,51 @@ async def migrate_activity_colors():
         await db.activities.update_one({'id': a['id']}, {'$set': {'color': color}, '$unset': {'category': ''}})
     if legacy:
         print(f'[MIGRATE] Backfilled color on {len(legacy)} activities.')
+
+
+
+# Sample ferretería catalog (replaceable: the official article list will be loaded later)
+SAMPLE_ARTICLES = [
+    'Martillo de uña', 'Destornillador Phillips', 'Destornillador plano', 'Taladro inalámbrico',
+    'Juego de brocas', 'Llave inglesa 10"', 'Llave ajustable', 'Cinta métrica 5m', 'Nivel de burbuja',
+    'Sierra manual', 'Clavos 2" (caja)', 'Tornillos drywall (caja)', 'Tuercas 1/4 (bolsa)',
+    'Pintura blanca 1 gal', 'Brocha 3"', 'Rodillo de pintura', 'Cinta aislante', 'Silicón transparente',
+    'Guantes de trabajo', 'Casco de seguridad', 'Lentes de protección', 'Candado 40mm', 'Foco LED 9W',
+    'Cable eléctrico #12 (m)', 'Manguera 1/2" (m)', 'Carretilla', 'Pala', 'Rastrillo', 'Alicate', 'Flexómetro',
+]
+
+# Initial demo stock spread across branches
+DEMO_STOCK = [
+    ('Martillo de uña', 'H1', 24), ('Taladro inalámbrico', 'H1', 8), ('Cinta métrica 5m', 'H1', 40),
+    ('Clavos 2" (caja)', 'H1', 60), ('Pintura blanca 1 gal', 'H1', 15),
+    ('Destornillador Phillips', 'H2', 30), ('Llave inglesa 10"', 'H2', 12), ('Foco LED 9W', 'H2', 80),
+    ('Guantes de trabajo', 'H2', 50), ('Silicón transparente', 'H2', 25),
+    ('Taladro inalámbrico', 'H4', 5), ('Brocha 3"', 'H4', 45), ('Tornillos drywall (caja)', 'H4', 70),
+    ('Candado 40mm', 'H4', 18), ('Cable eléctrico #12 (m)', 'H4', 200),
+    ('Casco de seguridad', 'H5', 22), ('Lentes de protección', 'H5', 35), ('Manguera 1/2" (m)', 'H5', 120),
+    ('Carretilla', 'H6', 6), ('Pala', 'H6', 14), ('Rastrillo', 'H6', 10), ('Alicate', 'H6', 28),
+]
+
+
+async def seed_inventory():
+    """Seed inventory catalog + demo stock if empty (idempotent)."""
+    if await db.inventory_catalog.count_documents({}) == 0:
+        for name in SAMPLE_ARTICLES:
+            await db.inventory_catalog.insert_one({
+                'id': new_id(), 'name': name, 'name_key': name.lower(), 'created_at': now_iso(),
+            })
+        print(f'[SEED] Inventory catalog created ({len(SAMPLE_ARTICLES)} articles).')
+
+    if await db.inventory_stock.count_documents({}) == 0:
+        for article, suc, qty in DEMO_STOCK:
+            await db.inventory_stock.insert_one({
+                'id': new_id(), 'article': article, 'article_key': article.lower(),
+                'sucursal': suc, 'quantity': qty, 'created_at': now_iso(), 'updated_at': now_iso(),
+            })
+            await db.inventory_movements.insert_one({
+                'id': new_id(), 'type': 'entrada', 'article': article, 'sucursal': suc,
+                'quantity': qty, 'description': 'Inventario inicial', 'solicitante': '',
+                'registered_by': None, 'registered_by_name': 'Sistema',
+                'registered_by_avatar': None, 'created_at': now_iso(),
+            })
+        print(f'[SEED] Inventory demo stock created ({len(DEMO_STOCK)} entries).')

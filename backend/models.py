@@ -4,6 +4,7 @@ from typing import List, Optional
 
 EVENT_CATEGORIES = ['Reunión', 'Auditoría', 'Capacitación', 'Seguimiento', 'Reporte', 'Personal']
 ROOM_STATES = ['Disponible', 'Ocupada', 'Reservada', 'Cancelada', 'Finalizada']
+SUCURSALES = ['H1', 'H2', 'H4', 'H5', 'H6']
 
 
 # ---- Auth ----
@@ -66,3 +67,23 @@ class ReservationInput(BaseModel):
     end_time: str
     activity_id: Optional[str] = None
     notes: Optional[str] = ''
+
+
+
+# ---- Inventory ----
+class InventoryIntake(BaseModel):
+    article: str
+    quantity: int
+    sucursal: str
+
+
+class InventoryMovementInput(BaseModel):
+    article: str
+    quantity: int
+    sucursal: str  # source branch where stock is deducted
+    description: str
+    solicitante: Optional[str] = ''
+
+
+class CatalogItemInput(BaseModel):
+    name: str

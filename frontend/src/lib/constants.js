@@ -52,7 +52,19 @@ export const AREAS = [
   'Operación Tienda', 'Centro de Servicio', 'Tienda', 'Auditoría',
 ];
 
-// Inventario module is exclusive to users whose área is "Tienda" (admins can also access to supervise).
+// Inventory branches (sucursales)
+export const SUCURSALES = ['H1', 'H2', 'H4', 'H5', 'H6'];
+
+// Inventario module access: Tienda staff, store managers, Jefe ECCP,
+// Operación manager, Director comercial (and admins to supervise).
 export function canAccessInventory(user) {
-  return !!user && (user.area === 'Tienda' || user.role === 'admin');
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const area = (user.area || '').trim();
+  const cargo = (user.position || '').trim();
+  if (area === 'Tienda') return true;
+  if (cargo === 'Director comercial') return true;
+  if (cargo === 'Jefe' && area === 'ECCP') return true;
+  if (cargo === 'Gerente' && (area === 'Operación Tienda' || area === 'Tienda')) return true;
+  return false;
 }

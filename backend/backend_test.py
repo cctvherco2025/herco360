@@ -14,6 +14,8 @@ class HERCO360Tester:
         self.admin_token = None
         self.user_token = None
         self.new_user_token = None
+        self.walter_token = None  # Tienda user (HAS inventory access)
+        self.samuel_token = None  # Negocios País user (NO inventory access)
         self.tests_run = 0
         self.tests_passed = 0
         self.tests_failed = 0
@@ -25,6 +27,7 @@ class HERCO360Tester:
         self.activity_id = None
         self.reservation_id = None
         self.notification_id = None
+        self.test_article = None
 
     def log(self, message, level="INFO"):
         """Log test messages"""
@@ -109,11 +112,11 @@ class HERCO360Tester:
         return False
 
     def test_auth_register_new_user(self):
-        """Test new user registration"""
+        """Test new user registration - should auto-approve and return token"""
         timestamp = datetime.now().strftime('%H%M%S')
         self.new_user_email = f"test.user.{timestamp}@herco.com"
         success, response = self.test(
-            "Auth: Register New User",
+            "Auth: Register New User (auto-approve)",
             "POST",
             "auth/register",
             200,
@@ -121,12 +124,19 @@ class HERCO360Tester:
                 "name": f"Test User {timestamp}",
                 "email": self.new_user_email,
                 "password": "Herco360!",
-                "position": "Tester"
+                "position": "Coordinador",
+                "area": "Caja"
             }
         )
         if success:
-            self.log(f"New user registered: {self.new_user_email}", "SUCCESS")
-            return True
+            # Verify auto-approve: status should be 'approved' and token should be returned
+            if response.get('status') == 'approved' and 'token' in response:
+                self.log(f"✓ Auto-approved with token: {self.new_user_email}", "SUCCESS")
+                self.new_user_token = response['token']
+                return True
+            else:
+                self.log(f"✗ Registration did not auto-approve or return token", "FAIL")
+                return False
         return False
 
     def test_auth_login_pending_user(self):
@@ -755,6 +765,279 @@ class HERCO360Tester:
             self.log(f"Search results: {len(activities)} activities, {len(users)} users", "INFO")
         return success
 
+    # ===== INVENTARIO TESTS =====
+    def test_inventory_login_walter(self):
+        """Login as Walter (Tienda user - HAS inventory access)"""
+        success, response = self.test(
+            "Inventory: Login Walter (Tienda user)",
+            "POST",
+            "auth/login",
+            200,
+            data={"email": "walter.vasquez@herco.com", "password": "Herco360!"}
+        )
+        if success and 'token' in response:
+            self.walter_token = response['token']
+            self.log(f"Walter token obtained", "SUCCESS")
+            return True
+        return False
+
+    def test_inventory_login_samuel(self):
+        """Login as Samuel (Negocios País - NO inventory access)"""
+        success, response = self.test(
+            "Inventory: Login Samuel (Negocios País user)",
+            "POST",
+            "auth/login",
+            200,
+            data={"email": "samuel.gonzalez@herco.com", "password": "Herco360!"}
+        )
+        if success and 'token' in response:
+            self.samuel_token = response['token']
+            self.log(f"Samuel token obtained", "SUCCESS")
+            return True
+        return False
+
+    def test_inventory_access_walter_allowed(self):
+        """Test Walter CAN access inventory endpoints (200)"""
+        if not self.walter_token:
+            self.log("No Walter token", "WARN")
+            return False
+        
+        success, response = self.test(
+            "Inventory: Walter access /inventory/meta (should be 200)",
+            "GET",
+            "inventory/meta",
+            200,
+            token=self.walter_token
+        )
+        
+        if success and 'sucursales' in response:
+            sucursales = response.get('sucursales', [])
+            expected = ['H1', 'H2', 'H4', 'H5', 'H6']
+            if sucursales == expected:
+                self.log(f"✓ Sucursales correct: {sucursales}", "SUCCESS")
+                return True
+            else:
+                self.log(f"✗ Sucursales mismatch. Expected {expected}, got {sucursales}", "FAIL")
+                return False
+        return success
+
+    def test_inventory_access_samuel_denied(self):
+        """Test Samuel CANNOT access inventory endpoints (403)"""
+        if not self.samuel_token:
+            self.log("No Samuel token", "WARN")
+            return False
+        
+        success, response = self.test(
+            "Inventory: Samuel access /inventory/meta (should be 403)",
+            "GET",
+            "inventory/meta",
+            403,
+            token=self.samuel_token
+        )
+        return success
+
+    def test_inventory_access_admin_allowed(self):
+        """Test admin CAN access inventory endpoints"""
+        success, response = self.test(
+            "Inventory: Admin access /inventory/meta (should be 200)",
+            "GET",
+            "inventory/meta",
+            200,
+            token=self.admin_token
+        )
+        return success
+
+    def test_inventory_catalog_autocomplete(self):
+        """Test inventory catalog autocomplete"""
+        if not self.walter_token:
+            return False
+        
+        success, response = self.test(
+            "Inventory: Catalog autocomplete (q=mart)",
+            "GET",
+            "inventory/catalog",
+            200,
+            token=self.walter_token,
+            params={"q": "mart"}
+        )
+        
+        if success and isinstance(response, list):
+            self.log(f"Catalog results: {len(response)} items", "INFO")
+            return True
+        return success
+
+    def test_inventory_summary(self):
+        """Test inventory summary (per-branch totals)"""
+        if not self.walter_token:
+            return False
+        
+        success, response = self.test(
+            "Inventory: Get summary",
+            "GET",
+            "inventory/summary",
+            200,
+            token=self.walter_token
+        )
+        
+        if success and isinstance(response, list):
+            self.log(f"Summary: {len(response)} branches", "INFO")
+            for branch in response:
+                self.log(f"  {branch.get('sucursal')}: {branch.get('items_count')} items, {branch.get('total_qty')} units", "INFO")
+            return True
+        return success
+
+    def test_inventory_stock_by_branch(self):
+        """Test get stock by branch"""
+        if not self.walter_token:
+            return False
+        
+        success, response = self.test(
+            "Inventory: Get stock for H1",
+            "GET",
+            "inventory/stock",
+            200,
+            token=self.walter_token,
+            params={"sucursal": "H1"}
+        )
+        
+        if success and isinstance(response, list):
+            self.log(f"H1 stock: {len(response)} items", "INFO")
+            return True
+        return success
+
+    def test_inventory_intake(self):
+        """Test inventory intake (add stock)"""
+        if not self.walter_token:
+            return False
+        
+        timestamp = datetime.now().strftime('%H%M%S')
+        self.test_article = f"Test Article {timestamp}"
+        
+        success, response = self.test(
+            "Inventory: Intake (add stock)",
+            "POST",
+            "inventory/intake",
+            200,
+            token=self.walter_token,
+            data={
+                "article": self.test_article,
+                "quantity": 10,
+                "sucursal": "H1"
+            }
+        )
+        
+        if success:
+            stock = response.get('stock', 0)
+            self.log(f"✓ Intake successful. Stock: {stock}", "SUCCESS")
+            return True
+        return False
+
+    def test_inventory_intake_validation(self):
+        """Test intake validation (missing article should return 400)"""
+        if not self.walter_token:
+            return False
+        
+        success, response = self.test(
+            "Inventory: Intake validation (empty article, should be 400)",
+            "POST",
+            "inventory/intake",
+            400,
+            token=self.walter_token,
+            data={
+                "article": "",
+                "quantity": 10,
+                "sucursal": "H1"
+            }
+        )
+        return success
+
+    def test_inventory_movement_missing_description(self):
+        """Test movement without description (should return 400)"""
+        if not self.walter_token or not self.test_article:
+            return False
+        
+        success, response = self.test(
+            "Inventory: Movement without description (should be 400)",
+            "POST",
+            "inventory/movement",
+            400,
+            token=self.walter_token,
+            data={
+                "article": self.test_article,
+                "quantity": 2,
+                "sucursal": "H1",
+                "description": ""
+            }
+        )
+        return success
+
+    def test_inventory_movement_insufficient_stock(self):
+        """Test movement with quantity > available (should return 409)"""
+        if not self.walter_token or not self.test_article:
+            return False
+        
+        success, response = self.test(
+            "Inventory: Movement insufficient stock (should be 409)",
+            "POST",
+            "inventory/movement",
+            409,
+            token=self.walter_token,
+            data={
+                "article": self.test_article,
+                "quantity": 999,
+                "sucursal": "H1",
+                "description": "Test movement"
+            }
+        )
+        return success
+
+    def test_inventory_movement_success(self):
+        """Test successful movement (rebaja/salida)"""
+        if not self.walter_token or not self.test_article:
+            return False
+        
+        success, response = self.test(
+            "Inventory: Movement (rebaja) success",
+            "POST",
+            "inventory/movement",
+            200,
+            token=self.walter_token,
+            data={
+                "article": self.test_article,
+                "quantity": 3,
+                "sucursal": "H1",
+                "description": "Test rebaja from backend test",
+                "solicitante": "Test User"
+            }
+        )
+        
+        if success:
+            stock = response.get('stock', 0)
+            self.log(f"✓ Movement successful. Remaining stock: {stock}", "SUCCESS")
+            return True
+        return False
+
+    def test_inventory_movements_history(self):
+        """Test get movements history"""
+        if not self.walter_token:
+            return False
+        
+        success, response = self.test(
+            "Inventory: Get movements history",
+            "GET",
+            "inventory/movements",
+            200,
+            token=self.walter_token
+        )
+        
+        if success and isinstance(response, list):
+            self.log(f"Movements history: {len(response)} movements", "INFO")
+            # Check for our test movements
+            for mov in response[:5]:
+                self.log(f"  {mov.get('type')}: {mov.get('article')} ({mov.get('quantity')}) - {mov.get('sucursal')}", "INFO")
+            return True
+        return success
+
     def run_all_tests(self):
         """Run all tests in sequence"""
         print("\n" + "="*60)
@@ -825,6 +1108,24 @@ class HERCO360Tester:
         print("\n🔍 SEARCH TESTS")
         print("-" * 60)
         self.test_search()
+
+        # Inventario tests (NEW)
+        print("\n📦 INVENTARIO TESTS (NEW MODULE)")
+        print("-" * 60)
+        self.test_inventory_login_walter()
+        self.test_inventory_login_samuel()
+        self.test_inventory_access_walter_allowed()
+        self.test_inventory_access_samuel_denied()
+        self.test_inventory_access_admin_allowed()
+        self.test_inventory_catalog_autocomplete()
+        self.test_inventory_summary()
+        self.test_inventory_stock_by_branch()
+        self.test_inventory_intake()
+        self.test_inventory_intake_validation()
+        self.test_inventory_movement_missing_description()
+        self.test_inventory_movement_insufficient_stock()
+        self.test_inventory_movement_success()
+        self.test_inventory_movements_history()
 
         return True
 

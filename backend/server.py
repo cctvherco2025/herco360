@@ -6,8 +6,8 @@ import logging
 from pathlib import Path
 
 from core import client
-from seed import seed_if_needed, migrate_activity_colors
-import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard
+from seed import seed_if_needed, migrate_activity_colors, seed_inventory
+import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard, routes_inventory
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -30,6 +30,7 @@ api_router.include_router(routes_rooms.router)
 api_router.include_router(routes_rooms.res_router)
 api_router.include_router(routes_notifications.router)
 api_router.include_router(routes_dashboard.router)
+api_router.include_router(routes_inventory.router)
 
 app.include_router(api_router)
 
@@ -51,6 +52,7 @@ async def startup():
     try:
         await seed_if_needed()
         await migrate_activity_colors()
+        await seed_inventory()
     except Exception as e:
         logger.error(f'Seed error: {e}')
 

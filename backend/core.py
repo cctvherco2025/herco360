@@ -98,3 +98,28 @@ async def require_admin(user=Depends(get_current_user)):
 
 
 USER_PUBLIC_FIELDS = {'_id': 0, 'password_hash': 0}
+
+# ---- Inventory module access control ----
+# Allowed: Tienda staff, store managers, Jefe ECCP, Operación manager, Director comercial, admins.
+def can_access_inventory(user) -> bool:
+    if not user:
+        return False
+    if user.get('role') == 'admin':
+        return True
+    area = (user.get('area') or '').strip()
+    cargo = (user.get('position') or '').strip()
+    if area == 'Tienda':
+        return True
+    if cargo == 'Director comercial':
+        return True
+    if cargo == 'Jefe' and area == 'ECCP':
+        return True
+    if cargo == 'Gerente' and area in ('Operación Tienda', 'Tienda'):
+        return True
+    return False
+
+
+async def require_inventory_access(user=Depends(get_current_user)):
+    if not can_access_inventory(user):
+        raise HTTPException(status_code=403, detail='No tienes acceso al módulo de Inventario')
+    return user
