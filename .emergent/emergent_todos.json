@@ -1,0 +1,66 @@
+[
+  {
+    "content": "Phase 2: Get premium design guidelines from design_agent",
+    "status": "in_progress"
+  },
+  {
+    "content": "Phase 2: Backend - Auth (register/login/JWT), roles, pending approval, seed admin Kevin",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Backend - Users management (list/approve/reject/role/profile)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Backend - Activities CRUD + participant responses + categories",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Backend - Meeting room + reservations + status transitions",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Backend - Notifications (auto-generate all types) + dashboard + search",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Backend - Seed realistic demo data",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Frontend - Auth + Theme contexts, protected routes",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Frontend - Login/Register pages with HERCO logo placeholder",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Frontend - App shell (floating sidebar + header)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Frontend - Dashboard (Inicio) with cards/timeline/recent/mini-calendar",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Frontend - Agenda (Month/Week/Day) main module",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Frontend - Sala de Juntas reservations",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Frontend - Usuarios management + Configuración + Notifications",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: All user stories covered in Development",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: End to End Testing using Testing Agent + fix issues",
+    "status": "pending"
+  }
+]
