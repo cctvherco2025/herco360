@@ -28,22 +28,22 @@ async def seed_if_needed():
     # ---- Users ----
     users = [
         {'name': 'Kevin Armas', 'email': 'kevin.armas@herco.com', 'role': 'admin',
-         'position': 'Administrador', 'bg': '1e395e'},
+         'position': 'Director comercial', 'area': 'ECCP', 'bg': '1e395e'},
         {'name': 'Samuel González', 'email': 'samuel.gonzalez@herco.com', 'role': 'user',
-         'position': 'Gerente Comercial', 'bg': '00a5df'},
+         'position': 'Gerente', 'area': 'Negocios País', 'bg': '00a5df'},
         {'name': 'Omar Hernández', 'email': 'omar.hernandez@herco.com', 'role': 'user',
-         'position': 'Jefe de Operaciones', 'bg': 'ec9032'},
+         'position': 'Jefe', 'area': 'Operación Tienda', 'bg': 'ec9032'},
         {'name': 'Walter Vásquez', 'email': 'walter.vasquez@herco.com', 'role': 'user',
-         'position': 'Analista de Datos', 'bg': '712146'},
+         'position': 'Coordinador', 'area': 'Tienda', 'bg': '712146'},
         {'name': 'María Pérez', 'email': 'maria.perez@herco.com', 'role': 'user',
-         'position': 'Coordinadora RRHH', 'bg': '3cbef6'},
+         'position': 'Coordinador', 'area': 'Auditoría', 'bg': '3cbef6'},
     ]
     user_docs = {}
     for u in users:
         doc = {
             'id': new_id(), 'name': u['name'], 'email': u['email'],
             'password_hash': hash_password(DEMO_PASSWORD), 'role': u['role'],
-            'status': 'approved', 'position': u['position'],
+            'status': 'approved', 'position': u['position'], 'area': u['area'],
             'avatar_url': avatar(u['name'], u['bg']), 'phone': '', 'created_at': now_iso(),
         }
         await db.users.insert_one(doc)
@@ -53,7 +53,7 @@ async def seed_if_needed():
     pending = {
         'id': new_id(), 'name': 'Roberto Mejía', 'email': 'roberto.mejia@herco.com',
         'password_hash': hash_password(DEMO_PASSWORD), 'role': 'user', 'status': 'pending',
-        'position': 'Asistente Administrativo', 'avatar_url': avatar('Roberto Mejía', '8a8b8b'),
+        'position': 'Coordinador', 'area': 'Caja', 'avatar_url': avatar('Roberto Mejía', '8a8b8b'),
         'phone': '', 'created_at': now_iso(),
     }
     await db.users.insert_one(pending)

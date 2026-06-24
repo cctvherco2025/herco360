@@ -11,6 +11,7 @@ import PendingApproval from '@/pages/PendingApproval';
 import Dashboard from '@/pages/Dashboard';
 import Agenda from '@/pages/Agenda';
 import SalaDeJuntas from '@/pages/SalaDeJuntas';
+import Inventario from '@/pages/Inventario';
 import Usuarios from '@/pages/Usuarios';
 import Configuracion from '@/pages/Configuracion';
 import Notificaciones from '@/pages/Notificaciones';
@@ -29,6 +30,7 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/agenda" element={<Agenda />} />
               <Route path="/sala-de-juntas" element={<SalaDeJuntas />} />
+              <Route path="/inventario" element={<Inventario />} />
               <Route path="/usuarios" element={<Usuarios />} />
               <Route path="/configuracion" element={<Configuracion />} />
               <Route path="/notificaciones" element={<Notificaciones />} />

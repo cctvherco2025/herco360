@@ -44,3 +44,15 @@ export const DEFAULT_ACTIVITY_COLOR = '#00a5df';
 export function colorTint(hex, isDark) {
   return `${hex}${isDark ? '33' : '1f'}`;
 }
+
+// User cargo (job title) and área (department) options
+export const CARGOS = ['Jefe', 'Coordinador', 'Gerente', 'Director comercial'];
+export const AREAS = [
+  'ECCP', 'Negocios País', 'Negocios Remotos', 'Caja', 'Ferrecréditos',
+  'Operación Tienda', 'Centro de Servicio', 'Tienda', 'Auditoría',
+];
+
+// Inventario module is exclusive to users whose área is "Tienda" (admins can also access to supervise).
+export function canAccessInventory(user) {
+  return !!user && (user.area === 'Tienda' || user.role === 'admin');
+}

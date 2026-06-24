@@ -12,6 +12,7 @@ class RegisterInput(BaseModel):
     email: EmailStr
     password: str = Field(min_length=4)
     position: Optional[str] = 'Colaborador'
+    area: Optional[str] = ''
 
 
 class LoginInput(BaseModel):
@@ -23,6 +24,7 @@ class LoginInput(BaseModel):
 class ProfileUpdate(BaseModel):
     name: Optional[str] = None
     position: Optional[str] = None
+    area: Optional[str] = None
     avatar_url: Optional[str] = None
     phone: Optional[str] = None
 

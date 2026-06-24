@@ -33,6 +33,10 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (payload) => {
     const { data } = await api.post('/auth/register', payload);
+    if (data.token) {
+      localStorage.setItem('herco_token', data.token);
+      setUser(data.user);
+    }
     return data;
   };
 

@@ -23,17 +23,22 @@ async def register(data: RegisterInput):
         'email': data.email.lower(),
         'password_hash': hash_password(data.password),
         'role': 'user',
-        'status': 'pending',
+        'status': 'approved',  # auto-approved: account is created with immediate access
         'position': data.position or 'Colaborador',
+        'area': data.area or '',
         'avatar_url': avatar_for(data.name),
         'phone': '',
         'created_at': now_iso(),
     }
     await db.users.insert_one(user)
-    await notify_admins('usuario_pendiente', f"{data.name} solicitó acceso a HERCO360",
+    # Inform admins that a new colleague joined (informational, no approval needed)
+    await notify_admins('usuario_aprobado', f"{data.name} se unió a HERCO360",
                         related_id=user['id'], related_type='user',
                         actor_name=data.name, actor_avatar=user['avatar_url'])
-    return {'message': 'Registro exitoso. Tu cuenta está pendiente de aprobación.', 'status': 'pending'}
+    token = create_access_token(user['id'])
+    user.pop('password_hash', None)
+    user.pop('_id', None)
+    return {'message': 'Cuenta creada correctamente', 'status': 'approved', 'token': token, 'user': user}
 
 
 @router.post('/login')

@@ -9,14 +9,17 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { CARGOS, AREAS } from '@/lib/constants';
 
 export default function Configuracion() {
   const { user, refreshUser } = useAuth();
   const { theme, isDark, setTheme } = useTheme();
-  const [form, setForm] = useState({ name: user?.name || '', position: user?.position || '', phone: user?.phone || '' });
+  const [form, setForm] = useState({ name: user?.name || '', position: user?.position || '', area: user?.area || '', phone: user?.phone || '' });
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const setVal = (k) => (v) => setForm({ ...form, [k]: v });
 
   const save = async () => {
     setSaving(true);
@@ -50,7 +53,20 @@ export default function Configuracion() {
             </div>
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-1.5"><Label>Nombre completo</Label><Input value={form.name} onChange={set('name')} className="h-11" data-testid="config-name-input" /></div>
-              <div className="space-y-1.5"><Label>Cargo</Label><Input value={form.position} onChange={set('position')} className="h-11" data-testid="config-position-input" /></div>
+              <div className="space-y-1.5">
+                <Label>Cargo</Label>
+                <Select value={form.position} onValueChange={setVal('position')}>
+                  <SelectTrigger className="h-11" data-testid="config-position-select"><SelectValue placeholder="Selecciona un cargo" /></SelectTrigger>
+                  <SelectContent>{CARGOS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Área</Label>
+                <Select value={form.area} onValueChange={setVal('area')}>
+                  <SelectTrigger className="h-11" data-testid="config-area-select"><SelectValue placeholder="Selecciona un área" /></SelectTrigger>
+                  <SelectContent>{AREAS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
               <div className="space-y-1.5"><Label>Teléfono</Label><Input value={form.phone} onChange={set('phone')} placeholder="Opcional" className="h-11" /></div>
               <div className="space-y-1.5"><Label>Correo</Label><Input value={user?.email} disabled className="h-11 opacity-60" /></div>
             </div>

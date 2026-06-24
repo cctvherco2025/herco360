@@ -1,13 +1,14 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun } from 'lucide-react';
+import { Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun, Boxes } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
+import { canAccessInventory } from '@/lib/constants';
 import { Logo } from '@/components/Logo';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
-const navItems = [
+const baseNavItems = [
   { to: '/', label: 'Inicio', icon: Home, testid: 'sidebar-nav-inicio', end: true },
   { to: '/agenda', label: 'Agenda', icon: CalendarDays, testid: 'sidebar-nav-agenda' },
   { to: '/sala-de-juntas', label: 'Sala de Juntas', icon: Building2, testid: 'sidebar-nav-sala' },
@@ -19,6 +20,12 @@ function SidebarContent({ onNavigate }) {
   const { user, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
+
+  // Build nav: insert "Inventario" (Tienda-only) right after Sala de Juntas
+  const navItems = [...baseNavItems];
+  if (canAccessInventory(user)) {
+    navItems.splice(3, 0, { to: '/inventario', label: 'Inventario', icon: Boxes, testid: 'sidebar-nav-inventario' });
+  }
 
   return (
     <div className="flex h-full flex-col">
