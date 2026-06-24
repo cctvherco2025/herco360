@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import {
   Boxes, PackagePlus, Store, ArrowDownUp, Save, MapPin, Search, Lock,
-  TrendingDown, TrendingUp, Package, ClipboardList,
+  TrendingDown, TrendingUp, Package, ClipboardList, FileSpreadsheet, FileText,
+  Download, Upload, Loader2, FileDown,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -18,6 +19,22 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+
+// Download a file from an authenticated API endpoint (JWT in header) as a blob.
+async function downloadFile(url, fallbackName) {
+  try {
+    const res = await api.get(url, { responseType: 'blob' });
+    const disp = res.headers['content-disposition'] || '';
+    const match = disp.match(/filename="?([^"]+)"?/);
+    const name = match ? match[1] : fallbackName;
+    const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
+    const a = document.createElement('a');
+    a.href = blobUrl; a.download = name; document.body.appendChild(a); a.click();
+    a.remove(); window.URL.revokeObjectURL(blobUrl);
+    return true;
+  } catch (e) { toast.error('No se pudo generar el archivo'); return false; }
+}
 
 function SucursalSelect({ value, onChange, testid }) {
   return (
@@ -27,6 +44,96 @@ function SucursalSelect({ value, onChange, testid }) {
       </SelectTrigger>
       <SelectContent>{SUCURSALES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
     </Select>
+  );
+}
+
+/* ----------------- Import articles via Excel ----------------- */
+function ImportCard({ onImported }) {
+  const fileRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const onPick = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!f.name.toLowerCase().endsWith('.xlsx')) { toast.error('El archivo debe ser .xlsx'); return; }
+    setUploading(true); setResult(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      const { data } = await api.post('/inventory/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setResult(data);
+      toast.success(`Importado: ${data.added_to_catalog} al catálogo, ${data.stock_entries} con stock`);
+      onImported?.();
+    } catch (err) { toast.error(err?.response?.data?.detail || 'Error al importar'); }
+    finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.1 }}
+      className="rounded-[18px] bg-card border shadow-card p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <Upload className="h-5 w-5 text-[#ec9032]" />
+        <h3 className="font-heading font-semibold">Importar artículos (Excel)</h3>
+      </div>
+      <p className="text-sm text-muted-foreground mb-4">Sube un archivo .xlsx para agregar varios artículos al catálogo (y stock opcional).</p>
+
+      <div className="rounded-xl border bg-muted/40 p-4 mb-4">
+        <p className="text-xs font-semibold text-foreground mb-2">El Excel debe llevar estas columnas:</p>
+        <div className="overflow-hidden rounded-lg border bg-card text-xs">
+          <div className="grid grid-cols-3 bg-[#1e395e] text-white font-semibold">
+            <span className="px-3 py-1.5">Articulo</span>
+            <span className="px-3 py-1.5 border-l border-white/20">Cantidad</span>
+            <span className="px-3 py-1.5 border-l border-white/20">Sucursal</span>
+          </div>
+          <div className="grid grid-cols-3 border-t">
+            <span className="px-3 py-1.5 truncate">Dual hook</span>
+            <span className="px-3 py-1.5 border-l">100</span>
+            <span className="px-3 py-1.5 border-l">H1</span>
+          </div>
+          <div className="grid grid-cols-3 border-t">
+            <span className="px-3 py-1.5 truncate">Wire basket, 1000mm*470*250mm</span>
+            <span className="px-3 py-1.5 border-l">25</span>
+            <span className="px-3 py-1.5 border-l">H2</span>
+          </div>
+          <div className="grid grid-cols-3 border-t">
+            <span className="px-3 py-1.5 truncate">Nuevo artículo</span>
+            <span className="px-3 py-1.5 border-l text-muted-foreground">(vacío)</span>
+            <span className="px-3 py-1.5 border-l text-muted-foreground">(vacío)</span>
+          </div>
+        </div>
+        <ul className="text-[11px] text-muted-foreground mt-2 space-y-0.5 list-disc pl-4">
+          <li><b>Articulo</b>: obligatorio. Si no existe, se agrega al catálogo.</li>
+          <li><b>Cantidad</b> y <b>Sucursal</b>: opcionales. Si los pones, se suma al inventario (Sucursal: {SUCURSALES.join(', ')}).</li>
+        </ul>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" className="rounded-xl" data-testid="inv-download-template"
+          onClick={() => downloadFile('/inventory/template', 'plantilla_articulos_herco360.xlsx')}>
+          <FileDown className="h-4 w-4 mr-1.5" /> Descargar plantilla
+        </Button>
+        <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={onPick} data-testid="inv-import-file" />
+        <Button className="rounded-xl bg-[#ec9032] hover:bg-[#d97f24] text-white" disabled={uploading}
+          onClick={() => fileRef.current?.click()} data-testid="inv-import-button">
+          {uploading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Upload className="h-4 w-4 mr-1.5" />}
+          {uploading ? 'Subiendo…' : 'Subir Excel'}
+        </Button>
+      </div>
+
+      {result && (
+        <div className="mt-4 rounded-xl border bg-[rgba(22,163,74,0.06)] p-3 text-sm">
+          <p className="font-medium text-[#16a34a]">Importación completada</p>
+          <p className="text-muted-foreground text-xs mt-1">{result.added_to_catalog} agregados al catálogo · {result.stock_entries} con stock</p>
+          {result.errors?.length > 0 && (
+            <div className="mt-2 text-xs text-[#dc2626]">
+              <p className="font-medium">Avisos:</p>
+              <ul className="list-disc pl-4">{result.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+            </div>
+          )}
+        </div>
+      )}
+    </motion.div>
   );
 }
 
