@@ -1,70 +1,26 @@
 [
   {
-    "content": "Phase 2: Get premium design guidelines from design_agent",
+    "content": "Agregar EMERGENT_LLM_KEY al backend/.env",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Backend - Auth (register/login/JWT), roles, pending approval, seed admin Kevin",
+    "content": "Backend: endpoint /api/inventory/image con generación Gemini Nano Banana + caché en MongoDB",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Backend - Users management (list/approve/reject/role/profile)",
+    "content": "Frontend: componente ArticleImage (skeleton, imagen, fallback)",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Backend - Activities CRUD + participant responses + categories",
+    "content": "Frontend: agregar onSelect a ArticleAutocomplete y mostrar foto al seleccionar en Productos y Movimientos",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Backend - Meeting room + reservations + status transitions",
+    "content": "Cambiar placeholder a 'Buscar artículo…' en ProductosTab",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Backend - Notifications (auto-generate all types) + dashboard + search",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: Backend - Seed realistic demo data",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: Frontend - Theme + CSS tokens (HERCO design system), fonts",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: Frontend - Auth + API contexts, protected routes",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: Frontend - Login/Register pages with HERCO logo placeholder",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: Frontend - App shell (floating sidebar + header)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: Frontend - Dashboard (Inicio) with cards/timeline/recent/mini-calendar",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: Frontend - Agenda (Month/Week/Day) main module",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: Frontend - Sala de Juntas reservations",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: Frontend - Usuarios management + Configuración + Notifications",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: All user stories covered in Development",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: End to End Testing using Testing Agent + fix issues",
+    "content": "Verificar compilación, probar endpoint y UI",
     "status": "completed"
   }
 ]

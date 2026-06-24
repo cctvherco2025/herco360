@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
  *  - fetchSuggestions(query) -> Promise<[{ name, hint? }]>
  *  - placeholder, disabled, disabledHint, testid
  */
-export default function ArticleAutocomplete({ value, onChange, fetchSuggestions, placeholder, disabled, disabledHint, testid }) {
+export default function ArticleAutocomplete({ value, onChange, onSelect, fetchSuggestions, placeholder, disabled, disabledHint, testid }) {
   const [open, setOpen] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -67,7 +67,7 @@ export default function ArticleAutocomplete({ value, onChange, fetchSuggestions,
           )}
           {!loading && suggestions.map((s) => (
             <button key={s.name} type="button"
-              onClick={() => { onChange(s.name); setOpen(false); }}
+              onClick={() => { onChange(s.name); onSelect?.(s.name); setOpen(false); }}
               className="w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-muted">
               <span className="truncate">{s.name}</span>
               {s.hint != null && <span className="text-xs text-muted-foreground shrink-0">{s.hint}</span>}

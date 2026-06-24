@@ -1,6 +1,8 @@
 """Inventory module routes (Productos / Tiendas / Movimientos). Restricted access."""
+import os
 import re
 import io
+import logging
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -35,6 +37,66 @@ async def add_catalog_item(data: CatalogItemInput, user=Depends(require_inventor
         {'$setOnInsert': {'id': new_id(), 'name': name, 'name_key': name.lower(), 'created_at': now_iso()}},
         upsert=True)
     return {'message': 'ok', 'name': name}
+
+
+# ---- Article image (AI-generated, cached) ----
+logger = logging.getLogger("inventory")
+
+
+async def _generate_article_image(article: str):
+    """Generate a clean product photo for an article using Gemini Nano Banana.
+    Returns a data URL string (data:image/...;base64,...) or None on failure."""
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        api_key = os.environ.get("EMERGENT_LLM_KEY")
+        if not api_key:
+            logger.warning("EMERGENT_LLM_KEY missing; cannot generate image")
+            return None
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=new_id(),
+            system_message="You generate clean, realistic e-commerce product catalog photos.",
+        )
+        chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
+        prompt = (
+            f"Professional e-commerce product photograph of '{article}', a retail hardware "
+            f"store item or store display fixture. Single product centered on a clean, plain "
+            f"white studio background, soft even lighting, sharp focus, high detail, realistic. "
+            f"No text, no logos, no watermark, no people. Square composition."
+        )
+        text, images = await chat.send_message_multimodal_response(UserMessage(text=prompt))
+        if images:
+            img = images[0]
+            return f"data:{img['mime_type']};base64,{img['data']}"
+        return None
+    except Exception as e:
+        logger.warning(f"Image generation failed for '{article}': {e}")
+        return None
+
+
+@router.get('/image')
+async def article_image(article: str = '', regenerate: bool = False, user=Depends(require_inventory_access)):
+    """Return a cached (or freshly generated) AI product image for an article as a data URL."""
+    name = (article or '').strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Indica el artículo')
+    key = name.lower()
+
+    if not regenerate:
+        cached = await db.inventory_images.find_one({'name_key': key}, {'_id': 0, 'data': 1})
+        if cached and cached.get('data'):
+            return {'article': name, 'data': cached['data'], 'cached': True}
+
+    data_url = await _generate_article_image(name)
+    if not data_url:
+        return {'article': name, 'data': None, 'cached': False}
+
+    await db.inventory_images.update_one(
+        {'name_key': key},
+        {'$set': {'name': name, 'name_key': key, 'data': data_url, 'updated_at': now_iso()},
+         '$setOnInsert': {'id': new_id(), 'created_at': now_iso()}},
+        upsert=True)
+    return {'article': name, 'data': data_url, 'cached': False}
 
 
 # ---- Stock ----

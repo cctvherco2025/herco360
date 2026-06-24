@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import {
   Boxes, PackagePlus, Store, ArrowDownUp, Save, MapPin, Search, Lock,
   TrendingDown, TrendingUp, Package, ClipboardList, FileSpreadsheet, FileText,
-  Download, Upload, Loader2, FileDown,
+  Download, Upload, Loader2, FileDown, Image as ImageIcon, ImageOff, RefreshCw,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -34,6 +34,64 @@ async function downloadFile(url, fallbackName) {
     a.remove(); window.URL.revokeObjectURL(blobUrl);
     return true;
   } catch (e) { toast.error('No se pudo generar el archivo'); return false; }
+}
+
+/* ----------------- AI product image for a selected article ----------------- */
+function ArticleImage({ article }) {
+  const [loading, setLoading] = useState(false);
+  const [src, setSrc] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  const load = useCallback(async (regenerate = false) => {
+    if (!article) { setSrc(null); setFailed(false); return; }
+    setLoading(true); setFailed(false); if (regenerate) setSrc(null);
+    try {
+      const url = `/inventory/image?article=${encodeURIComponent(article)}${regenerate ? '&regenerate=true' : ''}`;
+      const { data } = await api.get(url);
+      if (data?.data) { setSrc(data.data); setFailed(false); }
+      else { setSrc(null); setFailed(true); }
+    } catch (e) { setSrc(null); setFailed(true); }
+    finally { setLoading(false); }
+  }, [article]);
+
+  useEffect(() => { load(false); }, [load]);
+
+  if (!article) return null;
+
+  return (
+    <div className="rounded-xl border bg-muted/30 p-3" data-testid="article-image-card">
+      <div className="flex items-center justify-between mb-2">
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+          <ImageIcon className="h-3.5 w-3.5 text-[#00a5df]" /> Vista del artículo
+        </span>
+        {(src || failed) && (
+          <button type="button" onClick={() => load(true)} disabled={loading}
+            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+            data-testid="article-image-regenerate">
+            <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} /> Regenerar
+          </button>
+        )}
+      </div>
+      <div className="relative aspect-square w-full max-w-[220px] mx-auto overflow-hidden rounded-lg border bg-card grid place-items-center">
+        {loading && (
+          <div className="flex flex-col items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-6 w-6 animate-spin text-[#00a5df]" />
+            <span className="text-[11px]">Generando imagen…</span>
+          </div>
+        )}
+        {!loading && src && (
+          <img src={src} alt={article} className="h-full w-full object-cover" data-testid="article-image-img" />
+        )}
+        {!loading && !src && failed && (
+          <div className="flex flex-col items-center gap-1.5 text-muted-foreground px-3 text-center">
+            <ImageOff className="h-6 w-6" />
+            <span className="text-[11px]">Sin imagen disponible</span>
+          </div>
+        )}
+      </div>
+      <p className="text-xs text-center text-muted-foreground mt-2 truncate" title={article}>{article}</p>
+    </div>
+  );
 }
 
 function SucursalSelect({ value, onChange, testid }) {
@@ -140,6 +198,7 @@ function ImportCard({ onImported }) {
 /* ----------------- Productos (intake) ----------------- */
 function ProductosTab({ onChanged }) {
   const [article, setArticle] = useState('');
+  const [preview, setPreview] = useState('');
   const [quantity, setQuantity] = useState('');
   const [sucursal, setSucursal] = useState('H1');
   const [saving, setSaving] = useState(false);
@@ -163,7 +222,7 @@ function ProductosTab({ onChanged }) {
     try {
       const { data } = await api.post('/inventory/intake', { article: article.trim(), quantity: qty, sucursal });
       toast.success(`Inventariado: ${data.article} (${sucursal}) · Stock ${data.stock}`);
-      setArticle(''); setQuantity('');
+      setArticle(''); setQuantity(''); setPreview('');
       loadRecent(); onChanged?.();
     } catch (err) { toast.error(err?.response?.data?.detail || 'Error al guardar'); }
     finally { setSaving(false); }
@@ -182,9 +241,10 @@ function ProductosTab({ onChanged }) {
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label>Artículo</Label>
-            <ArticleAutocomplete value={article} onChange={setArticle} fetchSuggestions={catalogFetcher}
-              placeholder="Ej. Martillo, Taladro, Tornillos…" testid="inv-article-input" />
+            <ArticleAutocomplete value={article} onChange={setArticle} onSelect={setPreview} fetchSuggestions={catalogFetcher}
+              placeholder="Buscar artículo…" testid="inv-article-input" />
           </div>
+          {preview && <ArticleImage article={preview} />}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Cantidad</Label>
@@ -308,6 +368,7 @@ function TiendasTab({ refreshKey }) {
 function MovimientosTab({ onChanged, refreshKey }) {
   const [sucursal, setSucursal] = useState('H1');
   const [article, setArticle] = useState('');
+  const [preview, setPreview] = useState('');
   const [quantity, setQuantity] = useState('');
   const [description, setDescription] = useState('');
   const [solicitante, setSolicitante] = useState('');
@@ -336,7 +397,7 @@ function MovimientosTab({ onChanged, refreshKey }) {
         article: article.trim(), quantity: qty, sucursal, description: description.trim(), solicitante: solicitante.trim(),
       });
       toast.success(`Rebaja registrada en ${sucursal} · Stock ${data.stock}`);
-      setArticle(''); setQuantity(''); setDescription(''); setSolicitante('');
+      setArticle(''); setQuantity(''); setDescription(''); setSolicitante(''); setPreview('');
       loadMovs(); onChanged?.();
     } catch (err) { toast.error(err?.response?.data?.detail || 'Error al registrar'); }
     finally { setSaving(false); }
@@ -355,13 +416,14 @@ function MovimientosTab({ onChanged, refreshKey }) {
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label>Sucursal de origen</Label>
-            <SucursalSelect value={sucursal} onChange={(v) => { setSucursal(v); setArticle(''); }} testid="mov-sucursal-select" />
+            <SucursalSelect value={sucursal} onChange={(v) => { setSucursal(v); setArticle(''); setPreview(''); }} testid="mov-sucursal-select" />
           </div>
           <div className="space-y-1.5">
             <Label>Artículo</Label>
-            <ArticleAutocomplete value={article} onChange={setArticle} fetchSuggestions={stockFetcher}
+            <ArticleAutocomplete value={article} onChange={setArticle} onSelect={setPreview} fetchSuggestions={stockFetcher}
               placeholder={`Buscar en ${sucursal}…`} testid="mov-article-input" />
           </div>
+          {preview && <ArticleImage article={preview} />}
           <div className="space-y-1.5">
             <Label>Cantidad a rebajar</Label>
             <Input type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0" className="h-11" data-testid="mov-quantity-input" />
