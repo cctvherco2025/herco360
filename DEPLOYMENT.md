@@ -55,7 +55,7 @@ El repo ya incluye `render.yaml`, así que Render puede crear todo automáticame
    - `REACT_APP_BACKEND_URL` = URL del backend (al inicio usa la de Render, ej. `https://herco360-api.onrender.com`).
 5. **Deploy**. Cuando el backend esté arriba, comprueba `https://herco360-api.onrender.com/api/` → debe responder `{"message":"HERCO360 API","status":"ok"}`.
 
-> Nota: para subir informes de hasta **100 MB** sin cortes usa un plan **Starter** o superior en el backend (el plan Free tiene límites de memoria/tiempo).
+> Nota: para subir informes de hasta **50 MB** sin cortes usa un plan **Starter** o superior en el backend (el plan Free tiene límites de memoria/tiempo).
 
 ## 5) Dominio en GoDaddy + Render
 Recomendado: dominio para el frontend y subdominio para la API.

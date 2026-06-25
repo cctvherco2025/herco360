@@ -18,7 +18,7 @@ services:
     name: herco360-api
     runtime: python
     rootDir: backend
-    plan: starter            # súbelo si manejarás archivos grandes (100 MB)
+    plan: starter            # súbelo si manejarás archivos grandes (hasta 50 MB)
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/

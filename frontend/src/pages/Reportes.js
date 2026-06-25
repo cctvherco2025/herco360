@@ -93,7 +93,7 @@ function EnviarTab({ meta, onChanged, refreshKey }) {
     const ok = ['xlsx', 'xls', 'docx', 'doc'];
     const ext = f.name.split('.').pop().toLowerCase();
     if (!ok.includes(ext)) { toast.error('Solo Excel (.xlsx/.xls) o Word (.docx/.doc)'); return; }
-    if (f.size > 100 * 1024 * 1024) { toast.error('El archivo supera los 100 MB'); return; }
+    if (f.size > 50 * 1024 * 1024) { toast.error('El archivo supera los 50 MB'); return; }
     setFile(f);
   };
 
@@ -136,7 +136,7 @@ function EnviarTab({ meta, onChanged, refreshKey }) {
           <Send className="h-5 w-5 text-[#00a5df]" />
           <h3 className="font-heading font-semibold">Enviar informe</h3>
         </div>
-        <p className="text-sm text-muted-foreground mb-5">Adjunta tu informe (Excel o Word, hasta 100 MB) y envíalo al gerente de la tienda.</p>
+        <p className="text-sm text-muted-foreground mb-5">Adjunta tu informe (Excel o Word, hasta 50 MB) y envíalo al gerente de la tienda.</p>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -195,7 +195,7 @@ function EnviarTab({ meta, onChanged, refreshKey }) {
                 <div className="flex flex-col items-center gap-1.5 text-muted-foreground">
                   <UploadCloud className="h-7 w-7 text-[#00a5df]" />
                   <p className="text-sm font-medium text-foreground">Haz clic o arrastra tu archivo aquí</p>
-                  <p className="text-xs">Excel (.xlsx, .xls) o Word (.docx, .doc) · máx. 100 MB</p>
+                  <p className="text-xs">Excel (.xlsx, .xls) o Word (.docx, .doc) · máx. 50 MB</p>
                 </div>
               )}
               <input ref={fileRef} type="file" accept=".xlsx,.xls,.docx,.doc" className="hidden"

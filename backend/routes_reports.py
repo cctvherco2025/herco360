@@ -15,7 +15,7 @@ import storage
 router = APIRouter(prefix='/reports', tags=['reports'])
 logger = logging.getLogger("reports")
 
-MAX_SIZE = 100 * 1024 * 1024  # 100 MB
+MAX_SIZE = 50 * 1024 * 1024  # 50 MB
 ALLOWED_EXT = {'xlsx', 'xls', 'docx', 'doc'}
 EXT_MIME = {
     'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -76,7 +76,7 @@ async def upload_report(
     if size == 0:
         raise HTTPException(status_code=400, detail='El archivo está vacío')
     if size > MAX_SIZE:
-        raise HTTPException(status_code=400, detail='El archivo supera el máximo de 100 MB')
+        raise HTTPException(status_code=400, detail='El archivo supera el máximo de 50 MB')
 
     content_type = file.content_type or EXT_MIME.get(ext, 'application/octet-stream')
     path = f"{storage.APP_NAME}/reports/{user['id']}/{uuid.uuid4()}.{ext}"
