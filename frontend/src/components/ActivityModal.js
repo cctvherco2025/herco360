@@ -11,13 +11,26 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+
+const RECURRENCE_OPTIONS = [
+  { value: 'none', label: 'No se repite' },
+  { value: 'daily', label: 'Cada día' },
+  { value: 'weekly', label: 'Cada semana' },
+  { value: 'monthly', label: 'Una vez al mes' },
+];
+const RECURRENCE_HINT = {
+  daily: 'Se crearán 30 actividades diarias.',
+  weekly: 'Se crearán 12 actividades semanales (mismo día de la semana).',
+  monthly: 'Se crearán 6 actividades mensuales (mismo día del mes).',
+};
 
 const empty = (date) => ({
   title: '', color: DEFAULT_ACTIVITY_COLOR, date: date || ymd(new Date()),
   start_time: '09:00', end_time: '10:00', description: '', location: '',
-  participant_ids: [], uses_meeting_room: false,
+  participant_ids: [], uses_meeting_room: false, recurrence: 'none',
 });
 
 export default function ActivityModal({ open, onOpenChange, activity, defaultDate, onSaved }) {
@@ -37,6 +50,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
           description: activity.description || '', location: activity.location || '',
           participant_ids: (activity.participants || []).map((p) => p.user_id),
           uses_meeting_room: activity.uses_meeting_room || false,
+          recurrence: 'none',
         });
       } else {
         setForm(empty(defaultDate));
@@ -54,7 +68,10 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
     setSaving(true);
     try {
       if (isEdit) { await api.put(`/activities/${activity.id}`, form); toast.success('Actividad actualizada'); }
-      else { await api.post('/activities', form); toast.success('Actividad creada'); }
+      else {
+        const { data } = await api.post('/activities', form);
+        toast.success(data?.series_count > 1 ? `Serie creada: ${data.series_count} actividades` : 'Actividad creada');
+      }
       onOpenChange(false);
       onSaved?.();
     } catch (err) {
@@ -162,6 +179,21 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
             </div>
             <Switch checked={form.uses_meeting_room} onCheckedChange={(v) => set('uses_meeting_room', v)} data-testid="activity-form-room-switch" />
           </div>
+
+          {!isEdit && (
+            <div className="space-y-1.5">
+              <Label>Repetición</Label>
+              <Select value={form.recurrence} onValueChange={(v) => set('recurrence', v)}>
+                <SelectTrigger className="h-11" data-testid="activity-form-recurrence-select"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {RECURRENCE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {RECURRENCE_HINT[form.recurrence] && (
+                <p className="text-xs text-muted-foreground">{RECURRENCE_HINT[form.recurrence]}</p>
+              )}
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label>Notas</Label>

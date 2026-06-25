@@ -54,6 +54,8 @@ class ActivityInput(BaseModel):
     location: Optional[str] = ''
     participant_ids: List[str] = []
     uses_meeting_room: bool = False
+    recurrence: Optional[str] = 'none'  # none | daily | weekly | monthly
+    recurrence_count: Optional[int] = None
 
 
 class RespondInput(BaseModel):
@@ -96,6 +98,7 @@ REPORT_TYPES = [
     {'id': 'auditoria_etiqueta', 'label': 'Auditoría de etiqueta de precio', 'color': '#712146', 'icon': 'Tag'},
     {'id': 'productos_faltantes', 'label': 'Productos faltantes', 'color': '#ec9032', 'icon': 'PackageX'},
     {'id': 'recorrido_tienda', 'label': 'Recorrido tienda', 'color': '#00a5df', 'icon': 'Footprints'},
+    {'id': 'auditoria_guardias', 'label': 'Auditoría guardias', 'color': '#16a34a', 'icon': 'ShieldCheck'},
 ]
 
 

@@ -1,10 +1,52 @@
 """Activity (Agenda) routes."""
+import calendar
+from datetime import datetime, timedelta, date as date_cls
 from fastapi import APIRouter, HTTPException, Depends
 from core import db, get_current_user, serialize_doc, new_id, now_iso
 from models import ActivityInput, RespondInput
 from notifications import create_notification, log_activity
 
 router = APIRouter(prefix='/activities', tags=['activities'])
+
+MAX_OCCURRENCES = 60
+DEFAULT_COUNTS = {'daily': 30, 'weekly': 12, 'monthly': 6}
+
+
+def _add_months(d: date_cls, n: int) -> date_cls:
+    month = d.month - 1 + n
+    year = d.year + month // 12
+    month = month % 12 + 1
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return d.replace(year=year, month=month, day=day)
+
+
+def _gen_dates(start_str: str, recurrence: str, count) -> list:
+    """Return a list of YYYY-MM-DD date strings for the recurrence series."""
+    try:
+        d0 = datetime.strptime(start_str, '%Y-%m-%d').date()
+    except Exception:
+        return [start_str]
+    if recurrence not in ('daily', 'weekly', 'monthly'):
+        return [d0.isoformat()]
+    n = count if (isinstance(count, int) and count > 0) else DEFAULT_COUNTS[recurrence]
+    n = max(1, min(n, MAX_OCCURRENCES))
+    out = []
+    for i in range(n):
+        if recurrence == 'daily':
+            out.append((d0 + timedelta(days=i)).isoformat())
+        elif recurrence == 'weekly':
+            out.append((d0 + timedelta(weeks=i)).isoformat())
+        else:  # monthly
+            out.append(_add_months(d0, i).isoformat())
+    return out
+
+
+def _is_monday(date_str: str) -> bool:
+    try:
+        return datetime.strptime(date_str, '%Y-%m-%d').weekday() == 0
+    except Exception:
+        return False
+
 
 
 async def _build_participants(participant_ids):
@@ -20,6 +62,9 @@ async def _build_participants(participant_ids):
 
 
 async def _ensure_room_reservation(activity, actor):
+    # Mondays are reserved for Dirección Comercial — never auto-reserve the room.
+    if _is_monday(activity.get('date', '')):
+        return
     room = await db.rooms.find_one({}, {'_id': 0})
     if not room:
         return
@@ -66,28 +111,44 @@ async def get_activity(activity_id: str, user=Depends(get_current_user)):
 @router.post('')
 async def create_activity(data: ActivityInput, user=Depends(get_current_user)):
     participants = await _build_participants(data.participant_ids)
-    activity = {
-        'id': new_id(), 'title': data.title, 'color': data.color,
-        'date': data.date, 'start_time': data.start_time, 'end_time': data.end_time,
-        'description': data.description or '', 'location': data.location or '',
-        'participants': participants, 'uses_meeting_room': data.uses_meeting_room,
-        'created_by': user['id'], 'created_by_name': user['name'],
-        'created_by_avatar': user.get('avatar_url'), 'created_at': now_iso(),
-    }
-    await db.activities.insert_one(activity)
+    recurrence = (data.recurrence or 'none')
+    dates = _gen_dates(data.date, recurrence, data.recurrence_count)
+    series_id = new_id() if len(dates) > 1 else None
+
+    first_activity = None
+    for idx, dt in enumerate(dates):
+        activity = {
+            'id': new_id(), 'title': data.title, 'color': data.color,
+            'date': dt, 'start_time': data.start_time, 'end_time': data.end_time,
+            'description': data.description or '', 'location': data.location or '',
+            'participants': participants, 'uses_meeting_room': data.uses_meeting_room,
+            'recurrence': recurrence, 'series_id': series_id,
+            'created_by': user['id'], 'created_by_name': user['name'],
+            'created_by_avatar': user.get('avatar_url'), 'created_at': now_iso(),
+        }
+        await db.activities.insert_one(activity)
+        if data.uses_meeting_room:
+            await _ensure_room_reservation(activity, user)
+        if idx == 0:
+            first_activity = activity
+
+    # Log once for the whole series.
+    log_title = data.title + (f' (serie de {len(dates)})' if len(dates) > 1 else '')
     await log_activity(user['id'], user['name'], user.get('avatar_url'),
-                       'creó una actividad', data.title, 'activity')
+                       'creó una actividad', log_title, 'activity')
+    # Notify each participant once (referencing the first occurrence).
     for p in participants:
         if p['user_id'] == user['id']:
             continue
         await create_notification(p['user_id'], 'actividad_asignada',
                                   f"{user['name']} te asignó a '{data.title}'",
-                                  related_id=activity['id'], related_type='activity',
+                                  related_id=first_activity['id'], related_type='activity',
                                   actor_name=user['name'], actor_avatar=user.get('avatar_url'))
-    if data.uses_meeting_room:
-        await _ensure_room_reservation(activity, user)
-    saved = await db.activities.find_one({'id': activity['id']}, {'_id': 0})
-    return serialize_doc(saved)
+
+    saved = await db.activities.find_one({'id': first_activity['id']}, {'_id': 0})
+    result = serialize_doc(saved)
+    result['series_count'] = len(dates)
+    return result
 
 
 @router.put('/{activity_id}')

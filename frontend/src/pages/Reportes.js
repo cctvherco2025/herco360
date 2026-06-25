@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import {
   FileText, Upload, Download, Loader2, Lock, Send, Inbox, Store, CalendarDays,
   Tag, PackageX, Footprints, CheckCircle2, Clock, Trash2, MessageSquare,
-  FileSpreadsheet, X, UploadCloud, Filter, BadgeCheck,
+  FileSpreadsheet, X, UploadCloud, Filter, BadgeCheck, ShieldCheck,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -21,7 +21,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger,
 } from '@/components/ui/dialog';
 
-const TYPE_ICONS = { Tag, PackageX, Footprints, FileText };
+const TYPE_ICONS = { Tag, PackageX, Footprints, ShieldCheck, FileText };
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 function monthLabel(ym) {

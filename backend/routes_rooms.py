@@ -68,6 +68,15 @@ async def list_reservations(date: str = None, room_id: str = None, upcoming: boo
 
 @res_router.post('')
 async def create_reservation(data: ReservationInput, user=Depends(get_current_user)):
+    # Mondays are reserved for Dirección Comercial's weekly meeting.
+    try:
+        if datetime.strptime(data.date, '%Y-%m-%d').weekday() == 0:
+            raise HTTPException(status_code=409,
+                                detail='Los lunes la Sala de Juntas está reservada para la reunión de Dirección Comercial')
+    except HTTPException:
+        raise
+    except Exception:
+        pass
     room = None
     if data.room_id:
         room = await db.rooms.find_one({'id': data.room_id}, {'_id': 0})

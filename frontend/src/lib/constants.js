@@ -60,6 +60,7 @@ export const REPORT_TYPES = [
   { id: 'auditoria_etiqueta', label: 'Auditoría de etiqueta de precio', color: '#712146', icon: 'Tag' },
   { id: 'productos_faltantes', label: 'Productos faltantes', color: '#ec9032', icon: 'PackageX' },
   { id: 'recorrido_tienda', label: 'Recorrido tienda', color: '#00a5df', icon: 'Footprints' },
+  { id: 'auditoria_guardias', label: 'Auditoría guardias', color: '#16a34a', icon: 'ShieldCheck' },
 ];
 
 export function reportTypeMeta(id) {

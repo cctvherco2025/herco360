@@ -1,34 +1,18 @@
 [
   {
-    "content": "Backend: storage.py (helper Emergent object storage)",
+    "content": "Agregar 4º informe 'Auditoría guardias' (backend + frontend + icono)",
     "status": "completed"
   },
   {
-    "content": "Backend: models (REPORT_TYPES, ReportReviewInput, sucursal en Register/Profile)",
+    "content": "Bloquear lunes en Sala de Juntas (backend rechaza + UI con bloqueo visual y avisos)",
     "status": "completed"
   },
   {
-    "content": "Backend: routes_reports.py (upload/list/download/review/delete) + montar en server.py + init storage",
+    "content": "Recurrencia de actividades en Agenda (backend genera serie + selector en modal)",
     "status": "completed"
   },
   {
-    "content": "Backend: guardar sucursal en registro (routes_auth)",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: constants (REPORT_TYPES, canAccessReports) + ruta /reportes + item sidebar",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: campo Tienda en Register y Configuracion",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: página Reportes.js (Enviar + Recibidos, subir con progreso, descargar, revisar)",
-    "status": "completed"
-  },
-  {
-    "content": "Probar backend (upload/list/download/review) y verificar UI con screenshot",
+    "content": "Probar backend y verificar UI",
     "status": "completed"
   }
 ]

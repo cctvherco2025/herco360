@@ -16,6 +16,28 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 
 const ICONS = { CircleCheck, CircleX, Bookmark, Ban, Flag };
 
+function isMondayStr(ds) {
+  if (!ds || typeof ds !== 'string') return false;
+  const [y, m, d] = ds.split('-').map(Number);
+  return new Date(y, m - 1, d).getDay() === 1;
+}
+
+// Synthetic recurring "Dirección Comercial" Monday block for the visible range.
+function mondayBlocks(anchor) {
+  const start = addDays(startOfWeek(anchor), -35);
+  const out = [];
+  for (let i = 0; i < 91; i++) {
+    const d = addDays(start, i);
+    if (d.getDay() === 1) {
+      out.push({
+        id: `dc-${ymd(d)}`, title: 'Reunión Dirección Comercial', date: ymd(d),
+        start_time: '08:00', end_time: '18:00', color: '#712146', status: 'Bloqueado', locked: true,
+      });
+    }
+  }
+  return out;
+}
+
 function StatusBadge({ status, size = 'sm' }) {
   const s = ROOM_STATES[status] || ROOM_STATES['Disponible'];
   const Icon = ICONS[s.icon] || CircleCheck;
@@ -49,22 +71,33 @@ export default function SalaDeJuntas() {
   const status = room?.current_status || 'Disponible';
 
   // Calendar events from reservations (color by status), excludes cancelled to keep the calendar clean
-  const calendarEvents = reservations
-    .filter((r) => r.status !== 'Cancelada')
-    .map((r) => ({
-      id: r.id, title: r.title, date: r.date,
-      start_time: r.start_time, end_time: r.end_time,
-      color: (ROOM_STATES[r.status] || ROOM_STATES['Reservada']).solid,
-      status: r.status,
-    }));
+  const calendarEvents = [
+    ...mondayBlocks(anchor),
+    ...reservations
+      .filter((r) => r.status !== 'Cancelada')
+      .map((r) => ({
+        id: r.id, title: r.title, date: r.date,
+        start_time: r.start_time, end_time: r.end_time,
+        color: (ROOM_STATES[r.status] || ROOM_STATES['Reservada']).solid,
+        status: r.status,
+      })),
+  ];
 
   const openReserve = (dateStr) => {
-    setForm({ title: '', date: typeof dateStr === 'string' ? dateStr : ymd(new Date()), start_time: '09:00', end_time: '10:00', notes: '' });
+    if (typeof dateStr === 'string') {
+      if (isMondayStr(dateStr)) { toast.error('Los lunes la Sala de Juntas está reservada para Dirección Comercial'); return; }
+      setForm({ title: '', date: dateStr, start_time: '09:00', end_time: '10:00', notes: '' });
+    } else {
+      let d = ymd(new Date());
+      if (isMondayStr(d)) d = ymd(addDays(new Date(), 1));  // skip Monday default
+      setForm({ title: '', date: d, start_time: '09:00', end_time: '10:00', notes: '' });
+    }
     setOpen(true);
   };
 
   const save = async () => {
     if (!form.title.trim()) { toast.error('Ingresa un título'); return; }
+    if (isMondayStr(form.date)) { toast.error('Los lunes la sala está reservada para Dirección Comercial. Elige otro día.'); return; }
     if (form.end_time <= form.start_time) { toast.error('La hora de fin debe ser mayor'); return; }
     setSaving(true);
     try { await api.post('/reservations', { ...form, room_id: room?.id }); toast.success('Sala reservada'); setOpen(false); load(); }
@@ -156,7 +189,7 @@ export default function SalaDeJuntas() {
             </Tabs>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground mb-3">Haz clic en una fecha para reservar la sala ese día.</p>
+        <p className="text-xs text-muted-foreground mb-3">Haz clic en una fecha para reservar la sala ese día. <span className="text-[#712146] font-medium">Los lunes están reservados para Dirección Comercial.</span></p>
         <div className="overflow-hidden">
           {view === 'Mes' && <MonthView anchor={anchor} activities={calendarEvents} onEventClick={(ev) => openReserve(ev.date)} onSlotClick={(ds) => openReserve(ds)} />}
           {view === 'Semana' && <WeekView anchor={anchor} activities={calendarEvents} onEventClick={(ev) => openReserve(ev.date)} onSlotClick={(ds) => openReserve(ds)} />}
@@ -226,10 +259,15 @@ export default function SalaDeJuntas() {
               <div className="space-y-1.5"><Label>Fin</Label><Input type="time" value={form.end_time} onChange={set('end_time')} className="h-11" /></div>
             </div>
             <div className="space-y-1.5"><Label>Notas</Label><Textarea value={form.notes} onChange={set('notes')} rows={2} placeholder="Detalles adicionales…" /></div>
+            {isMondayStr(form.date) && (
+              <div className="rounded-xl bg-[rgba(113,33,70,0.1)] text-[#712146] text-xs font-medium px-3 py-2 flex items-center gap-2">
+                <Ban className="h-4 w-4 shrink-0" /> Los lunes la sala está reservada para Dirección Comercial. Elige otro día.
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} className="rounded-xl">Cancelar</Button>
-            <Button onClick={save} disabled={saving} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="reservation-submit">{saving ? 'Reservando…' : 'Reservar'}</Button>
+            <Button onClick={save} disabled={saving || isMondayStr(form.date)} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="reservation-submit">{saving ? 'Reservando…' : 'Reservar'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
