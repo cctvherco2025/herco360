@@ -11,6 +11,7 @@ import PendingApproval from '@/pages/PendingApproval';
 import Dashboard from '@/pages/Dashboard';
 import Agenda from '@/pages/Agenda';
 import SalaDeJuntas from '@/pages/SalaDeJuntas';
+import SalaPublica from '@/pages/SalaPublica';
 import Inventario from '@/pages/Inventario';
 import Reportes from '@/pages/Reportes';
 import Usuarios from '@/pages/Usuarios';
@@ -27,6 +28,7 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/pending" element={<PendingApproval />} />
+            <Route path="/sala" element={<SalaPublica />} />
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/agenda" element={<Agenda />} />

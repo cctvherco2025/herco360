@@ -7,7 +7,7 @@ from pathlib import Path
 
 from core import client
 from seed import seed_if_needed, migrate_activity_colors, seed_inventory
-import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard, routes_inventory, routes_reports
+import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard, routes_inventory, routes_reports, routes_public
 import storage
 
 ROOT_DIR = Path(__file__).parent
@@ -33,6 +33,7 @@ api_router.include_router(routes_notifications.router)
 api_router.include_router(routes_dashboard.router)
 api_router.include_router(routes_inventory.router)
 api_router.include_router(routes_reports.router)
+api_router.include_router(routes_public.router)
 
 app.include_router(api_router)
 

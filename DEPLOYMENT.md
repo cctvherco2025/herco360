@@ -81,6 +81,14 @@ Una vez que el dominio funcione, actualiza y vuelve a desplegar:
 
 ---
 
+## 🔓 Acceso público a la Sala de Juntas (sin cuenta)
+Hay una página pública para que cualquier persona reserve la sala **sin iniciar sesión**:
+- URL: `https://app.tudominio.com/sala`  (en preview: `.../sala`)
+- Solo pide el **nombre** para reservar. El invitado puede **cancelar su propia reserva**
+  (se guarda un token en su navegador). Los **lunes** siguen bloqueados para Dirección Comercial.
+- Estas reservas también aparecen en la Sala de Juntas interna para el personal con cuenta.
+- Comparte ese enlace (o un acceso directo / QR) con quienes no tendrán usuario.
+
 ## 🔐 Primer usuario administrador
 El registro crea usuarios normales (auto-aprobados). Para tener un **admin**, tras el primer
 registro marca tu usuario como admin en Atlas:

@@ -1,18 +1,26 @@
 [
   {
-    "content": "Agregar 4º informe 'Auditoría guardias' (backend + frontend + icono)",
+    "content": "Backend: endpoints públicos (room, list, create, cancel con guest_token) + Monday block",
     "status": "completed"
   },
   {
-    "content": "Bloquear lunes en Sala de Juntas (backend rechaza + UI con bloqueo visual y avisos)",
+    "content": "Backend: montar routes_public en server.py",
     "status": "completed"
   },
   {
-    "content": "Recurrencia de actividades en Agenda (backend genera serie + selector en modal)",
+    "content": "Frontend: página pública /sala (calendario, reservar con nombre, cancelar propia)",
     "status": "completed"
   },
   {
-    "content": "Probar backend y verificar UI",
+    "content": "Frontend: ruta pública /sala fuera de auth",
+    "status": "completed"
+  },
+  {
+    "content": "Probar endpoints públicos + UI",
+    "status": "completed"
+  },
+  {
+    "content": "Documentar enlace público en DEPLOYMENT.md",
     "status": "completed"
   }
 ]

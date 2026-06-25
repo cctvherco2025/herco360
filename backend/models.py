@@ -105,3 +105,16 @@ REPORT_TYPES = [
 class ReportReviewInput(BaseModel):
     comment: Optional[str] = ''
 
+
+# ---- Public (guest) meeting-room reservations ----
+class PublicReservationInput(BaseModel):
+    title: str
+    date: str  # YYYY-MM-DD
+    start_time: str  # HH:MM
+    end_time: str  # HH:MM
+    guest_name: str
+
+
+class GuestCancelInput(BaseModel):
+    guest_token: str
+
