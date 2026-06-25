@@ -1,0 +1,64 @@
+# ======================================================================
+# HERCO360 — Render Blueprint (Infrastructure as Code)
+# Despliega el BACKEND (FastAPI) y el FRONTEND (React) en Render.
+#
+# Cómo usarlo:
+#   1. Sube este repo a GitHub.
+#   2. En Render: New > Blueprint > selecciona el repo (usa este render.yaml).
+#   3. Render creará los 2 servicios. Completa las variables marcadas como
+#      "sync: false" (son secretas: Mongo Atlas, Cloudflare R2, etc.).
+#
+# NOTA: Las variables con "sync: false" NO se versionan; se cargan a mano en
+#       el panel de Render (Environment) por seguridad.
+# ======================================================================
+
+services:
+  # -------------------- BACKEND (FastAPI) --------------------
+  - type: web
+    name: herco360-api
+    runtime: python
+    rootDir: backend
+    plan: starter            # súbelo si manejarás archivos grandes (100 MB)
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/
+    envVars:
+      # --- Base de datos (MongoDB Atlas) ---
+      - key: MONGO_URL
+        sync: false          # mongodb+srv://usuario:pass@cluster.xxxx.mongodb.net/?retryWrites=true&w=majority
+      - key: DB_NAME
+        value: herco360
+      # --- Seguridad ---
+      - key: JWT_SECRET
+        generateValue: true  # Render genera una clave segura (>=32 chars)
+      # --- CORS: dominio(s) del frontend separados por coma ---
+      - key: CORS_ORIGINS
+        sync: false          # https://app.tudominio.com,https://herco360-web.onrender.com
+      # --- Almacenamiento de archivos: Cloudflare R2 ---
+      - key: STORAGE_PROVIDER
+        value: r2
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false          # ej. herco360-reportes
+
+  # -------------------- FRONTEND (React / CRA) --------------------
+  - type: web
+    name: herco360-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: yarn install && yarn build
+    staticPublishPath: build
+    envVars:
+      # URL pública del backend (sin slash final). Se usa en build.
+      - key: REACT_APP_BACKEND_URL
+        sync: false          # https://api.tudominio.com  (o https://herco360-api.onrender.com)
+    routes:
+      # SPA: cualquier ruta cae en index.html (React Router)
+      - type: rewrite
+        source: /*
+        destination: /index.html
