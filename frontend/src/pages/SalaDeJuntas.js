@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Building2, Plus, MapPin, Users as UsersIcon, CircleCheck, CircleX, Bookmark, Ban, Flag, Clock, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Building2, Plus, MapPin, Users as UsersIcon, CircleCheck, CircleX, Bookmark, Ban, Flag, Clock, Calendar, ChevronLeft, ChevronRight, QrCode, Copy, Download } from 'lucide-react';
 import { toast } from 'sonner';
+import { QRCodeCanvas } from 'qrcode.react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { ROOM_STATES } from '@/lib/constants';
@@ -58,6 +59,25 @@ export default function SalaDeJuntas() {
   const [saving, setSaving] = useState(false);
   const [view, setView] = useState('Mes');
   const [anchor, setAnchor] = useState(new Date());
+  const [qrOpen, setQrOpen] = useState(false);
+
+  // Public booking link (no login required) — points to the current domain.
+  const salaUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/sala';
+
+  const copySalaLink = async () => {
+    try { await navigator.clipboard.writeText(salaUrl); toast.success('Enlace copiado'); }
+    catch (e) { toast.error('No se pudo copiar'); }
+  };
+
+  const downloadQr = () => {
+    const canvas = document.getElementById('sala-qr-canvas');
+    if (!canvas) return;
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url; a.download = 'sala-de-juntas-qr.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    toast.success('QR descargado');
+  };
 
   const load = useCallback(async () => {
     try {
@@ -133,7 +153,10 @@ export default function SalaDeJuntas() {
           <h1 className="font-heading text-2xl sm:text-3xl font-semibold">Sala de Juntas</h1>
           <p className="text-muted-foreground text-sm mt-0.5">Consulta el estado y gestiona las reservas</p>
         </div>
-        <Button onClick={() => openReserve()} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="room-reserve-button"><Plus className="h-4 w-4 mr-1" /> Reservar sala</Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => setQrOpen(true)} variant="outline" className="rounded-xl" data-testid="room-qr-button"><QrCode className="h-4 w-4 mr-1.5" /> QR para reservar</Button>
+          <Button onClick={() => openReserve()} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="room-reserve-button"><Plus className="h-4 w-4 mr-1" /> Reservar sala</Button>
+        </div>
       </div>
 
       {/* Hero status card */}
@@ -269,6 +292,28 @@ export default function SalaDeJuntas() {
             <Button variant="outline" onClick={() => setOpen(false)} className="rounded-xl">Cancelar</Button>
             <Button onClick={save} disabled={saving || isMondayStr(form.date)} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="reservation-submit">{saving ? 'Reservando…' : 'Reservar'}</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* QR dialog */}
+      <Dialog open={qrOpen} onOpenChange={setQrOpen}>
+        <DialogContent className="sm:max-w-[420px] rounded-[22px]">
+          <DialogHeader>
+            <DialogTitle className="font-heading flex items-center gap-2"><QrCode className="h-5 w-5 text-[#00a5df]" /> Reservar por QR</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center text-center py-2">
+            <p className="text-sm text-muted-foreground mb-4">
+              Escanea este código para abrir la página pública y apartar la Sala de Juntas, sin necesidad de iniciar sesión.
+            </p>
+            <div className="rounded-2xl bg-white p-5 shadow-card border" data-testid="sala-qr-box">
+              <QRCodeCanvas id="sala-qr-canvas" value={salaUrl} size={220} level="M" marginSize={2} fgColor="#1e395e" bgColor="#ffffff" />
+            </div>
+            <div className="mt-4 w-full rounded-xl border bg-muted/40 px-3 py-2 text-xs text-muted-foreground break-all" data-testid="sala-qr-url">{salaUrl}</div>
+            <div className="mt-4 flex gap-2 w-full">
+              <Button variant="outline" onClick={copySalaLink} className="flex-1 rounded-xl" data-testid="sala-qr-copy"><Copy className="h-4 w-4 mr-1.5" /> Copiar enlace</Button>
+              <Button onClick={downloadQr} className="flex-1 rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="sala-qr-download"><Download className="h-4 w-4 mr-1.5" /> Descargar QR</Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
