@@ -81,7 +81,11 @@ export function canAccessInventory(user) {
   return false;
 }
 
-// Reportes module: same access group as Inventario (Tienda staff & managers).
+// Reportes module: belongs to ECCP (owners) who deliver reports to Tienda.
+// Access limited to ECCP, Tienda and admins.
 export function canAccessReports(user) {
-  return canAccessInventory(user);
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const area = (user.area || '').trim();
+  return area === 'ECCP' || area === 'Tienda';
 }

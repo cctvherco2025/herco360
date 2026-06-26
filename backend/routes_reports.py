@@ -8,7 +8,7 @@ import uuid
 import logging
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response
-from core import db, require_inventory_access, serialize_doc, new_id, now_iso
+from core import db, require_reports_access, serialize_doc, new_id, now_iso
 from models import REPORT_TYPES, SUCURSALES, ReportReviewInput
 import storage
 
@@ -40,7 +40,7 @@ def _sees_all(user) -> bool:
 
 
 @router.get('/meta')
-async def meta(user=Depends(require_inventory_access)):
+async def meta(user=Depends(require_reports_access)):
     return {
         'types': REPORT_TYPES,
         'sucursales': SUCURSALES,
@@ -57,7 +57,7 @@ async def upload_report(
     period_month: str = Form(...),
     sucursal: str = Form(...),
     notes: str = Form(''),
-    user=Depends(require_inventory_access),
+    user=Depends(require_reports_access),
 ):
     if type not in REPORT_TYPE_IDS:
         raise HTTPException(status_code=400, detail='Tipo de informe inválido')
@@ -116,7 +116,7 @@ async def upload_report(
 
 @router.get('')
 async def list_reports(box: str = 'sent', type: str = None, sucursal: str = None,
-                       period_month: str = None, user=Depends(require_inventory_access)):
+                       period_month: str = None, user=Depends(require_reports_access)):
     query = {'is_deleted': False}
     if box == 'sent':
         query['uploaded_by'] = user['id']
@@ -137,7 +137,7 @@ async def list_reports(box: str = 'sent', type: str = None, sucursal: str = None
 
 
 @router.get('/stats')
-async def stats(user=Depends(require_inventory_access)):
+async def stats(user=Depends(require_reports_access)):
     base = {'is_deleted': False}
     if _sees_all(user):
         recv = base
@@ -150,7 +150,7 @@ async def stats(user=Depends(require_inventory_access)):
 
 
 @router.get('/{report_id}/download')
-async def download_report(report_id: str, user=Depends(require_inventory_access)):
+async def download_report(report_id: str, user=Depends(require_reports_access)):
     rep = await db.reports.find_one({'id': report_id, 'is_deleted': False}, {'_id': 0})
     if not rep:
         raise HTTPException(status_code=404, detail='Informe no encontrado')
@@ -168,7 +168,7 @@ async def download_report(report_id: str, user=Depends(require_inventory_access)
 
 
 @router.post('/{report_id}/review')
-async def review_report(report_id: str, data: ReportReviewInput, user=Depends(require_inventory_access)):
+async def review_report(report_id: str, data: ReportReviewInput, user=Depends(require_reports_access)):
     if not _can_review(user):
         raise HTTPException(status_code=403, detail='Solo el gerente puede marcar como revisado')
     rep = await db.reports.find_one({'id': report_id, 'is_deleted': False})
@@ -188,7 +188,7 @@ async def review_report(report_id: str, data: ReportReviewInput, user=Depends(re
 
 
 @router.delete('/{report_id}')
-async def delete_report(report_id: str, user=Depends(require_inventory_access)):
+async def delete_report(report_id: str, user=Depends(require_reports_access)):
     rep = await db.reports.find_one({'id': report_id, 'is_deleted': False})
     if not rep:
         raise HTTPException(status_code=404, detail='Informe no encontrado')

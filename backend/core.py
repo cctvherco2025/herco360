@@ -123,3 +123,21 @@ async def require_inventory_access(user=Depends(get_current_user)):
     if not can_access_inventory(user):
         raise HTTPException(status_code=403, detail='No tienes acceso al módulo de Inventario')
     return user
+
+
+# ---- Reports module access control ----
+# The Reports module belongs to ECCP (owners) who deliver reports to Tienda.
+# Access is limited to ECCP, Tienda and admins.
+def can_access_reports(user) -> bool:
+    if not user:
+        return False
+    if user.get('role') == 'admin':
+        return True
+    area = (user.get('area') or '').strip()
+    return area in ('ECCP', 'Tienda')
+
+
+async def require_reports_access(user=Depends(get_current_user)):
+    if not can_access_reports(user):
+        raise HTTPException(status_code=403, detail='No tienes acceso al módulo de Reportes')
+    return user
