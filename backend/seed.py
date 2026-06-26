@@ -26,7 +26,7 @@ async def seed_if_needed():
     if await db.rooms.count_documents({}) == 0:
         await db.rooms.insert_one({
             'id': new_id(), 'name': 'Sala de Juntas Principal', 'capacity': 12,
-            'location': 'Edificio Corporativo HERCO', 'status': 'Disponible',
+            'location': 'Segunda planta - Oficinas comerciales, Herco Max', 'status': 'Disponible',
             'created_at': now_iso(),
         })
     # Demo users/activities/reservations only in dev/preview. Production stays clean.
@@ -193,6 +193,15 @@ async def bootstrap_admins():
             {'$set': {'role': 'admin', 'status': 'approved'}})
         if res.modified_count:
             print(f'[BOOTSTRAP] {email} promoted to admin.')
+
+
+async def migrate_room_info():
+    """Keep the meeting room location/capacity in sync with the latest config."""
+    await db.rooms.update_many({}, {'$set': {
+        'location': 'Segunda planta - Oficinas comerciales, Herco Max',
+        'capacity': 12,
+    }})
+
 
 
 async def migrate_activity_colors():
