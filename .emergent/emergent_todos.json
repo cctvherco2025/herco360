@@ -1,26 +1,26 @@
 [
   {
-    "content": "Backend: endpoints públicos (room, list, create, cancel con guest_token) + Monday block",
+    "content": "Backend: endpoints admin crear/editar/borrar usuarios",
     "status": "completed"
   },
   {
-    "content": "Backend: montar routes_public en server.py",
+    "content": "Backend: bootstrap ADMIN_EMAILS + conectar en server.py",
     "status": "completed"
   },
   {
-    "content": "Frontend: página pública /sala (calendario, reservar con nombre, cancelar propia)",
+    "content": "Backend: bloquear uso de sala en lunes al crear actividad (mismo mensaje)",
     "status": "completed"
   },
   {
-    "content": "Frontend: ruta pública /sala fuera de auth",
+    "content": "Frontend: Agenda mostrar mensaje de lunes bloqueado al activar sala",
     "status": "completed"
   },
   {
-    "content": "Probar endpoints públicos + UI",
+    "content": "Frontend: UI crear/editar/borrar en panel Usuarios (solo admin)",
     "status": "completed"
   },
   {
-    "content": "Documentar enlace público en DEPLOYMENT.md",
+    "content": "Probar backend (curl) y verificar",
     "status": "completed"
   }
 ]

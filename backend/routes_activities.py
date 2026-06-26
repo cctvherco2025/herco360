@@ -110,6 +110,10 @@ async def get_activity(activity_id: str, user=Depends(get_current_user)):
 
 @router.post('')
 async def create_activity(data: ActivityInput, user=Depends(get_current_user)):
+    # Mondays the meeting room is reserved for Dirección Comercial.
+    if data.uses_meeting_room and _is_monday(data.date):
+        raise HTTPException(status_code=409,
+                            detail='Los lunes la Sala de Juntas está reservada para Dirección Comercial')
     participants = await _build_participants(data.participant_ids)
     recurrence = (data.recurrence or 'none')
     dates = _gen_dates(data.date, recurrence, data.recurrence_count)
@@ -156,6 +160,10 @@ async def update_activity(activity_id: str, data: ActivityInput, user=Depends(ge
     a = await db.activities.find_one({'id': activity_id}, {'_id': 0})
     if not a:
         raise HTTPException(status_code=404, detail='Actividad no encontrada')
+    # Mondays the meeting room is reserved for Dirección Comercial.
+    if data.uses_meeting_room and _is_monday(data.date):
+        raise HTTPException(status_code=409,
+                            detail='Los lunes la Sala de Juntas está reservada para Dirección Comercial')
     participants = await _build_participants(data.participant_ids)
     # preserve existing response status
     prev = {p['user_id']: p['status'] for p in a.get('participants', [])}

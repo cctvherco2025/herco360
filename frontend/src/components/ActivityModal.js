@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Check, Trash2, Users as UsersIcon } from 'lucide-react';
+import { Check, Trash2, Users as UsersIcon, AlertTriangle } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { ACTIVITY_COLORS, DEFAULT_ACTIVITY_COLOR } from '@/lib/constants';
@@ -62,9 +62,20 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   const toggleParticipant = (id) => set('participant_ids', form.participant_ids.includes(id)
     ? form.participant_ids.filter((x) => x !== id) : [...form.participant_ids, id]);
 
+  // Mondays the meeting room is reserved for Dirección Comercial.
+  const MONDAY_MSG = 'Los lunes la Sala de Juntas está reservada para Dirección Comercial';
+  const isMondaySelected = (() => {
+    if (!form.date) return false;
+    const parts = form.date.split('-').map(Number);
+    if (parts.length !== 3 || parts.some((n) => !n)) return false;
+    return new Date(parts[0], parts[1] - 1, parts[2]).getDay() === 1; // 1 = Monday
+  })();
+  const roomBlocked = form.uses_meeting_room && isMondaySelected;
+
   const save = async () => {
     if (!form.title.trim()) { toast.error('Ingresa un título'); return; }
     if (form.end_time <= form.start_time) { toast.error('La hora de fin debe ser mayor a la de inicio'); return; }
+    if (roomBlocked) { toast.error(MONDAY_MSG); return; }
     setSaving(true);
     try {
       if (isEdit) { await api.put(`/activities/${activity.id}`, form); toast.success('Actividad actualizada'); }
@@ -180,6 +191,13 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
             <Switch checked={form.uses_meeting_room} onCheckedChange={(v) => set('uses_meeting_room', v)} data-testid="activity-form-room-switch" />
           </div>
 
+          {roomBlocked && (
+            <div className="flex items-start gap-2 rounded-xl border border-[rgba(220,38,38,0.35)] bg-[rgba(220,38,38,0.08)] px-4 py-3" data-testid="activity-form-monday-warning">
+              <AlertTriangle className="h-4 w-4 text-[#dc2626] shrink-0 mt-0.5" />
+              <p className="text-xs text-[#dc2626]">{MONDAY_MSG}. Elige otro día o desactiva la reserva de sala.</p>
+            </div>
+          )}
+
           {!isEdit && (
             <div className="space-y-1.5">
               <Label>Repetición</Label>
@@ -207,7 +225,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
             </Button>
           )}
           <Button variant="outline" onClick={() => onOpenChange(false)} className="rounded-xl">Cancelar</Button>
-          <Button onClick={save} disabled={saving} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="activity-form-submit-button">
+          <Button onClick={save} disabled={saving || roomBlocked} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="activity-form-submit-button">
             {saving ? 'Guardando…' : (isEdit ? 'Guardar cambios' : 'Crear actividad')}
           </Button>
         </DialogFooter>

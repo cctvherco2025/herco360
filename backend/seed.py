@@ -179,6 +179,21 @@ async def seed_if_needed():
     print('[SEED] HERCO360 demo data created successfully.')
 
 
+async def bootstrap_admins():
+    """Promote configured emails to admin on startup.
+
+    Set env ADMIN_EMAILS (comma-separated) in production to grant admin to
+    existing accounts without touching the database manually.
+    """
+    raw = os.environ.get('ADMIN_EMAILS', '')
+    emails = [e.strip().lower() for e in raw.split(',') if e.strip()]
+    for email in emails:
+        res = await db.users.update_one(
+            {'email': email},
+            {'$set': {'role': 'admin', 'status': 'approved'}})
+        if res.modified_count:
+            print(f'[BOOTSTRAP] {email} promoted to admin.')
+
 
 async def migrate_activity_colors():
     """Backfill `color` on activities created before the color feature (derive from legacy category)."""

@@ -36,6 +36,27 @@ class RoleUpdate(BaseModel):
     role: str  # admin | user
 
 
+class AdminUserCreate(BaseModel):
+    name: str
+    email: EmailStr
+    password: str = Field(min_length=4)
+    position: Optional[str] = 'Colaborador'
+    area: Optional[str] = ''
+    sucursal: Optional[str] = ''
+    role: str = 'user'  # admin | user
+
+
+class AdminUserUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    position: Optional[str] = None
+    area: Optional[str] = None
+    sucursal: Optional[str] = None
+    role: Optional[str] = None
+    status: Optional[str] = None
+
+
 # ---- Activities ----
 class Participant(BaseModel):
     user_id: str
