@@ -62,6 +62,23 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   const toggleParticipant = (id) => set('participant_ids', form.participant_ids.includes(id)
     ? form.participant_ids.filter((x) => x !== id) : [...form.participant_ids, id]);
 
+  // Group selectable users by área so a whole team can be added at once.
+  const groupedUsers = users.reduce((acc, u) => {
+    const area = (u.area || '').trim() || 'Sin área';
+    (acc[area] = acc[area] || []).push(u);
+    return acc;
+  }, {});
+  const areaIds = (area) => groupedUsers[area].map((u) => u.id);
+  const areaAllSelected = (area) => groupedUsers[area].every((u) => form.participant_ids.includes(u.id));
+  const toggleArea = (area) => {
+    const ids = areaIds(area);
+    if (areaAllSelected(area)) {
+      set('participant_ids', form.participant_ids.filter((id) => !ids.includes(id)));
+    } else {
+      set('participant_ids', Array.from(new Set([...form.participant_ids, ...ids])));
+    }
+  };
+
   // Mondays the meeting room is reserved for Dirección Comercial.
   const MONDAY_MSG = 'Los lunes la Sala de Juntas está reservada para Dirección Comercial';
   const isMondaySelected = (() => {
@@ -163,19 +180,37 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
                   ))}
                 </button>
               </PopoverTrigger>
-              <PopoverContent align="start" className="w-[--radix-popover-trigger-width] p-1.5 rounded-2xl max-h-[260px] overflow-y-auto">
-                {users.map((u) => {
-                  const active = form.participant_ids.includes(u.id);
+              <PopoverContent align="start" className="w-[--radix-popover-trigger-width] p-1.5 rounded-2xl max-h-[300px] overflow-y-auto">
+                {Object.keys(groupedUsers).sort((a, b) => a.localeCompare(b)).map((area) => {
+                  const allSel = areaAllSelected(area);
+                  const selCount = groupedUsers[area].filter((u) => form.participant_ids.includes(u.id)).length;
                   return (
-                    <button key={u.id} type="button" onClick={() => toggleParticipant(u.id)}
-                      className="w-full flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-muted text-left">
-                      <Avatar className="h-7 w-7"><AvatarImage src={u.avatar_url} /><AvatarFallback>{u.name?.[0]}</AvatarFallback></Avatar>
-                      <span className="flex-1 min-w-0">
-                        <span className="block text-sm truncate">{u.name}</span>
-                        <span className="block text-xs text-muted-foreground truncate">{u.position}</span>
-                      </span>
-                      {active && <Check className="h-4 w-4 text-[#00a5df]" />}
-                    </button>
+                    <div key={area} className="mb-1.5 last:mb-0">
+                      <div className="flex items-center justify-between gap-2 px-2 py-1.5 sticky top-0 bg-popover/95 backdrop-blur z-10">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground truncate">
+                          {area}{selCount > 0 && <span className="text-[#00a5df] normal-case"> · {selCount}</span>}
+                        </span>
+                        <button type="button" onClick={() => toggleArea(area)}
+                          className="text-[11px] font-medium text-[#00a5df] hover:underline shrink-0"
+                          data-testid="participants-area-toggle">
+                          {allSel ? 'Quitar todos' : 'Seleccionar todos'}
+                        </button>
+                      </div>
+                      {groupedUsers[area].map((u) => {
+                        const active = form.participant_ids.includes(u.id);
+                        return (
+                          <button key={u.id} type="button" onClick={() => toggleParticipant(u.id)}
+                            className="w-full flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-muted text-left">
+                            <Avatar className="h-7 w-7"><AvatarImage src={u.avatar_url} /><AvatarFallback>{u.name?.[0]}</AvatarFallback></Avatar>
+                            <span className="flex-1 min-w-0">
+                              <span className="block text-sm truncate">{u.name}</span>
+                              <span className="block text-xs text-muted-foreground truncate">{u.position}</span>
+                            </span>
+                            {active && <Check className="h-4 w-4 text-[#00a5df]" />}
+                          </button>
+                        );
+                      })}
+                    </div>
                   );
                 })}
                 {users.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin usuarios</p>}
