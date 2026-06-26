@@ -1,4 +1,5 @@
-"""Seed realistic demo data for HERCO360. Idempotent: runs only if no admin exists."""
+"""Seed data for HERCO360. Demo content only when SEED_DEMO=true; otherwise clean."""
+import os
 from datetime import datetime, timedelta
 from urllib.parse import quote
 from core import db, hash_password, new_id, now_iso
@@ -21,6 +22,16 @@ def d(offset):
 
 
 async def seed_if_needed():
+    # Meeting room is infrastructure (needed for Sala de Juntas) -> always ensure it exists.
+    if await db.rooms.count_documents({}) == 0:
+        await db.rooms.insert_one({
+            'id': new_id(), 'name': 'Sala de Juntas Principal', 'capacity': 12,
+            'location': 'Edificio Corporativo HERCO', 'status': 'Disponible',
+            'created_at': now_iso(),
+        })
+    # Demo users/activities/reservations only in dev/preview. Production stays clean.
+    if os.environ.get('SEED_DEMO', '').lower() not in ('1', 'true', 'yes'):
+        return
     admin = await db.users.find_one({'role': 'admin'})
     if admin:
         return  # already seeded
@@ -67,13 +78,8 @@ async def seed_if_needed():
     def participant(u, status='invited'):
         return {'user_id': u['id'], 'name': u['name'], 'avatar_url': u['avatar_url'], 'status': status}
 
-    # ---- Meeting room ----
-    room = {
-        'id': new_id(), 'name': 'Sala de Juntas Principal', 'capacity': 12,
-        'location': 'Piso 3 - Edificio Corporativo HERCO', 'status': 'Disponible',
-        'created_at': now_iso(),
-    }
-    await db.rooms.insert_one(room)
+    # ---- Meeting room (already ensured above; reuse it) ----
+    room = await db.rooms.find_one({}, {'_id': 0})
 
     # ---- Activities (relative to today and this week) ----
     activities = [
@@ -273,6 +279,8 @@ async def seed_inventory():
             })
         print(f'[SEED] Inventory catalog created ({len(SAMPLE_ARTICLES)} articles).')
 
+    if os.environ.get('SEED_DEMO', '').lower() not in ('1', 'true', 'yes'):
+        return  # no demo stock in production
     if await db.inventory_stock.count_documents({}) == 0:
         for article, suc, qty in DEMO_STOCK:
             await db.inventory_stock.insert_one({

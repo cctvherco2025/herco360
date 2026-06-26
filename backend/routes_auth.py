@@ -26,7 +26,7 @@ async def register(data: RegisterInput):
         'status': 'approved',  # auto-approved: account is created with immediate access
         'position': data.position or 'Colaborador',
         'area': data.area or '',
-        'sucursal': data.sucursal or '',
+        'sucursal': (data.sucursal or '') if (data.area == 'Tienda') else 'Casa Matriz',
         'avatar_url': avatar_for(data.name),
         'phone': '',
         'created_at': now_iso(),

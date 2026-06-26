@@ -62,11 +62,12 @@ export default function Configuracion() {
               </div>
               <div className="space-y-1.5">
                 <Label>Área</Label>
-                <Select value={form.area} onValueChange={setVal('area')}>
+                <Select value={form.area} onValueChange={(v) => setForm({ ...form, area: v, sucursal: v === 'Tienda' ? form.sucursal : '' })}>
                   <SelectTrigger className="h-11" data-testid="config-area-select"><SelectValue placeholder="Selecciona un área" /></SelectTrigger>
                   <SelectContent>{AREAS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
+              {form.area === 'Tienda' && (
               <div className="space-y-1.5">
                 <Label>Tienda / Sucursal</Label>
                 <Select value={form.sucursal} onValueChange={setVal('sucursal')}>
@@ -74,6 +75,7 @@ export default function Configuracion() {
                   <SelectContent>{SUCURSALES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
+              )}
               <div className="space-y-1.5"><Label>Teléfono</Label><Input value={form.phone} onChange={set('phone')} placeholder="Opcional" className="h-11" /></div>
               <div className="space-y-1.5"><Label>Correo</Label><Input value={user?.email} disabled className="h-11 opacity-60" /></div>
             </div>

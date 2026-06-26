@@ -25,6 +25,7 @@ export default function Register() {
     e.preventDefault();
     if (!form.position) { toast.error('Selecciona un cargo'); return; }
     if (!form.area) { toast.error('Selecciona un área'); return; }
+    if (form.area === 'Tienda' && !form.sucursal) { toast.error('Selecciona tu tienda'); return; }
     setLoading(true);
     try {
       await register(form);
@@ -92,7 +93,7 @@ export default function Register() {
               </div>
               <div className="space-y-1.5">
                 <Label>Área</Label>
-                <Select value={form.area} onValueChange={setVal('area')}>
+                <Select value={form.area} onValueChange={(v) => setForm({ ...form, area: v, sucursal: v === 'Tienda' ? form.sucursal : '' })}>
                   <SelectTrigger className="h-11" data-testid="register-area-select">
                     <div className="flex items-center gap-2 min-w-0">
                       <Building className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -105,20 +106,22 @@ export default function Register() {
                 </Select>
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Tienda / Sucursal <span className="text-muted-foreground font-normal">(opcional)</span></Label>
-              <Select value={form.sucursal} onValueChange={setVal('sucursal')}>
-                <SelectTrigger className="h-11" data-testid="register-sucursal-select">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Building className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <SelectValue placeholder="Selecciona tu tienda" />
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  {SUCURSALES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+            {form.area === 'Tienda' && (
+              <div className="space-y-1.5">
+                <Label>Tienda / Sucursal</Label>
+                <Select value={form.sucursal} onValueChange={setVal('sucursal')}>
+                  <SelectTrigger className="h-11" data-testid="register-sucursal-select">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Building className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <SelectValue placeholder="Selecciona tu tienda" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUCURSALES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="password">Contraseña</Label>
               <div className="relative">
