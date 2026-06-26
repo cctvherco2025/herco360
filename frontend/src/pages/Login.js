@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Eye, EyeOff, ArrowRight, Mail, Lock, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight, Mail, Lock } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { Logo } from '@/components/Logo';
 import { Button } from '@/components/ui/button';
@@ -36,8 +36,6 @@ export default function Login() {
       setLoading(false);
     }
   };
-
-  const fillDemo = () => { setEmail('kevin.armas@herco.com'); setPassword('Herco360!'); };
 
   return (
     <div className="min-h-screen w-full grid lg:grid-cols-2 auth-bg">
@@ -95,14 +93,9 @@ export default function Login() {
             </Button>
           </form>
 
-          <button onClick={fillDemo} data-testid="login-demo-button"
-            className="mt-4 w-full flex items-center justify-center gap-2 text-xs text-[#00a5df] hover:text-[#0093c7] font-medium">
-            <Sparkles className="h-3.5 w-3.5" /> Usar credenciales de demostración (Kevin Armas)
-          </button>
-
           <p className="mt-6 text-center text-sm text-muted-foreground">
             ¿No tienes cuenta?{' '}
-            <Link to="/register" className="font-medium text-[#1e395e] dark:text-[#3cbef6] hover:underline">Solicitar acceso</Link>
+            <Link to="/register" className="font-medium text-[#1e395e] dark:text-[#3cbef6] hover:underline">Crear usuario</Link>
           </p>
         </motion.div>
       </div>
