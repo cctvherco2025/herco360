@@ -37,10 +37,15 @@ api_router.include_router(routes_public.router)
 
 app.include_router(api_router)
 
+_cors_origins = [o.strip() for o in os.environ.get('CORS_ORIGINS', '*').split(',') if o.strip()]
+_allow_all = ('*' in _cors_origins) or (not _cors_origins)
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    # A wildcard origin cannot be combined with credentials per the CORS spec.
+    # The app authenticates with Bearer tokens (no cookies), so disabling
+    # credentials when allowing all origins is safe and avoids browser blocks.
+    allow_origins=['*'] if _allow_all else _cors_origins,
+    allow_credentials=not _allow_all,
     allow_methods=['*'],
     allow_headers=['*'],
 )
