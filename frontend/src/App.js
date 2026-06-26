@@ -7,6 +7,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import AppLayout from '@/components/AppLayout';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
+import RecuperarPassword from '@/pages/RecuperarPassword';
 import PendingApproval from '@/pages/PendingApproval';
 import Dashboard from '@/pages/Dashboard';
 import Agenda from '@/pages/Agenda';
@@ -27,6 +28,7 @@ function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/recuperar" element={<RecuperarPassword />} />
             <Route path="/pending" element={<PendingApproval />} />
             <Route path="/sala" element={<SalaPublica />} />
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>

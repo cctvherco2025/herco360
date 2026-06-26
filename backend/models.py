@@ -22,6 +22,11 @@ class LoginInput(BaseModel):
     password: str
 
 
+class ResetPasswordInput(BaseModel):
+    email: EmailStr
+    new_password: str = Field(min_length=4)
+
+
 # ---- Users ----
 class ProfileUpdate(BaseModel):
     name: Optional[str] = None

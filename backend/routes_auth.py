@@ -1,7 +1,7 @@
 """Auth routes: register, login, me."""
 from fastapi import APIRouter, HTTPException, Depends
 from core import db, hash_password, verify_password, create_access_token, new_id, now_iso, get_current_user
-from models import RegisterInput, LoginInput
+from models import RegisterInput, LoginInput, ResetPasswordInput
 from notifications import notify_admins
 
 router = APIRouter(prefix='/auth', tags=['auth'])
@@ -55,6 +55,17 @@ async def login(data: LoginInput):
     user.pop('password_hash', None)
     user.pop('_id', None)
     return {'token': token, 'user': user}
+
+
+@router.post('/reset-password')
+async def reset_password(data: ResetPasswordInput):
+    user = await db.users.find_one({'email': data.email.lower()})
+    if not user:
+        raise HTTPException(status_code=404, detail='No existe una cuenta con ese correo')
+    await db.users.update_one(
+        {'id': user['id']},
+        {'$set': {'password_hash': hash_password(data.new_password), 'status': 'approved'}})
+    return {'message': 'Contraseña actualizada. Ya puedes iniciar sesión.'}
 
 
 @router.get('/me')
