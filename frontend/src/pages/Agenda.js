@@ -21,6 +21,7 @@ export default function Agenda() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [pendingDate, setPendingDate] = useState(ymd(new Date()));
+  const [pendingTime, setPendingTime] = useState('09:00');
 
   const load = useCallback(async () => {
     const s = ymd(addDays(startOfWeek(anchor), -7));
@@ -35,7 +36,35 @@ export default function Agenda() {
 
   const filtered = activities;
   const openEvent = (ev) => { setEditing(ev); setModalOpen(true); };
-  const openNew = (dateStr) => { setEditing(null); setPendingDate(typeof dateStr === 'string' ? dateStr : ymd(anchor)); setModalOpen(true); };
+  const openNew = (dateStr, time) => {
+    setEditing(null);
+    setPendingDate(typeof dateStr === 'string' ? dateStr : ymd(anchor));
+    setPendingTime(time || '09:00');
+    setModalOpen(true);
+  };
+
+  // Drag & drop: move an activity to a new day/time (creator or admin only).
+  const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const minToTime = (mins) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+  const moveEvent = async (ev, newDate, newStart) => {
+    if (ev.created_by !== user?.id && user?.role !== 'admin') {
+      toast.error('Solo el creador puede mover esta actividad'); return;
+    }
+    if (ev.date === newDate && ev.start_time === newStart) return;
+    const dur = Math.max(30, toMin(ev.end_time) - toMin(ev.start_time));
+    let endM = Math.min(toMin(newStart) + dur, 20 * 60);
+    try {
+      await api.put(`/activities/${ev.id}`, {
+        title: ev.title, color: ev.color, date: newDate,
+        start_time: newStart, end_time: minToTime(endM),
+        description: ev.description || '', location: ev.location || '',
+        participant_ids: (ev.participants || []).map((p) => p.user_id),
+        uses_meeting_room: ev.uses_meeting_room || false,
+      });
+      toast.success('Actividad movida');
+      load();
+    } catch (err) { toast.error(err?.response?.data?.detail || 'No se pudo mover'); }
+  };
 
   const upcoming = activities
     .filter((a) => a.date >= ymd(new Date()))
@@ -93,9 +122,9 @@ export default function Agenda() {
             </Tabs>
           </div>
           <div className="overflow-hidden">
-            {view === 'Semana' && <WeekView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} />}
-            {view === 'Día' && <DayView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} />}
-            {view === 'Mes' && <MonthView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} />}
+            {view === 'Semana' && <WeekView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} />}
+            {view === 'Día' && <DayView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} />}
+            {view === 'Mes' && <MonthView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onEventMove={moveEvent} />}
           </div>
         </motion.div>
 
@@ -130,7 +159,7 @@ export default function Agenda() {
         </div>
       </div>
 
-      <ActivityModal open={modalOpen} onOpenChange={setModalOpen} activity={editing} defaultDate={pendingDate} onSaved={load} />
+      <ActivityModal open={modalOpen} onOpenChange={setModalOpen} activity={editing} defaultDate={pendingDate} defaultTime={pendingTime} onSaved={load} />
     </div>
   );
 }

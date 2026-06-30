@@ -27,15 +27,21 @@ const RECURRENCE_HINT = {
   monthly: 'Se crearán 6 actividades mensuales (mismo día del mes).',
 };
 
-const empty = (date) => ({
+const addHour = (t) => {
+  const [h, m] = (t || '09:00').split(':').map(Number);
+  const end = Math.min(h * 60 + m + 60, 20 * 60);
+  return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`;
+};
+
+const empty = (date, time) => ({
   title: '', color: DEFAULT_ACTIVITY_COLOR, date: date || ymd(new Date()),
-  start_time: '09:00', end_time: '10:00', description: '', location: '',
+  start_time: time || '09:00', end_time: addHour(time || '09:00'), description: '', location: '',
   participant_ids: [], uses_meeting_room: false, recurrence: 'none',
 });
 
-export default function ActivityModal({ open, onOpenChange, activity, defaultDate, onSaved }) {
+export default function ActivityModal({ open, onOpenChange, activity, defaultDate, defaultTime, onSaved }) {
   const { user } = useAuth();
-  const [form, setForm] = useState(empty(defaultDate));
+  const [form, setForm] = useState(empty(defaultDate, defaultTime));
   const [users, setUsers] = useState([]);
   const [saving, setSaving] = useState(false);
   const isEdit = !!activity;
@@ -56,10 +62,10 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
           recurrence: 'none',
         });
       } else {
-        setForm(empty(defaultDate));
+        setForm(empty(defaultDate, defaultTime));
       }
     }
-  }, [open, activity, defaultDate, user]);
+  }, [open, activity, defaultDate, defaultTime, user]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const toggleParticipant = (id) => set('participant_ids', form.participant_ids.includes(id)
