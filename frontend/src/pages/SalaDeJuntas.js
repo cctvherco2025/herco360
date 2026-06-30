@@ -117,6 +117,7 @@ export default function SalaDeJuntas() {
 
   const save = async () => {
     if (!form.title.trim()) { toast.error('Ingresa un título'); return; }
+    if (form.date < ymd(new Date())) { toast.error('No puedes reservar la sala en fechas pasadas'); return; }
     if (isMondayStr(form.date)) { toast.error('Los lunes la sala está reservada para Dirección Comercial. Elige otro día.'); return; }
     if (form.end_time <= form.start_time) { toast.error('La hora de fin debe ser mayor'); return; }
     setSaving(true);
@@ -277,7 +278,7 @@ export default function SalaDeJuntas() {
           <div className="space-y-4 py-2">
             <div className="space-y-1.5"><Label>Motivo / Título</Label><Input value={form.title} onChange={set('title')} placeholder="Ej. Reunión de planeación" className="h-11" data-testid="reservation-title-input" /></div>
             <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5"><Label>Fecha</Label><Input type="date" value={form.date} onChange={set('date')} className="h-11" data-testid="reservation-date-input" /></div>
+              <div className="space-y-1.5"><Label>Fecha</Label><Input type="date" min={ymd(new Date())} value={form.date} onChange={set('date')} className="h-11" data-testid="reservation-date-input" /></div>
               <div className="space-y-1.5"><Label>Inicio</Label><Input type="time" value={form.start_time} onChange={set('start_time')} className="h-11" /></div>
               <div className="space-y-1.5"><Label>Fin</Label><Input type="time" value={form.end_time} onChange={set('end_time')} className="h-11" /></div>
             </div>

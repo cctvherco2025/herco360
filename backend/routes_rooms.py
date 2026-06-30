@@ -68,6 +68,9 @@ async def list_reservations(date: str = None, room_id: str = None, upcoming: boo
 
 @res_router.post('')
 async def create_reservation(data: ReservationInput, user=Depends(get_current_user)):
+    # Cannot reserve on past dates.
+    if data.date < _today_str():
+        raise HTTPException(status_code=400, detail='No puedes reservar la sala en fechas pasadas')
     # Mondays are reserved for Dirección Comercial's weekly meeting.
     try:
         if datetime.strptime(data.date, '%Y-%m-%d').weekday() == 0:

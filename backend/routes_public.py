@@ -43,6 +43,9 @@ async def public_create(data: PublicReservationInput):
         raise HTTPException(status_code=400, detail='Indica tu nombre')
     if not (data.title or '').strip():
         raise HTTPException(status_code=400, detail='Indica el motivo de la reserva')
+    # Cannot reserve on past dates.
+    if data.date < datetime.now().strftime('%Y-%m-%d'):
+        raise HTTPException(status_code=400, detail='No puedes reservar la sala en fechas pasadas')
     # Mondays are reserved for Dirección Comercial.
     try:
         if datetime.strptime(data.date, '%Y-%m-%d').weekday() == 0:
