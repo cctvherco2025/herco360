@@ -94,8 +94,9 @@ async def list_activities(start: str = None, end: str = None, category: str = No
         query['date'] = {'$gte': start, '$lte': end}
     if category:
         query['category'] = category
-    if mine:
-        query['$or'] = [{'created_by': user['id']}, {'participants.user_id': user['id']}]
+    # Agenda is ALWAYS personal: each user only sees activities they created
+    # or where they were invited as a participant.
+    query['$or'] = [{'created_by': user['id']}, {'participants.user_id': user['id']}]
     activities = await db.activities.find(query, {'_id': 0}).sort('date', 1).to_list(1000)
     return serialize_doc(activities)
 
@@ -160,6 +161,9 @@ async def update_activity(activity_id: str, data: ActivityInput, user=Depends(ge
     a = await db.activities.find_one({'id': activity_id}, {'_id': 0})
     if not a:
         raise HTTPException(status_code=404, detail='Actividad no encontrada')
+    # Only the creator (or an admin) can edit an activity.
+    if a.get('created_by') != user['id'] and user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail='Solo el creador puede editar esta actividad')
     # Mondays the meeting room is reserved for Dirección Comercial.
     if data.uses_meeting_room and _is_monday(data.date):
         raise HTTPException(status_code=409,
@@ -186,6 +190,9 @@ async def delete_activity(activity_id: str, user=Depends(get_current_user)):
     a = await db.activities.find_one({'id': activity_id}, {'_id': 0})
     if not a:
         raise HTTPException(status_code=404, detail='Actividad no encontrada')
+    # Only the creator (or an admin) can delete an activity.
+    if a.get('created_by') != user['id'] and user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail='Solo el creador puede eliminar esta actividad')
     await db.activities.delete_one({'id': activity_id})
     await db.reservations.delete_many({'activity_id': activity_id})
     return {'message': 'Actividad eliminada'}

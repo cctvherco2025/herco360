@@ -39,6 +39,9 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   const [users, setUsers] = useState([]);
   const [saving, setSaving] = useState(false);
   const isEdit = !!activity;
+  const isOwner = activity ? (activity.created_by === user?.id || user?.role === 'admin') : true;
+  const readOnly = isEdit && !isOwner;
+  const myPart = (activity?.participants || []).find((p) => p.user_id === user?.id);
 
   useEffect(() => {
     if (open) {
@@ -111,7 +114,19 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
     if (!isEdit) return;
     setSaving(true);
     try { await api.delete(`/activities/${activity.id}`); toast.success('Actividad eliminada'); onOpenChange(false); onSaved?.(); }
-    catch (err) { toast.error('Error al eliminar'); } finally { setSaving(false); }
+    catch (err) { toast.error(err?.response?.data?.detail || 'Error al eliminar'); } finally { setSaving(false); }
+  };
+
+  const respond = async (response) => {
+    setSaving(true);
+    try {
+      await api.post(`/activities/${activity.id}/respond`, { response });
+      toast.success(response === 'accepted' ? 'Invitación aceptada' : 'Invitación rechazada');
+      onOpenChange(false);
+      onSaved?.();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error al responder');
+    } finally { setSaving(false); }
   };
 
   const selectedUsers = users.filter((u) => form.participant_ids.includes(u.id));
@@ -120,9 +135,14 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[540px] rounded-[22px] p-0 overflow-hidden max-h-[92vh] flex flex-col">
         <DialogHeader className="px-6 pt-6 pb-2">
-          <DialogTitle className="font-heading text-xl">{isEdit ? 'Editar actividad' : 'Nueva actividad'}</DialogTitle>
+          <DialogTitle className="font-heading text-xl">{!isEdit ? 'Nueva actividad' : (readOnly ? 'Detalle de actividad' : 'Editar actividad')}</DialogTitle>
         </DialogHeader>
-        <div className="px-6 pb-2 space-y-4 overflow-y-auto">
+        {readOnly && (
+          <div className="mx-6 mb-1 rounded-xl bg-[rgba(0,165,223,0.1)] text-[#1e395e] dark:text-[#3cbef6] text-xs px-3 py-2">
+            Fuiste invitado por <span className="font-semibold">{activity?.created_by_name || 'otro usuario'}</span>. Solo el creador puede editar o eliminar esta actividad.
+          </div>
+        )}
+        <fieldset disabled={readOnly} className="px-6 pb-2 space-y-4 overflow-y-auto min-w-0 border-0">
           <div className="space-y-1.5">
             <Label>Título</Label>
             <Input data-testid="activity-form-title-input" value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Ej. Reunión de seguimiento" className="h-11" />
@@ -252,17 +272,36 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
             <Label>Notas</Label>
             <Textarea value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Detalles de la actividad…" rows={2} />
           </div>
-        </div>
+        </fieldset>
         <DialogFooter className="px-6 py-4 border-t gap-2 sm:gap-2">
-          {isEdit && (
+          {isEdit && isOwner && (
             <Button variant="ghost" onClick={remove} disabled={saving} className="text-[#dc2626] hover:text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)] mr-auto" data-testid="activity-form-delete">
               <Trash2 className="h-4 w-4 mr-1" /> Eliminar
             </Button>
           )}
-          <Button variant="outline" onClick={() => onOpenChange(false)} className="rounded-xl">Cancelar</Button>
-          <Button onClick={save} disabled={saving || roomBlocked} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="activity-form-submit-button">
-            {saving ? 'Guardando…' : (isEdit ? 'Guardar cambios' : 'Crear actividad')}
-          </Button>
+          {readOnly ? (
+            myPart ? (
+              <>
+                <Button variant="outline" onClick={() => respond('rejected')} disabled={saving}
+                  className="rounded-xl text-[#dc2626] hover:text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)]" data-testid="activity-form-reject">
+                  Rechazar
+                </Button>
+                <Button onClick={() => respond('accepted')} disabled={saving}
+                  className="rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-white" data-testid="activity-form-accept">
+                  {myPart.status === 'accepted' ? 'Aceptada ✓' : 'Aceptar'}
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" onClick={() => onOpenChange(false)} className="rounded-xl">Cerrar</Button>
+            )
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)} className="rounded-xl">Cancelar</Button>
+              <Button onClick={save} disabled={saving || roomBlocked} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="activity-form-submit-button">
+                {saving ? 'Guardando…' : (isEdit ? 'Guardar cambios' : 'Crear actividad')}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
