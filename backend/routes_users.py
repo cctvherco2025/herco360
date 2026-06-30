@@ -27,6 +27,25 @@ async def pending_count(user=Depends(get_current_user)):
     return {'count': count}
 
 
+MANAGER_POSITIONS = {'Jefe', 'Gerente', 'Director comercial'}
+
+
+@router.get('/team')
+async def team_calendars(user=Depends(get_current_user)):
+    """Calendars a manager may overlay: same-área members (admins see all)."""
+    is_admin = user.get('role') == 'admin'
+    if not is_admin and user.get('position') not in MANAGER_POSITIONS:
+        return []
+    q = {'status': 'approved', 'id': {'$ne': user['id']}}
+    if not is_admin:
+        q['area'] = user.get('area')
+    members = await db.users.find(q, {'_id': 0, 'password_hash': 0}).sort('name', 1).to_list(300)
+    return serialize_doc([{
+        'id': m['id'], 'name': m['name'], 'area': m.get('area'),
+        'position': m.get('position'), 'avatar_url': m.get('avatar_url'),
+    } for m in members])
+
+
 @router.post('')
 async def create_user(data: AdminUserCreate, admin=Depends(require_admin)):
     email = data.email.lower()

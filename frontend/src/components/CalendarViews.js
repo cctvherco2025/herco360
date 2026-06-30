@@ -38,16 +38,17 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
   return (
     <button
       type="button"
-      draggable={draggable}
-      onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; onDragStart?.(ev); }}
+      draggable={draggable && !ev.foreign}
+      onDragStart={(e) => { if (ev.foreign) return; e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; onDragStart?.(ev); }}
       onDragEnd={() => onDragEnd?.()}
       onClick={(e) => { e.stopPropagation(); onClick?.(ev); }}
-      className={`absolute left-1 right-1 rounded-[12px] px-2 py-1 text-left overflow-hidden border shadow-xs hover:shadow-card transition-[transform,box-shadow] z-10 ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
+      className={`absolute left-1 right-1 rounded-[12px] px-2 py-1 text-left overflow-hidden border shadow-xs hover:shadow-card transition-[transform,box-shadow] z-10 ${(draggable && !ev.foreign) ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
       style={{ top, height, background: tint, borderColor: solid }}
       data-testid="calendar-event-block">
       <span className="block h-full" style={{ borderLeft: `3px solid ${solid}`, paddingLeft: 6 }}>
         <span className="block text-[11px] font-semibold truncate" style={{ color: solid }}>{ev.title}</span>
-        {!compact && <span className="block text-[10px] text-muted-foreground truncate">{ev.start_time} - {ev.end_time}</span>}
+        {ev.owner_name && <span className="block text-[9px] font-medium truncate opacity-80" style={{ color: solid }}>{ev.owner_name}</span>}
+        {!compact && !ev.owner_name && <span className="block text-[10px] text-muted-foreground truncate">{ev.start_time} - {ev.end_time}</span>}
       </span>
     </button>
   );

@@ -8,6 +8,8 @@ from notifications import create_notification, log_activity
 
 router = APIRouter(prefix='/activities', tags=['activities'])
 
+MANAGER_POSITIONS = {'Jefe', 'Gerente', 'Director comercial'}
+
 MAX_OCCURRENCES = 60
 DEFAULT_COUNTS = {'daily': 30, 'weekly': 12, 'monthly': 6}
 
@@ -88,15 +90,25 @@ async def _ensure_room_reservation(activity, actor):
 
 @router.get('')
 async def list_activities(start: str = None, end: str = None, category: str = None,
-                          mine: bool = False, user=Depends(get_current_user)):
+                          mine: bool = False, user_id: str = None, user=Depends(get_current_user)):
     query = {}
     if start and end:
         query['date'] = {'$gte': start, '$lte': end}
     if category:
         query['category'] = category
-    # Agenda is ALWAYS personal: each user only sees activities they created
-    # or where they were invited as a participant.
-    query['$or'] = [{'created_by': user['id']}, {'participants.user_id': user['id']}]
+    # Determine whose calendar we are reading.
+    target_id = user['id']
+    if user_id and user_id != user['id']:
+        target = await db.users.find_one({'id': user_id})
+        if not target:
+            raise HTTPException(status_code=404, detail='Usuario no encontrado')
+        allowed = (user.get('role') == 'admin' or
+                   (user.get('position') in MANAGER_POSITIONS and target.get('area') == user.get('area')))
+        if not allowed:
+            raise HTTPException(status_code=403, detail='No puedes ver este calendario')
+        target_id = user_id
+    # Agenda is personal: only the owner's created/invited activities.
+    query['$or'] = [{'created_by': target_id}, {'participants.user_id': target_id}]
     activities = await db.activities.find(query, {'_id': 0}).sort('date', 1).to_list(1000)
     return serialize_doc(activities)
 
@@ -111,6 +123,9 @@ async def get_activity(activity_id: str, user=Depends(get_current_user)):
 
 @router.post('')
 async def create_activity(data: ActivityInput, user=Depends(get_current_user)):
+    # Cannot create activities in the past.
+    if data.date < date_cls.today().isoformat():
+        raise HTTPException(status_code=400, detail='No puedes crear actividades en fechas pasadas')
     # Mondays the meeting room is reserved for Dirección Comercial.
     if data.uses_meeting_room and _is_monday(data.date):
         raise HTTPException(status_code=409,

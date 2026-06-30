@@ -100,6 +100,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
 
   const save = async () => {
     if (!form.title.trim()) { toast.error('Ingresa un título'); return; }
+    if (!isEdit && form.date < ymd(new Date())) { toast.error('No puedes crear actividades en fechas pasadas'); return; }
     if (form.end_time <= form.start_time) { toast.error('La hora de fin debe ser mayor a la de inicio'); return; }
     if (roomBlocked) { toast.error(MONDAY_MSG); return; }
     setSaving(true);
@@ -180,7 +181,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label>Fecha</Label>
-              <Input data-testid="activity-form-date-picker" type="date" value={form.date} onChange={(e) => set('date', e.target.value)} className="h-11" />
+              <Input data-testid="activity-form-date-picker" type="date" min={!isEdit ? ymd(new Date()) : undefined} value={form.date} onChange={(e) => set('date', e.target.value)} className="h-11" />
             </div>
             <div className="space-y-1.5">
               <Label>Inicio</Label>

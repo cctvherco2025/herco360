@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Plus, ChevronLeft, ChevronRight, CalendarDays, Check, X as XIcon } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CalendarDays, Check, X as XIcon, Eye, EyeOff, Users as UsersIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -22,6 +22,18 @@ export default function Agenda() {
   const [editing, setEditing] = useState(null);
   const [pendingDate, setPendingDate] = useState(ymd(new Date()));
   const [pendingTime, setPendingTime] = useState('09:00');
+  const [team, setTeam] = useState([]);
+  const [visible, setVisible] = useState({});
+  const [teamEvents, setTeamEvents] = useState({});
+
+  const TEAM_COLORS = ['#0d9488', '#712146', '#ec9032', '#64748b', '#16a34a', '#dc2626', '#3cbef6', '#1e395e'];
+  const colorFor = useCallback((id) => {
+    const i = team.findIndex((m) => m.id === id);
+    return TEAM_COLORS[(i >= 0 ? i : 0) % TEAM_COLORS.length];
+  }, [team]);
+
+  // Managers (Jefe/Gerente/Director) can overlay same-área calendars.
+  useEffect(() => { api.get('/users/team').then(({ data }) => setTeam(data)).catch(() => {}); }, []);
 
   const load = useCallback(async () => {
     const s = ymd(addDays(startOfWeek(anchor), -7));
@@ -29,12 +41,41 @@ export default function Agenda() {
     try { const { data } = await api.get(`/activities?start=${s}&end=${e}`); setActivities(data); } catch (err) {}
   }, [anchor]);
 
+  const fetchMember = useCallback(async (id) => {
+    const s = ymd(addDays(startOfWeek(anchor), -7));
+    const e = ymd(addDays(startOfWeek(anchor), 49));
+    try {
+      const { data } = await api.get(`/activities?start=${s}&end=${e}&user_id=${id}`);
+      const member = team.find((m) => m.id === id);
+      const color = colorFor(id);
+      const first = (member?.name || 'Equipo').split(' ')[0];
+      const tagged = data.map((a) => ({ ...a, foreign: true, owner_name: first, owner_id: id, color }));
+      setTeamEvents((prev) => ({ ...prev, [id]: tagged }));
+    } catch (err) {}
+  }, [anchor, team, colorFor]);
+
   useEffect(() => { load(); }, [load]);
+  // Refetch visible team calendars when the visible range changes.
+  useEffect(() => {
+    Object.keys(visible).forEach((id) => { if (visible[id]) fetchMember(id); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchor]);
+
+  const toggleMember = (id) => {
+    setVisible((prev) => {
+      const next = { ...prev, [id]: !prev[id] };
+      if (next[id]) fetchMember(id);
+      return next;
+    });
+  };
   useEffect(() => {
     if (params.get('new') === '1') { setEditing(null); setModalOpen(true); setParams({}); }
   }, [params, setParams]);
 
-  const filtered = activities;
+  const filtered = [
+    ...activities,
+    ...team.filter((m) => visible[m.id]).flatMap((m) => teamEvents[m.id] || []),
+  ];
   const openEvent = (ev) => { setEditing(ev); setModalOpen(true); };
   const openNew = (dateStr, time) => {
     setEditing(null);
@@ -49,6 +90,9 @@ export default function Agenda() {
   const moveEvent = async (ev, newDate, newStart) => {
     if (ev.created_by !== user?.id && user?.role !== 'admin') {
       toast.error('Solo el creador puede mover esta actividad'); return;
+    }
+    if (newDate < ymd(new Date())) {
+      toast.error('No puedes mover una actividad a una fecha pasada'); return;
     }
     if (ev.date === newDate && ev.start_time === newStart) return;
     const dur = Math.max(30, toMin(ev.end_time) - toMin(ev.start_time));
@@ -130,6 +174,35 @@ export default function Agenda() {
 
         {/* Right rail */}
         <div className="space-y-4">
+          {team.length > 0 && (
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.08 }}
+              className="rounded-[18px] bg-card border shadow-card p-5" data-testid="team-calendars-panel">
+              <div className="flex items-center gap-2 mb-3">
+                <UsersIcon className="h-4 w-4 text-[#1e395e] dark:text-[#3cbef6]" />
+                <h3 className="font-heading font-semibold">Calendarios del equipo</h3>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">Activa para ver el calendario de tu equipo sobre el tuyo.</p>
+              <div className="space-y-1.5 max-h-[260px] overflow-y-auto">
+                {team.map((m) => {
+                  const on = !!visible[m.id];
+                  const color = colorFor(m.id);
+                  return (
+                    <button key={m.id} onClick={() => toggleMember(m.id)} data-testid="team-calendar-toggle"
+                      className={`w-full flex items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition-colors ${on ? 'bg-muted/50' : 'hover:bg-muted/40'}`}>
+                      <span className="h-3 w-3 rounded-full shrink-0 border-2" style={{ borderColor: color, background: on ? color : 'transparent' }} />
+                      <Avatar className="h-7 w-7 shrink-0"><AvatarImage src={m.avatar_url} /><AvatarFallback>{m.name?.[0]}</AvatarFallback></Avatar>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm font-medium truncate">{m.name}</span>
+                        <span className="block text-[11px] text-muted-foreground truncate">{m.position}{m.area ? ` · ${m.area}` : ''}</span>
+                      </span>
+                      {on ? <Eye className="h-4 w-4 text-[#1e395e] dark:text-[#3cbef6] shrink-0" /> : <EyeOff className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.12 }}
             className="rounded-[18px] bg-card border shadow-card p-5">
             <h3 className="font-heading font-semibold mb-3">Próximas actividades</h3>
