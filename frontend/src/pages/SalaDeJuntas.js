@@ -60,6 +60,7 @@ export default function SalaDeJuntas() {
   const [view, setView] = useState('Mes');
   const [anchor, setAnchor] = useState(new Date());
   const [qrOpen, setQrOpen] = useState(false);
+  const [detailRes, setDetailRes] = useState(null);
 
   // Public booking link (no login required) — points to the current domain.
   const salaUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/sala';
@@ -115,6 +116,17 @@ export default function SalaDeJuntas() {
     setOpen(true);
   };
 
+  // Show WHO has the room instead of creating a new reservation.
+  const openDetail = (ev) => {
+    if (ev.locked || String(ev.id).startsWith('dc-')) {
+      setDetailRes({ locked: true, title: 'Reunión Dirección Comercial', date: ev.date,
+        start_time: ev.start_time, end_time: ev.end_time, reserved_by_name: 'Dirección Comercial', status: 'Bloqueado' });
+      return;
+    }
+    const full = reservations.find((r) => r.id === ev.id);
+    if (full) setDetailRes(full);
+  };
+
   const save = async () => {
     if (!form.title.trim()) { toast.error('Ingresa un título'); return; }
     if (form.date < ymd(new Date())) { toast.error('No puedes reservar la sala en fechas pasadas'); return; }
@@ -126,8 +138,8 @@ export default function SalaDeJuntas() {
     finally { setSaving(false); }
   };
 
-  const cancel = async (id) => { try { await api.post(`/reservations/${id}/cancel`); toast.success('Reserva cancelada'); load(); } catch (e) { toast.error('Error'); } };
-  const finalize = async (id) => { try { await api.post(`/reservations/${id}/finalize`); toast.success('Reserva finalizada'); load(); } catch (e) { toast.error('Error'); } };
+  const cancel = async (id) => { try { await api.post(`/reservations/${id}/cancel`); toast.success('Reserva cancelada'); setDetailRes(null); load(); } catch (e) { toast.error('Error'); } };
+  const finalize = async (id) => { try { await api.post(`/reservations/${id}/finalize`); toast.success('Reserva finalizada'); setDetailRes(null); load(); } catch (e) { toast.error('Error'); } };
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const activeRes = reservations.filter((r) => r.status === 'Reservada' || r.status === 'Ocupada')
@@ -215,9 +227,9 @@ export default function SalaDeJuntas() {
         </div>
         <p className="text-xs text-muted-foreground mb-3">Haz clic en una fecha para reservar la sala ese día. <span className="text-[#712146] font-medium">Los lunes están reservados para Dirección Comercial.</span></p>
         <div className="overflow-hidden">
-          {view === 'Mes' && <MonthView anchor={anchor} activities={calendarEvents} onEventClick={(ev) => openReserve(ev.date)} onSlotClick={(ds) => openReserve(ds)} />}
-          {view === 'Semana' && <WeekView anchor={anchor} activities={calendarEvents} onEventClick={(ev) => openReserve(ev.date)} onSlotClick={(ds) => openReserve(ds)} />}
-          {view === 'Día' && <DayView anchor={anchor} activities={calendarEvents} onEventClick={(ev) => openReserve(ev.date)} onSlotClick={(ds) => openReserve(ds)} />}
+          {view === 'Mes' && <MonthView anchor={anchor} activities={calendarEvents} onEventClick={openDetail} onSlotClick={(ds) => openReserve(ds)} />}
+          {view === 'Semana' && <WeekView anchor={anchor} activities={calendarEvents} onEventClick={openDetail} onSlotClick={(ds) => openReserve(ds)} />}
+          {view === 'Día' && <DayView anchor={anchor} activities={calendarEvents} onEventClick={openDetail} onSlotClick={(ds) => openReserve(ds)} />}
         </div>
       </motion.div>
 
@@ -292,6 +304,41 @@ export default function SalaDeJuntas() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} className="rounded-xl">Cancelar</Button>
             <Button onClick={save} disabled={saving || isMondayStr(form.date)} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="reservation-submit">{saving ? 'Reservando…' : 'Reservar'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reservation detail dialog — who has the room */}
+      <Dialog open={!!detailRes} onOpenChange={(o) => !o && setDetailRes(null)}>
+        <DialogContent className="sm:max-w-[440px] rounded-[22px]">
+          <DialogHeader><DialogTitle className="font-heading">Detalle de la reserva</DialogTitle></DialogHeader>
+          {detailRes && (
+            <div className="space-y-4 py-1" data-testid="reservation-detail">
+              <div className="flex items-start justify-between gap-3">
+                <p className="font-heading text-lg font-semibold text-foreground">{detailRes.title}</p>
+                <StatusBadge status={detailRes.status} />
+              </div>
+              <div className="rounded-xl border bg-muted/40 p-4 space-y-2">
+                <p className="text-sm inline-flex items-center gap-2"><UsersIcon className="h-4 w-4 text-[#1e395e] dark:text-[#3cbef6]" /> <span className="text-muted-foreground">Reservada por:</span> <span className="font-medium text-foreground">{detailRes.reserved_by_name || 'Invitado'}</span>{detailRes.is_guest && <span className="text-[10px] rounded-full bg-muted px-1.5 py-0.5">Invitado</span>}</p>
+                <p className="text-sm inline-flex items-center gap-2"><Calendar className="h-4 w-4 text-[#00a5df]" /> <span className="text-foreground">{capitalize(fullDateEs(detailRes.date))}</span></p>
+                <p className="text-sm inline-flex items-center gap-2"><Clock className="h-4 w-4 text-[#00a5df]" /> <span className="text-foreground">{detailRes.start_time} - {detailRes.end_time}</span></p>
+                {detailRes.notes && <p className="text-sm text-muted-foreground pt-1 border-t">{detailRes.notes}</p>}
+              </div>
+              {detailRes.locked && (
+                <div className="rounded-xl bg-[rgba(113,33,70,0.1)] text-[#712146] text-xs font-medium px-3 py-2 flex items-center gap-2">
+                  <Ban className="h-4 w-4 shrink-0" /> Espacio fijo semanal para Dirección Comercial (lunes).
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setDetailRes(null)} className="rounded-xl">Cerrar</Button>
+            {detailRes && !detailRes.locked && (user?.role === 'admin' || detailRes.reserved_by === user?.id) && (
+              <>
+                <Button variant="outline" onClick={() => finalize(detailRes.id)} className="rounded-xl" data-testid="detail-finalize"><Flag className="h-3.5 w-3.5 mr-1" /> Finalizar</Button>
+                <Button onClick={() => cancel(detailRes.id)} className="rounded-xl bg-[#dc2626] hover:bg-[#b91c1c] text-white" data-testid="detail-cancel"><Ban className="h-3.5 w-3.5 mr-1" /> Cancelar</Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

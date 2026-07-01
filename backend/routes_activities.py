@@ -197,6 +197,10 @@ async def update_activity(activity_id: str, data: ActivityInput, user=Depends(ge
     }
     await db.activities.update_one({'id': activity_id}, {'$set': updates})
     saved = await db.activities.find_one({'id': activity_id}, {'_id': 0})
+    # Reconcile the meeting-room reservation tied to this activity.
+    await db.reservations.delete_many({'activity_id': activity_id})
+    if data.uses_meeting_room:
+        await _ensure_room_reservation(saved, user)
     return serialize_doc(saved)
 
 
