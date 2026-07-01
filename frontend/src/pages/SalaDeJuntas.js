@@ -61,6 +61,18 @@ export default function SalaDeJuntas() {
   const [anchor, setAnchor] = useState(new Date());
   const [qrOpen, setQrOpen] = useState(false);
   const [detailRes, setDetailRes] = useState(null);
+  const [dayView, setDayView] = useState(null);
+
+  // Mobile-friendly: tapping a day shows WHO has the room that day.
+  const openDay = (ds) => {
+    const items = reservations.filter((r) => r.date === ds);
+    if (isMondayStr(ds)) {
+      items.unshift({ id: 'dc-' + ds, locked: true, title: 'Reunión Dirección Comercial',
+        start_time: '08:00', end_time: '18:00', reserved_by_name: 'Dirección Comercial', status: 'Bloqueado', date: ds });
+    }
+    if (items.length === 0) { openReserve(ds); return; }
+    setDayView({ date: ds, items });
+  };
 
   // Public booking link (no login required) — points to the current domain.
   const salaUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/sala';
@@ -227,7 +239,7 @@ export default function SalaDeJuntas() {
         </div>
         <p className="text-xs text-muted-foreground mb-3">Haz clic en una fecha para reservar la sala ese día. <span className="text-[#712146] font-medium">Los lunes están reservados para Dirección Comercial.</span></p>
         <div className="overflow-hidden">
-          {view === 'Mes' && <MonthView anchor={anchor} activities={calendarEvents} onEventClick={openDetail} onSlotClick={(ds) => openReserve(ds)} />}
+          {view === 'Mes' && <MonthView anchor={anchor} activities={calendarEvents} onEventClick={openDetail} onSlotClick={(ds) => openDay(ds)} />}
           {view === 'Semana' && <WeekView anchor={anchor} activities={calendarEvents} onEventClick={openDetail} onSlotClick={(ds) => openReserve(ds)} />}
           {view === 'Día' && <DayView anchor={anchor} activities={calendarEvents} onEventClick={openDetail} onSlotClick={(ds) => openReserve(ds)} />}
         </div>
@@ -304,6 +316,34 @@ export default function SalaDeJuntas() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} className="rounded-xl">Cancelar</Button>
             <Button onClick={save} disabled={saving || isMondayStr(form.date)} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="reservation-submit">{saving ? 'Reservando…' : 'Reservar'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Day reservations list (mobile-friendly: who has the room) */}
+      <Dialog open={!!dayView} onOpenChange={(o) => !o && setDayView(null)}>
+        <DialogContent className="sm:max-w-[460px] rounded-[22px]">
+          <DialogHeader><DialogTitle className="font-heading">{dayView ? capitalize(fullDateEs(dayView.date)) : ''}</DialogTitle></DialogHeader>
+          <div className="space-y-2 py-1 max-h-[60vh] overflow-y-auto" data-testid="day-reservations-list">
+            {dayView?.items.map((r) => (
+              <button key={r.id} onClick={() => { setDayView(null); setDetailRes(r); }} data-testid="day-reservation-row"
+                className="w-full text-left rounded-xl border p-3 hover:bg-muted/50 transition-colors">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-foreground truncate">{r.title}</span>
+                  <StatusBadge status={r.status} />
+                </div>
+                <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                  <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {r.start_time} - {r.end_time}</span>
+                  <span className="inline-flex items-center gap-1 truncate"><UsersIcon className="h-3.5 w-3.5" /> {r.reserved_by_name || 'Invitado'}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setDayView(null)} className="rounded-xl">Cerrar</Button>
+            {dayView && !isMondayStr(dayView.date) && (
+              <Button onClick={() => { const d = dayView.date; setDayView(null); openReserve(d); }} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="day-reserve-button"><Plus className="h-4 w-4 mr-1" /> Reservar</Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
