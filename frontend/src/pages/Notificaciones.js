@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Bell, CheckCheck, UserPlus, UserCheck, CalendarPlus, UserX, Bookmark, Ban } from 'lucide-react';
+import { Bell, CheckCheck, UserPlus, UserCheck, CalendarPlus, UserX, Bookmark, Ban, Palmtree, CalendarCheck, CalendarX } from 'lucide-react';
 import api from '@/lib/api';
 import { timeAgoEs } from '@/lib/time';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 
-const ICONS = { UserPlus, UserCheck, CalendarPlus, UserX, Bookmark, Ban, Bell };
+const ICONS = { UserPlus, UserCheck, CalendarPlus, UserX, Bookmark, Ban, Bell, Palmtree, CalendarCheck, CalendarX };
 
 export default function Notificaciones() {
   const [notifs, setNotifs] = useState([]);

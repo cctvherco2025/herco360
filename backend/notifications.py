@@ -8,6 +8,9 @@ NOTIFICATION_META = {
     'participacion_rechazada': {'title': 'Participación rechazada', 'icon': 'UserX', 'color': '#dc2626'},
     'sala_reservada': {'title': 'Sala de Juntas reservada', 'icon': 'Bookmark', 'color': '#00a5df'},
     'sala_cancelada': {'title': 'Reserva cancelada', 'icon': 'Ban', 'color': '#8a8b8b'},
+    'vacacion_solicitada': {'title': 'Solicitud de vacaciones', 'icon': 'Palmtree', 'color': '#ec9032'},
+    'vacacion_aprobada': {'title': 'Solicitud aprobada', 'icon': 'CalendarCheck', 'color': '#16a34a'},
+    'vacacion_rechazada': {'title': 'Solicitud rechazada', 'icon': 'CalendarX', 'color': '#dc2626'},
 }
 
 
@@ -39,6 +42,19 @@ async def notify_admins(ntype, message, exclude_user_id=None, **kwargs):
         if a['id'] == exclude_user_id:
             continue
         await create_notification(a['id'], ntype, message, **kwargs)
+
+
+async def notify_area_managers(area, ntype, message, exclude_user_id=None, **kwargs):
+    """Notify Jefe/Gerente/Director of a given área."""
+    managers = await db.users.find({
+        'area': area,
+        'status': 'approved',
+        'position': {'$in': ['Jefe', 'Gerente', 'Director comercial']},
+    }, {'_id': 0, 'id': 1}).to_list(100)
+    for m in managers:
+        if m['id'] == exclude_user_id:
+            continue
+        await create_notification(m['id'], ntype, message, **kwargs)
 
 
 async def log_activity(actor_id, actor_name, actor_avatar, action, target=None, target_type=None):

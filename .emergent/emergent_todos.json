@@ -1,26 +1,30 @@
 [
   {
-    "content": "Backend: endpoints admin crear/editar/borrar usuarios",
+    "content": "Backend: modelos VacationRequest + notificaciones nuevas",
     "status": "completed"
   },
   {
-    "content": "Backend: bootstrap ADMIN_EMAILS + conectar en server.py",
+    "content": "Backend: routes_vacations (crear, listar mías, por revisar, aprobar, rechazar) + registrar router",
     "status": "completed"
   },
   {
-    "content": "Backend: bloquear uso de sala en lunes al crear actividad (mismo mensaje)",
+    "content": "Backend: al aprobar, pintar 'Vacaciones' en calendario del solicitante",
     "status": "completed"
   },
   {
-    "content": "Frontend: Agenda mostrar mensaje de lunes bloqueado al activar sala",
+    "content": "Frontend: página Vacaciones + item en sidebar + botón en Agenda",
     "status": "completed"
   },
   {
-    "content": "Frontend: UI crear/editar/borrar en panel Usuarios (solo admin)",
+    "content": "Frontend: modal de solicitud y bandeja de aprobación (jefes)",
     "status": "completed"
   },
   {
-    "content": "Probar backend (curl) y verificar",
+    "content": "Probar backend (curl) flujo completo",
+    "status": "completed"
+  },
+  {
+    "content": "Verificar UI Vacaciones (screenshot)",
     "status": "completed"
   }
 ]

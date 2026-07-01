@@ -38,8 +38,8 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
   return (
     <button
       type="button"
-      draggable={draggable && !ev.foreign}
-      onDragStart={(e) => { if (ev.foreign) return; e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; onDragStart?.(ev); }}
+      draggable={draggable && !ev.foreign && !ev.is_vacation}
+      onDragStart={(e) => { if (ev.foreign || ev.is_vacation) return; e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; onDragStart?.(ev); }}
       onDragEnd={() => onDragEnd?.()}
       onClick={(e) => { e.stopPropagation(); onClick?.(ev); }}
       className={`absolute left-1 right-1 rounded-[12px] px-2 py-1 text-left overflow-hidden border shadow-xs hover:shadow-card transition-[transform,box-shadow] z-10 ${(draggable && !ev.foreign) ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}

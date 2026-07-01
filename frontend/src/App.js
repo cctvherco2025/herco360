@@ -11,6 +11,7 @@ import RecuperarPassword from '@/pages/RecuperarPassword';
 import PendingApproval from '@/pages/PendingApproval';
 import Dashboard from '@/pages/Dashboard';
 import Agenda from '@/pages/Agenda';
+import Vacaciones from '@/pages/Vacaciones';
 import SalaDeJuntas from '@/pages/SalaDeJuntas';
 import SalaPublica from '@/pages/SalaPublica';
 import Inventario from '@/pages/Inventario';
@@ -34,6 +35,7 @@ function App() {
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/agenda" element={<Agenda />} />
+              <Route path="/vacaciones" element={<Vacaciones />} />
               <Route path="/sala-de-juntas" element={<SalaDeJuntas />} />
               <Route path="/inventario" element={<Inventario />} />
               <Route path="/reportes" element={<Reportes />} />

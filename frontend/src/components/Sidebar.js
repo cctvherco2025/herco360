@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun, Boxes, FileText } from 'lucide-react';
+import { Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun, Boxes, FileText, Palmtree } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { canAccessInventory, canAccessReports } from '@/lib/constants';
@@ -11,6 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 const baseNavItems = [
   { to: '/', label: 'Inicio', icon: Home, testid: 'sidebar-nav-inicio', end: true },
   { to: '/agenda', label: 'Agenda', icon: CalendarDays, testid: 'sidebar-nav-agenda' },
+  { to: '/vacaciones', label: 'Vacaciones', icon: Palmtree, testid: 'sidebar-nav-vacaciones' },
   { to: '/sala-de-juntas', label: 'Sala de Juntas', icon: Building2, testid: 'sidebar-nav-sala' },
   { to: '/usuarios', label: 'Usuarios', icon: Users, testid: 'sidebar-nav-usuarios' },
   { to: '/configuracion', label: 'Configuración', icon: Settings, testid: 'sidebar-nav-configuracion' },

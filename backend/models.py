@@ -62,6 +62,17 @@ class AdminUserUpdate(BaseModel):
     status: Optional[str] = None
 
 
+class VacationRequestInput(BaseModel):
+    start_date: str
+    end_date: str
+    type: str = 'Vacaciones'  # Vacaciones | Permiso | Incapacidad
+    reason: Optional[str] = ''
+
+
+class VacationReview(BaseModel):
+    comment: Optional[str] = ''
+
+
 # ---- Activities ----
 class Participant(BaseModel):
     user_id: str

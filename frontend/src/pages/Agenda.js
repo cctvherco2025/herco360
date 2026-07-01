@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Plus, ChevronLeft, ChevronRight, CalendarDays, Check, X as XIcon, Eye, EyeOff, Users as UsersIcon } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CalendarDays, Check, X as XIcon, Eye, EyeOff, Users as UsersIcon, Palmtree } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -142,7 +142,12 @@ export default function Agenda() {
           <h1 className="font-heading text-2xl sm:text-3xl font-semibold">Agenda</h1>
           <p className="text-muted-foreground text-sm mt-0.5">Gestiona las actividades y reuniones de tu equipo</p>
         </div>
-        <Button onClick={openNew} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="agenda-new-activity-button"><Plus className="h-4 w-4 mr-1" /> Nueva actividad</Button>
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline" className="rounded-xl" data-testid="agenda-vacations-button">
+            <Link to="/vacaciones"><Palmtree className="h-4 w-4 mr-1.5" /> Vacaciones</Link>
+          </Button>
+          <Button onClick={openNew} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="agenda-new-activity-button"><Plus className="h-4 w-4 mr-1" /> Nueva actividad</Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
