@@ -17,10 +17,10 @@
   },
   {
     "content": "Run testing_agent (backend + frontend) for double-booking fix",
-    "status": "in_progress"
+    "status": "completed"
   },
   {
     "content": "Remind user to Save to GitHub + verify Render redeploy",
-    "status": "pending"
+    "status": "completed"
   }
 ]
