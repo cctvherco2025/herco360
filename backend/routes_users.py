@@ -54,6 +54,7 @@ async def create_user(data: AdminUserCreate, admin=Depends(require_admin)):
         raise HTTPException(status_code=400, detail='El correo ya está registrado')
     role = data.role if data.role in ('admin', 'user') else 'user'
     sucursal = (data.sucursal or '') if (data.area == 'Tienda') else 'Casa Matriz'
+    area = 'Casa Matriz' if (data.position == 'Director comercial') else (data.area or '')
     doc = {
         'id': new_id(),
         'name': data.name,
@@ -62,7 +63,7 @@ async def create_user(data: AdminUserCreate, admin=Depends(require_admin)):
         'role': role,
         'status': 'approved',
         'position': data.position or 'Colaborador',
-        'area': data.area or '',
+        'area': area,
         'sucursal': sucursal,
         'avatar_url': avatar_for(data.name),
         'phone': '',
@@ -79,6 +80,9 @@ async def create_user(data: AdminUserCreate, admin=Depends(require_admin)):
 @router.patch('/me')
 async def update_me(data: ProfileUpdate, user=Depends(get_current_user)):
     updates = {k: v for k, v in data.model_dump().items() if v is not None}
+    # Director comercial oversees the whole company -> área fixed to "Casa Matriz".
+    if updates.get('position') == 'Director comercial':
+        updates['area'] = 'Casa Matriz'
     # Only "Tienda" area has a sucursal; everyone else is "Casa Matriz".
     if updates.get('area') and updates['area'] != 'Tienda':
         updates['sucursal'] = 'Casa Matriz'
@@ -146,6 +150,10 @@ async def update_user(user_id: str, data: AdminUserUpdate, admin=Depends(require
         if len(payload['password']) < 4:
             raise HTTPException(status_code=400, detail='La contraseña debe tener al menos 4 caracteres')
         updates['password_hash'] = hash_password(payload['password'])
+    # Director comercial oversees the whole company -> área fixed to "Casa Matriz".
+    eff_position = updates.get('position', target.get('position'))
+    if eff_position == 'Director comercial':
+        updates['area'] = 'Casa Matriz'
     # Only "Tienda" area keeps a sucursal; everyone else is "Casa Matriz".
     eff_area = updates.get('area', target.get('area'))
     if eff_area != 'Tienda':

@@ -55,17 +55,21 @@ export default function Configuracion() {
               <div className="space-y-1.5"><Label>Nombre completo</Label><Input value={form.name} onChange={set('name')} className="h-11" data-testid="config-name-input" /></div>
               <div className="space-y-1.5">
                 <Label>Cargo</Label>
-                <Select value={form.position} onValueChange={setVal('position')}>
+                <Select value={form.position} onValueChange={(v) => setForm((f) => ({ ...f, position: v, area: v === 'Director comercial' ? 'Casa Matriz' : (f.area === 'Casa Matriz' ? '' : f.area), sucursal: '' }))}>
                   <SelectTrigger className="h-11" data-testid="config-position-select"><SelectValue placeholder="Selecciona un cargo" /></SelectTrigger>
                   <SelectContent>{CARGOS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
                 <Label>Área</Label>
-                <Select value={form.area} onValueChange={(v) => setForm({ ...form, area: v, sucursal: v === 'Tienda' ? form.sucursal : '' })}>
-                  <SelectTrigger className="h-11" data-testid="config-area-select"><SelectValue placeholder="Selecciona un área" /></SelectTrigger>
-                  <SelectContent>{AREAS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
-                </Select>
+                {form.position === 'Director comercial' ? (
+                  <div className="h-11 flex items-center rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground" data-testid="config-area-fixed">Casa Matriz</div>
+                ) : (
+                  <Select value={form.area} onValueChange={(v) => setForm({ ...form, area: v, sucursal: v === 'Tienda' ? form.sucursal : '' })}>
+                    <SelectTrigger className="h-11" data-testid="config-area-select"><SelectValue placeholder="Selecciona un área" /></SelectTrigger>
+                    <SelectContent>{AREAS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
+                  </Select>
+                )}
               </div>
               {form.area === 'Tienda' && (
               <div className="space-y-1.5">

@@ -21,10 +21,20 @@ export default function Register() {
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const setVal = (k) => (v) => setForm({ ...form, [k]: v });
 
+  const isDirector = form.position === 'Director comercial';
+
+  const onPositionChange = (v) => setForm({
+    ...form,
+    position: v,
+    // Director comercial oversees the whole company -> fixed to "Casa Matriz".
+    area: v === 'Director comercial' ? 'Casa Matriz' : (form.area === 'Casa Matriz' ? '' : form.area),
+    sucursal: '',
+  });
+
   const submit = async (e) => {
     e.preventDefault();
     if (!form.position) { toast.error('Selecciona un cargo'); return; }
-    if (!form.area) { toast.error('Selecciona un área'); return; }
+    if (!isDirector && !form.area) { toast.error('Selecciona un área'); return; }
     if (form.area === 'Tienda' && !form.sucursal) { toast.error('Selecciona tu tienda'); return; }
     setLoading(true);
     try {
@@ -79,7 +89,7 @@ export default function Register() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Cargo</Label>
-                <Select value={form.position} onValueChange={setVal('position')}>
+                <Select value={form.position} onValueChange={onPositionChange}>
                   <SelectTrigger className="h-11" data-testid="register-position-select">
                     <div className="flex items-center gap-2 min-w-0">
                       <Briefcase className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -93,17 +103,24 @@ export default function Register() {
               </div>
               <div className="space-y-1.5">
                 <Label>Área</Label>
-                <Select value={form.area} onValueChange={(v) => setForm({ ...form, area: v, sucursal: v === 'Tienda' ? form.sucursal : '' })}>
-                  <SelectTrigger className="h-11" data-testid="register-area-select">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Building className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <SelectValue placeholder="Selecciona" />
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {AREAS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                {isDirector ? (
+                  <div className="h-11 flex items-center gap-2 rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground" data-testid="register-area-fixed">
+                    <Building className="h-4 w-4 shrink-0" />
+                    <span>Casa Matriz</span>
+                  </div>
+                ) : (
+                  <Select value={form.area} onValueChange={(v) => setForm({ ...form, area: v, sucursal: v === 'Tienda' ? form.sucursal : '' })}>
+                    <SelectTrigger className="h-11" data-testid="register-area-select">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Building className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <SelectValue placeholder="Selecciona" />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AREAS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             </div>
             {form.area === 'Tienda' && (
