@@ -45,15 +45,23 @@ async def notify_admins(ntype, message, exclude_user_id=None, **kwargs):
 
 
 async def notify_area_managers(area, ntype, message, exclude_user_id=None, **kwargs):
-    """Notify Jefe/Gerente/Director of a given área."""
+    """Notify Jefe/Gerente/Director of a given área.
+
+    The Director comercial oversees every area, so they're always notified
+    regardless of the requester's area.
+    """
     managers = await db.users.find({
-        'area': area,
         'status': 'approved',
-        'position': {'$in': ['Jefe', 'Gerente', 'Director comercial']},
+        '$or': [
+            {'area': area, 'position': {'$in': ['Jefe', 'Gerente', 'Director comercial']}},
+            {'position': 'Director comercial'},
+        ],
     }, {'_id': 0, 'id': 1}).to_list(100)
+    seen = set()
     for m in managers:
-        if m['id'] == exclude_user_id:
+        if m['id'] == exclude_user_id or m['id'] in seen:
             continue
+        seen.add(m['id'])
         await create_notification(m['id'], ntype, message, **kwargs)
 
 

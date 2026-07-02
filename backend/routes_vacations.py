@@ -20,6 +20,11 @@ def _is_manager(user):
     return user.get('role') == 'admin' or user.get('position') in MANAGER_POSITIONS
 
 
+def _sees_all_areas(user):
+    """Admins and the Director comercial can review every area (no area restriction)."""
+    return user.get('role') == 'admin' or (user.get('position') or '').strip() == 'Director comercial'
+
+
 def _date_range(start, end):
     s = date_cls.fromisoformat(start)
     e = date_cls.fromisoformat(end)
@@ -72,7 +77,7 @@ async def to_review(user=Depends(get_current_user)):
     if not _is_manager(user):
         return []
     q = {'status': 'pending', 'user_id': {'$ne': user['id']}}
-    if user.get('role') != 'admin':
+    if not _sees_all_areas(user):
         q['area'] = user.get('area')
     rows = await db.vacation_requests.find(q, {'_id': 0}).sort('created_at', 1).to_list(200)
     return serialize_doc(rows)
@@ -83,7 +88,7 @@ async def pending_count(user=Depends(get_current_user)):
     if not _is_manager(user):
         return {'count': 0}
     q = {'status': 'pending', 'user_id': {'$ne': user['id']}}
-    if user.get('role') != 'admin':
+    if not _sees_all_areas(user):
         q['area'] = user.get('area')
     return {'count': await db.vacation_requests.count_documents(q)}
 
@@ -96,7 +101,7 @@ async def _load_reviewable(request_id, user):
         raise HTTPException(status_code=400, detail='La solicitud ya fue procesada')
     if req['user_id'] == user['id']:
         raise HTTPException(status_code=403, detail='No puedes autorizar tu propia solicitud')
-    allowed = user.get('role') == 'admin' or (
+    allowed = _sees_all_areas(user) or (
         user.get('position') in MANAGER_POSITIONS and req.get('area') == user.get('area'))
     if not allowed:
         raise HTTPException(status_code=403, detail='No puedes autorizar solicitudes de otra área')

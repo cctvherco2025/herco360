@@ -156,8 +156,9 @@ async def list_activities(start: str = None, end: str = None, category: str = No
         target = await db.users.find_one({'id': user_id})
         if not target:
             raise HTTPException(status_code=404, detail='Usuario no encontrado')
-        allowed = (user.get('role') == 'admin' or
-                   (user.get('position') in MANAGER_POSITIONS and target.get('area') == user.get('area')))
+        pos = (user.get('position') or '').strip()
+        allowed = (user.get('role') == 'admin' or pos == 'Director comercial' or
+                   (pos in MANAGER_POSITIONS and target.get('area') == user.get('area')))
         if not allowed:
             raise HTTPException(status_code=403, detail='No puedes ver este calendario')
         target_id = user_id

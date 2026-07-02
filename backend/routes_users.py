@@ -32,12 +32,13 @@ MANAGER_POSITIONS = {'Jefe', 'Gerente', 'Director comercial'}
 
 @router.get('/team')
 async def team_calendars(user=Depends(get_current_user)):
-    """Calendars a manager may overlay: same-área members (admins see all)."""
+    """Calendars a manager may overlay: same-área members (admins & Director comercial see all)."""
     is_admin = user.get('role') == 'admin'
-    if not is_admin and user.get('position') not in MANAGER_POSITIONS:
+    sees_all = is_admin or (user.get('position') or '').strip() == 'Director comercial'
+    if not sees_all and user.get('position') not in MANAGER_POSITIONS:
         return []
     q = {'status': 'approved', 'id': {'$ne': user['id']}}
-    if not is_admin:
+    if not sees_all:
         q['area'] = user.get('area')
     members = await db.users.find(q, {'_id': 0, 'password_hash': 0}).sort('name', 1).to_list(300)
     return serialize_doc([{
