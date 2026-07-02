@@ -50,6 +50,60 @@ def _is_monday(date_str: str) -> bool:
         return False
 
 
+def _times_overlap(start_a: str, end_a: str, start_b: str, end_b: str) -> bool:
+    """Two same-day HH:MM intervals overlap if A starts before B ends and B starts before A ends."""
+    if not (start_a and end_a and start_b and end_b):
+        return False
+    return start_a < end_b and start_b < end_a
+
+
+async def _check_conflicts(date: str, start_time: str, end_time: str,
+                           participant_ids, creator_id: str, uses_meeting_room: bool,
+                           exclude_activity_id: str = None):
+    """Raise 409 if the proposed slot clashes with the meeting room or any participant.
+
+    - Vacation markers (is_vacation=True) never block a slot.
+    - Cancelled/finished room reservations never block.
+    """
+    # --- Room conflict (source of truth: reservations collection) ---
+    if uses_meeting_room:
+        res_query = {'date': date}
+        if exclude_activity_id:
+            res_query['activity_id'] = {'$ne': exclude_activity_id}
+        reservations = await db.reservations.find(res_query, {'_id': 0}).to_list(500)
+        for r in reservations:
+            if r.get('status') in ('Cancelada', 'Finalizada'):
+                continue
+            if _times_overlap(start_time, end_time, r.get('start_time', ''), r.get('end_time', '')):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(f"La Sala de Juntas ya está reservada de "
+                            f"{r.get('start_time')} a {r.get('end_time')} ese día."))
+
+    # --- Participant conflict (activities collection, excluding vacations) ---
+    people = set(participant_ids or [])
+    if creator_id:
+        people.add(creator_id)
+    if not people:
+        return
+    act_query = {'date': date, 'is_vacation': {'$ne': True}}
+    if exclude_activity_id:
+        act_query['id'] = {'$ne': exclude_activity_id}
+    activities = await db.activities.find(act_query, {'_id': 0}).to_list(1000)
+    for a in activities:
+        if not _times_overlap(start_time, end_time, a.get('start_time', ''), a.get('end_time', '')):
+            continue
+        a_people = {p.get('user_id') for p in a.get('participants', [])}
+        if a.get('created_by'):
+            a_people.add(a.get('created_by'))
+        if people & a_people:
+            raise HTTPException(
+                status_code=409,
+                detail=(f"Uno o más participantes ya tienen la reunión "
+                        f"'{a.get('title')}' de {a.get('start_time')} a "
+                        f"{a.get('end_time')} ese día."))
+
+
 
 async def _build_participants(participant_ids):
     participants = []
@@ -135,6 +189,12 @@ async def create_activity(data: ActivityInput, user=Depends(get_current_user)):
     dates = _gen_dates(data.date, recurrence, data.recurrence_count)
     series_id = new_id() if len(dates) > 1 else None
 
+    # Pre-check ALL occurrences before inserting anything so a recurring series
+    # never gets created "half-way" when one date clashes.
+    for dt in dates:
+        await _check_conflicts(dt, data.start_time, data.end_time,
+                               data.participant_ids, user['id'], data.uses_meeting_room)
+
     first_activity = None
     for idx, dt in enumerate(dates):
         activity = {
@@ -184,6 +244,10 @@ async def update_activity(activity_id: str, data: ActivityInput, user=Depends(ge
         raise HTTPException(status_code=409,
                             detail='Los lunes la Sala de Juntas está reservada para Dirección Comercial')
     participants = await _build_participants(data.participant_ids)
+    # Prevent overlapping bookings (room + participants), excluding this activity itself.
+    await _check_conflicts(data.date, data.start_time, data.end_time,
+                           data.participant_ids, a.get('created_by'), data.uses_meeting_room,
+                           exclude_activity_id=activity_id)
     # preserve existing response status
     prev = {p['user_id']: p['status'] for p in a.get('participants', [])}
     for p in participants:

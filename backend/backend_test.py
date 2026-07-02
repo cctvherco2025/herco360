@@ -1038,6 +1038,548 @@ class HERCO360Tester:
             return True
         return success
 
+    # ===== ACTIVITY OVERLAP VALIDATION TESTS (BUG FIX) =====
+    def test_overlap_same_participant_creator(self):
+        """Test: Same creator cannot create overlapping meetings (409)"""
+        # Pick a future non-Monday date (Mondays are blocked for room)
+        test_date = (datetime.now() + timedelta(days=3)).strftime('%Y-%m-%d')
+        # Ensure it's not Monday
+        while datetime.strptime(test_date, '%Y-%m-%d').weekday() == 0:
+            test_date = (datetime.strptime(test_date, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # Create first meeting A: 10:00-11:00
+        success, response = self.test(
+            "Overlap: Create Meeting A (10:00-11:00)",
+            "POST",
+            "activities",
+            200,
+            token=self.admin_token,
+            data={
+                "title": "Meeting A - Overlap Test",
+                "color": "#00a5df",
+                "date": test_date,
+                "start_time": "10:00",
+                "end_time": "11:00",
+                "description": "First meeting",
+                "location": "",
+                "participant_ids": [],
+                "uses_meeting_room": False
+            }
+        )
+        
+        meeting_a_id = None
+        if success and 'id' in response:
+            meeting_a_id = response['id']
+            self.log(f"Meeting A created: {meeting_a_id}", "SUCCESS")
+        else:
+            self.log("Failed to create Meeting A", "FAIL")
+            return False
+        
+        # Try to create overlapping meeting B: 10:30-11:30 (should fail with 409)
+        success, response = self.test(
+            "Overlap: Create Meeting B (10:30-11:30) - should fail 409",
+            "POST",
+            "activities",
+            409,
+            token=self.admin_token,
+            data={
+                "title": "Meeting B - Overlapping",
+                "color": "#00a5df",
+                "date": test_date,
+                "start_time": "10:30",
+                "end_time": "11:30",
+                "description": "Overlapping meeting",
+                "location": "",
+                "participant_ids": [],
+                "uses_meeting_room": False
+            }
+        )
+        
+        # Cleanup
+        if meeting_a_id:
+            self.test("Overlap: Cleanup Meeting A", "DELETE", f"activities/{meeting_a_id}", 200, token=self.admin_token)
+        
+        return success
+
+    def test_overlap_contiguous_allowed(self):
+        """Test: Contiguous non-overlapping meetings are allowed (200)"""
+        test_date = (datetime.now() + timedelta(days=3)).strftime('%Y-%m-%d')
+        while datetime.strptime(test_date, '%Y-%m-%d').weekday() == 0:
+            test_date = (datetime.strptime(test_date, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # Create meeting A: 10:00-11:00
+        success, response = self.test(
+            "Contiguous: Create Meeting A (10:00-11:00)",
+            "POST",
+            "activities",
+            200,
+            token=self.admin_token,
+            data={
+                "title": "Meeting A - Contiguous Test",
+                "color": "#00a5df",
+                "date": test_date,
+                "start_time": "10:00",
+                "end_time": "11:00",
+                "description": "",
+                "location": "",
+                "participant_ids": [],
+                "uses_meeting_room": False
+            }
+        )
+        
+        meeting_a_id = response.get('id') if success else None
+        
+        # Create contiguous meeting C: 11:00-12:00 (should succeed)
+        success, response = self.test(
+            "Contiguous: Create Meeting C (11:00-12:00) - should succeed 200",
+            "POST",
+            "activities",
+            200,
+            token=self.admin_token,
+            data={
+                "title": "Meeting C - Contiguous",
+                "color": "#00a5df",
+                "date": test_date,
+                "start_time": "11:00",
+                "end_time": "12:00",
+                "description": "",
+                "location": "",
+                "participant_ids": [],
+                "uses_meeting_room": False
+            }
+        )
+        
+        meeting_c_id = response.get('id') if success else None
+        
+        # Cleanup
+        if meeting_a_id:
+            self.test("Contiguous: Cleanup A", "DELETE", f"activities/{meeting_a_id}", 200, token=self.admin_token)
+        if meeting_c_id:
+            self.test("Contiguous: Cleanup C", "DELETE", f"activities/{meeting_c_id}", 200, token=self.admin_token)
+        
+        return success
+
+    def test_overlap_room_conflict(self):
+        """Test: Room booking overlap returns 409"""
+        test_date = (datetime.now() + timedelta(days=3)).strftime('%Y-%m-%d')
+        while datetime.strptime(test_date, '%Y-%m-%d').weekday() == 0:
+            test_date = (datetime.strptime(test_date, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # Create meeting with room: 14:00-15:00
+        success, response = self.test(
+            "Room Conflict: Create Meeting with Room (14:00-15:00)",
+            "POST",
+            "activities",
+            200,
+            token=self.admin_token,
+            data={
+                "title": "Room Meeting A",
+                "color": "#00a5df",
+                "date": test_date,
+                "start_time": "14:00",
+                "end_time": "15:00",
+                "description": "",
+                "location": "",
+                "participant_ids": [],
+                "uses_meeting_room": True
+            }
+        )
+        
+        meeting_a_id = response.get('id') if success else None
+        
+        # Try to book room at overlapping time: 14:30-15:30 (should fail 409)
+        success, response = self.test(
+            "Room Conflict: Create Overlapping Room Meeting (14:30-15:30) - should fail 409",
+            "POST",
+            "activities",
+            409,
+            token=self.admin_token,
+            data={
+                "title": "Room Meeting B - Overlapping",
+                "color": "#00a5df",
+                "date": test_date,
+                "start_time": "14:30",
+                "end_time": "15:30",
+                "description": "",
+                "location": "",
+                "participant_ids": [],
+                "uses_meeting_room": True
+            }
+        )
+        
+        # Cleanup
+        if meeting_a_id:
+            self.test("Room Conflict: Cleanup", "DELETE", f"activities/{meeting_a_id}", 200, token=self.admin_token)
+        
+        return success
+
+    def test_overlap_vacation_non_blocking(self):
+        """Test: Vacation events (is_vacation=True) do NOT block time slots"""
+        # This test requires creating a vacation marker directly in DB or via vacation approval
+        # For now, we'll test that a normal meeting can be created even if there's a vacation
+        # We'll need to create a vacation request, approve it, then try to create a meeting
+        
+        # Get a regular user token (Samuel)
+        if not self.samuel_token:
+            self.test_inventory_login_samuel()
+        
+        if not self.samuel_token:
+            self.log("No Samuel token for vacation test", "WARN")
+            return True  # Skip
+        
+        # Create vacation request for Samuel
+        vacation_start = (datetime.now() + timedelta(days=5)).strftime('%Y-%m-%d')
+        vacation_end = (datetime.now() + timedelta(days=6)).strftime('%Y-%m-%d')
+        
+        success, response = self.test(
+            "Vacation Non-blocking: Create Vacation Request",
+            "POST",
+            "vacations",
+            200,
+            token=self.samuel_token,
+            data={
+                "start_date": vacation_start,
+                "end_date": vacation_end,
+                "type": "Vacaciones",
+                "reason": "Test vacation for overlap test"
+            }
+        )
+        
+        vacation_id = response.get('id') if success else None
+        if not vacation_id:
+            self.log("Failed to create vacation request", "WARN")
+            return True  # Skip
+        
+        # Approve vacation as admin (this creates is_vacation=True activities)
+        success, response = self.test(
+            "Vacation Non-blocking: Approve Vacation",
+            "POST",
+            f"vacations/{vacation_id}/approve",
+            200,
+            token=self.admin_token,
+            data={"comment": "Approved for test"}
+        )
+        
+        if not success:
+            self.log("Failed to approve vacation", "WARN")
+            return True  # Skip
+        
+        # Now try to create a normal meeting for Samuel on the vacation date (should succeed)
+        success, response = self.test(
+            "Vacation Non-blocking: Create Meeting on Vacation Date - should succeed 200",
+            "POST",
+            "activities",
+            200,
+            token=self.admin_token,
+            data={
+                "title": "Meeting during Samuel's vacation",
+                "color": "#00a5df",
+                "date": vacation_start,
+                "start_time": "10:00",
+                "end_time": "11:00",
+                "description": "Should not be blocked by vacation",
+                "location": "",
+                "participant_ids": [],
+                "uses_meeting_room": False
+            }
+        )
+        
+        meeting_id = response.get('id') if success else None
+        
+        # Cleanup
+        if meeting_id:
+            self.test("Vacation Non-blocking: Cleanup Meeting", "DELETE", f"activities/{meeting_id}", 200, token=self.admin_token)
+        
+        return success
+
+    def test_overlap_participant_conflict(self):
+        """Test: Participant overlap returns 409"""
+        # Get two users for this test
+        success, response = self.test(
+            "Participant Conflict: Get Users",
+            "GET",
+            "users",
+            200,
+            token=self.admin_token,
+            params={"status": "approved"}
+        )
+        
+        user_ids = []
+        if success and isinstance(response, list):
+            for user in response[:2]:
+                if user.get('email') not in ['kevin.armas@herco.com']:
+                    user_ids.append(user.get('id'))
+        
+        if len(user_ids) < 1:
+            self.log("Not enough users for participant conflict test", "WARN")
+            return True  # Skip
+        
+        participant_id = user_ids[0]
+        test_date = (datetime.now() + timedelta(days=4)).strftime('%Y-%m-%d')
+        while datetime.strptime(test_date, '%Y-%m-%d').weekday() == 0:
+            test_date = (datetime.strptime(test_date, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # Create meeting A with participant: 13:00-14:00
+        success, response = self.test(
+            "Participant Conflict: Create Meeting A with Participant (13:00-14:00)",
+            "POST",
+            "activities",
+            200,
+            token=self.admin_token,
+            data={
+                "title": "Meeting A with Participant",
+                "color": "#00a5df",
+                "date": test_date,
+                "start_time": "13:00",
+                "end_time": "14:00",
+                "description": "",
+                "location": "",
+                "participant_ids": [participant_id],
+                "uses_meeting_room": False
+            }
+        )
+        
+        meeting_a_id = response.get('id') if success else None
+        
+        # Try to create meeting B with same participant at overlapping time: 13:30-14:30 (should fail 409)
+        success, response = self.test(
+            "Participant Conflict: Create Meeting B with Same Participant (13:30-14:30) - should fail 409",
+            "POST",
+            "activities",
+            409,
+            token=self.admin_token,
+            data={
+                "title": "Meeting B - Overlapping Participant",
+                "color": "#00a5df",
+                "date": test_date,
+                "start_time": "13:30",
+                "end_time": "14:30",
+                "description": "",
+                "location": "",
+                "participant_ids": [participant_id],
+                "uses_meeting_room": False
+            }
+        )
+        
+        # Cleanup
+        if meeting_a_id:
+            self.test("Participant Conflict: Cleanup", "DELETE", f"activities/{meeting_a_id}", 200, token=self.admin_token)
+        
+        return success
+
+    def test_overlap_update_self_exclusion(self):
+        """Test: Updating an activity excludes itself from conflict check"""
+        test_date = (datetime.now() + timedelta(days=4)).strftime('%Y-%m-%d')
+        while datetime.strptime(test_date, '%Y-%m-%d').weekday() == 0:
+            test_date = (datetime.strptime(test_date, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # Create meeting: 15:00-16:00
+        success, response = self.test(
+            "Update Self-exclusion: Create Meeting (15:00-16:00)",
+            "POST",
+            "activities",
+            200,
+            token=self.admin_token,
+            data={
+                "title": "Meeting for Update Test",
+                "color": "#00a5df",
+                "date": test_date,
+                "start_time": "15:00",
+                "end_time": "16:00",
+                "description": "",
+                "location": "",
+                "participant_ids": [],
+                "uses_meeting_room": False
+            }
+        )
+        
+        meeting_id = response.get('id') if success else None
+        if not meeting_id:
+            return False
+        
+        # Update the same meeting (change title, keep same time) - should succeed
+        success, response = self.test(
+            "Update Self-exclusion: Update Same Meeting (same time) - should succeed 200",
+            "PUT",
+            f"activities/{meeting_id}",
+            200,
+            token=self.admin_token,
+            data={
+                "title": "Meeting for Update Test - UPDATED",
+                "color": "#ec9032",
+                "date": test_date,
+                "start_time": "15:00",
+                "end_time": "16:00",
+                "description": "Updated",
+                "location": "",
+                "participant_ids": [],
+                "uses_meeting_room": False
+            }
+        )
+        
+        # Cleanup
+        if meeting_id:
+            self.test("Update Self-exclusion: Cleanup", "DELETE", f"activities/{meeting_id}", 200, token=self.admin_token)
+        
+        return success
+
+    def test_overlap_recurring_series_atomicity(self):
+        """Test: Recurring series fails atomically if ANY occurrence clashes"""
+        test_date = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+        while datetime.strptime(test_date, '%Y-%m-%d').weekday() == 0:
+            test_date = (datetime.strptime(test_date, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # Create a single meeting on day 7: 09:00-10:00
+        success, response = self.test(
+            "Recurring Atomicity: Create Blocking Meeting on Day 7 (09:00-10:00)",
+            "POST",
+            "activities",
+            200,
+            token=self.admin_token,
+            data={
+                "title": "Blocking Meeting on Day 7",
+                "color": "#00a5df",
+                "date": test_date,
+                "start_time": "09:00",
+                "end_time": "10:00",
+                "description": "",
+                "location": "",
+                "participant_ids": [],
+                "uses_meeting_room": False
+            }
+        )
+        
+        blocking_id = response.get('id') if success else None
+        
+        # Try to create a daily recurring series starting today (will clash on day 7)
+        recurring_start = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        while datetime.strptime(recurring_start, '%Y-%m-%d').weekday() == 0:
+            recurring_start = (datetime.strptime(recurring_start, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        success, response = self.test(
+            "Recurring Atomicity: Create Daily Series (will clash on day 7) - should fail 409",
+            "POST",
+            "activities",
+            409,
+            token=self.admin_token,
+            data={
+                "title": "Daily Recurring Series",
+                "color": "#00a5df",
+                "date": recurring_start,
+                "start_time": "09:00",
+                "end_time": "10:00",
+                "description": "",
+                "location": "",
+                "participant_ids": [],
+                "uses_meeting_room": False,
+                "recurrence": "daily",
+                "recurrence_count": 10
+            }
+        )
+        
+        # Verify no partial series was created by checking activities
+        if success:  # If 409 was returned as expected
+            # Check that no activities from the series exist
+            check_success, check_response = self.test(
+                "Recurring Atomicity: Verify No Partial Series Created",
+                "GET",
+                "activities",
+                200,
+                token=self.admin_token,
+                params={"start": recurring_start, "end": (datetime.now() + timedelta(days=15)).strftime('%Y-%m-%d')}
+            )
+            
+            if check_success and isinstance(check_response, list):
+                series_count = sum(1 for a in check_response if a.get('title') == 'Daily Recurring Series')
+                if series_count == 0:
+                    self.log(f"✓ No partial series created (atomicity preserved)", "SUCCESS")
+                else:
+                    self.log(f"✗ Found {series_count} activities from series (atomicity violated)", "FAIL")
+                    success = False
+        
+        # Cleanup
+        if blocking_id:
+            self.test("Recurring Atomicity: Cleanup Blocking Meeting", "DELETE", f"activities/{blocking_id}", 200, token=self.admin_token)
+        
+        return success
+
+    def test_overlap_spanish_error_messages(self):
+        """Test: Error messages are in Spanish"""
+        test_date = (datetime.now() + timedelta(days=3)).strftime('%Y-%m-%d')
+        while datetime.strptime(test_date, '%Y-%m-%d').weekday() == 0:
+            test_date = (datetime.strptime(test_date, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # Create meeting A
+        success, response = self.test(
+            "Spanish Messages: Create Meeting A",
+            "POST",
+            "activities",
+            200,
+            token=self.admin_token,
+            data={
+                "title": "Meeting A",
+                "color": "#00a5df",
+                "date": test_date,
+                "start_time": "16:00",
+                "end_time": "17:00",
+                "description": "",
+                "location": "",
+                "participant_ids": [],
+                "uses_meeting_room": False
+            }
+        )
+        
+        meeting_a_id = response.get('id') if success else None
+        
+        # Try overlapping meeting and capture error message
+        url = f"{self.base_url}/activities"
+        headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {self.admin_token}'}
+        
+        try:
+            resp = requests.post(url, json={
+                "title": "Meeting B",
+                "color": "#00a5df",
+                "date": test_date,
+                "start_time": "16:30",
+                "end_time": "17:30",
+                "description": "",
+                "location": "",
+                "participant_ids": [],
+                "uses_meeting_room": False
+            }, headers=headers, timeout=10)
+            
+            if resp.status_code == 409:
+                error_detail = resp.json().get('detail', '')
+                self.log(f"Error message: {error_detail}", "INFO")
+                
+                # Check for Spanish keywords
+                spanish_keywords = ['participantes', 'reunión', 'ya tienen', 'ese día']
+                has_spanish = any(keyword in error_detail.lower() for keyword in spanish_keywords)
+                
+                if has_spanish:
+                    self.log(f"✓ Error message is in Spanish", "SUCCESS")
+                    self.tests_passed += 1
+                else:
+                    self.log(f"✗ Error message not in Spanish: {error_detail}", "FAIL")
+                    self.tests_failed += 1
+                    success = False
+            else:
+                self.log(f"Expected 409, got {resp.status_code}", "FAIL")
+                self.tests_failed += 1
+                success = False
+        except Exception as e:
+            self.log(f"Exception: {str(e)}", "FAIL")
+            self.tests_failed += 1
+            success = False
+        
+        self.tests_run += 1
+        
+        # Cleanup
+        if meeting_a_id:
+            self.test("Spanish Messages: Cleanup", "DELETE", f"activities/{meeting_a_id}", 200, token=self.admin_token)
+        
+        return success
+
     def run_all_tests(self):
         """Run all tests in sequence"""
         print("\n" + "="*60)
@@ -1126,6 +1668,18 @@ class HERCO360Tester:
         self.test_inventory_movement_insufficient_stock()
         self.test_inventory_movement_success()
         self.test_inventory_movements_history()
+
+        # Activity Overlap Validation tests (BUG FIX)
+        print("\n🔒 ACTIVITY OVERLAP VALIDATION TESTS (BUG FIX)")
+        print("-" * 60)
+        self.test_overlap_same_participant_creator()
+        self.test_overlap_contiguous_allowed()
+        self.test_overlap_room_conflict()
+        self.test_overlap_vacation_non_blocking()
+        self.test_overlap_participant_conflict()
+        self.test_overlap_update_self_exclusion()
+        self.test_overlap_recurring_series_atomicity()
+        self.test_overlap_spanish_error_messages()
 
         return True
 

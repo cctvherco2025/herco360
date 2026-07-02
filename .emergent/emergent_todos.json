@@ -1,30 +1,26 @@
 [
   {
-    "content": "Backend: modelos VacationRequest + notificaciones nuevas",
+    "content": "Backend: add conflict detection helpers in routes_activities.py",
     "status": "completed"
   },
   {
-    "content": "Backend: routes_vacations (crear, listar mías, por revisar, aprobar, rechazar) + registrar router",
+    "content": "Wire conflict check into create_activity (all recurrence dates)",
     "status": "completed"
   },
   {
-    "content": "Backend: al aprobar, pintar 'Vacaciones' en calendario del solicitante",
+    "content": "Wire conflict check into update_activity (exclude current)",
     "status": "completed"
   },
   {
-    "content": "Frontend: página Vacaciones + item en sidebar + botón en Agenda",
+    "content": "Manual curl sanity test of overlap logic",
     "status": "completed"
   },
   {
-    "content": "Frontend: modal de solicitud y bandeja de aprobación (jefes)",
-    "status": "completed"
+    "content": "Run testing_agent (backend + frontend) for double-booking fix",
+    "status": "in_progress"
   },
   {
-    "content": "Probar backend (curl) flujo completo",
-    "status": "completed"
-  },
-  {
-    "content": "Verificar UI Vacaciones (screenshot)",
-    "status": "completed"
+    "content": "Remind user to Save to GitHub + verify Render redeploy",
+    "status": "pending"
   }
 ]
