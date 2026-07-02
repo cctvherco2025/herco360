@@ -1,10 +1,10 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun, Boxes, FileText, Palmtree } from 'lucide-react';
+import { Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun, Boxes, FileText, Palmtree, Network } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
-import { canAccessInventory, canAccessReports } from '@/lib/constants';
+import { canAccessInventory, canAccessReports, canAccessOrgChart } from '@/lib/constants';
 import { Logo } from '@/components/Logo';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
@@ -30,6 +30,10 @@ function SidebarContent({ onNavigate }) {
   if (canAccessReports(user)) {
     const idx = navItems.findIndex((n) => n.to === '/inventario');
     navItems.splice(idx >= 0 ? idx + 1 : 3, 0, { to: '/reportes', label: 'Reportes', icon: FileText, testid: 'sidebar-nav-reportes' });
+  }
+  if (canAccessOrgChart(user)) {
+    const idx = navItems.findIndex((n) => n.to === '/usuarios');
+    navItems.splice(idx >= 0 ? idx + 1 : navItems.length - 1, 0, { to: '/organigrama', label: 'Jerarquía y permisos', icon: Network, testid: 'sidebar-nav-organigrama' });
   }
 
   return (

@@ -17,6 +17,7 @@ import SalaPublica from '@/pages/SalaPublica';
 import Inventario from '@/pages/Inventario';
 import Reportes from '@/pages/Reportes';
 import Usuarios from '@/pages/Usuarios';
+import Organigrama from '@/pages/Organigrama';
 import Configuracion from '@/pages/Configuracion';
 import Notificaciones from '@/pages/Notificaciones';
 import '@/App.css';
@@ -40,6 +41,7 @@ function App() {
               <Route path="/inventario" element={<Inventario />} />
               <Route path="/reportes" element={<Reportes />} />
               <Route path="/usuarios" element={<Usuarios />} />
+              <Route path="/organigrama" element={<Organigrama />} />
               <Route path="/configuracion" element={<Configuracion />} />
               <Route path="/notificaciones" element={<Notificaciones />} />
             </Route>

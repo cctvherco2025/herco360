@@ -91,3 +91,10 @@ export function canAccessReports(user) {
   const area = (user.area || '').trim();
   return area === 'ECCP' || area === 'Tienda';
 }
+
+// Organigrama / matriz de permisos: solo dirección y administración.
+export function canAccessOrgChart(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  return (user.position || '').trim() === 'Director comercial';
+}
