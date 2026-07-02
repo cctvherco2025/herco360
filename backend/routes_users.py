@@ -1,7 +1,9 @@
 """User management routes."""
 from fastapi import APIRouter, HTTPException, Depends
-from core import db, get_current_user, require_admin, serialize_doc, now_iso, hash_password, new_id
-from models import ProfileUpdate, RoleUpdate, AdminUserCreate, AdminUserUpdate
+from core import (db, get_current_user, require_admin, serialize_doc, now_iso,
+                  hash_password, new_id, require_access_manager, GATED_MODULES,
+                  can_access_inventory, can_access_reports)
+from models import ProfileUpdate, RoleUpdate, AdminUserCreate, AdminUserUpdate, ModuleAccessUpdate
 from notifications import create_notification, log_activity
 
 router = APIRouter(prefix='/users', tags=['users'])
@@ -25,6 +27,51 @@ async def list_users(status: str = None, user=Depends(get_current_user)):
 async def pending_count(user=Depends(get_current_user)):
     count = await db.users.count_documents({'status': 'pending'})
     return {'count': count}
+
+
+def _effective_access(u):
+    return {'inventario': can_access_inventory(u), 'reportes': can_access_reports(u)}
+
+
+@router.get('/access')
+async def list_access(manager=Depends(require_access_manager)):
+    """Users + their effective access to gated modules (for the access-management panel)."""
+    users = await db.users.find({'status': 'approved'}, {'_id': 0, 'password_hash': 0}).sort('name', 1).to_list(500)
+    out = []
+    for u in users:
+        cargo = (u.get('position') or '').strip()
+        locked = u.get('role') == 'admin' or cargo == 'Director comercial'
+        out.append({
+            'id': u['id'], 'name': u['name'], 'email': u.get('email'),
+            'position': u.get('position'), 'area': u.get('area'),
+            'avatar_url': u.get('avatar_url'), 'role': u.get('role'),
+            'locked': locked,  # full-access roles cannot be edited
+            'module_access': u.get('module_access') or {},
+            'access': _effective_access(u),
+        })
+    return serialize_doc(out)
+
+
+@router.patch('/{user_id}/module-access')
+async def set_module_access(user_id: str, data: ModuleAccessUpdate, manager=Depends(require_access_manager)):
+    if data.module not in GATED_MODULES:
+        raise HTTPException(status_code=400, detail='Módulo no válido')
+    target = await db.users.find_one({'id': user_id}, {'_id': 0})
+    if not target:
+        raise HTTPException(status_code=404, detail='Usuario no encontrado')
+    cargo = (target.get('position') or '').strip()
+    if target.get('role') == 'admin' or cargo == 'Director comercial':
+        raise HTTPException(status_code=400, detail='Este rol ya tiene acceso total; no se puede modificar')
+    module_access = dict(target.get('module_access') or {})
+    if data.enabled is None:
+        module_access.pop(data.module, None)  # reset to role default
+    else:
+        module_access[data.module] = bool(data.enabled)
+    await db.users.update_one({'id': user_id}, {'$set': {'module_access': module_access}})
+    updated = await db.users.find_one({'id': user_id}, {'_id': 0, 'password_hash': 0})
+    await log_activity(manager['id'], manager['name'], manager.get('avatar_url'),
+                       'actualizó accesos de', updated['name'], 'user')
+    return {'id': updated['id'], 'module_access': module_access, 'access': _effective_access(updated)}
 
 
 MANAGER_POSITIONS = {'Jefe', 'Gerente', 'Director comercial'}

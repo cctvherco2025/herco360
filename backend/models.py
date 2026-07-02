@@ -41,6 +41,11 @@ class RoleUpdate(BaseModel):
     role: str  # admin | user
 
 
+class ModuleAccessUpdate(BaseModel):
+    module: str  # inventario | reportes
+    enabled: Optional[bool] = None  # True=grant, False=revoke, None=reset to role default
+
+
 class AdminUserCreate(BaseModel):
     name: str
     email: EmailStr

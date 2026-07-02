@@ -72,10 +72,12 @@ export function reportTypeMeta(id) {
 export function canAccessInventory(user) {
   if (!user) return false;
   if (user.role === 'admin') return true;
-  const area = (user.area || '').trim();
   const cargo = (user.position || '').trim();
-  if (area === 'Tienda') return true;
   if (cargo === 'Director comercial') return true;
+  const ov = (user.module_access || {}).inventario;
+  if (ov !== undefined && ov !== null) return !!ov;
+  const area = (user.area || '').trim();
+  if (area === 'Tienda') return true;
   if (cargo === 'Jefe' && area === 'ECCP') return true;
   if (cargo === 'Gerente' && (area === 'Operación Tienda' || area === 'Tienda')) return true;
   return false;
@@ -88,6 +90,8 @@ export function canAccessReports(user) {
   if (user.role === 'admin') return true;
   const cargo = (user.position || '').trim();
   if (cargo === 'Director comercial') return true;
+  const ov = (user.module_access || {}).reportes;
+  if (ov !== undefined && ov !== null) return !!ov;
   const area = (user.area || '').trim();
   return area === 'ECCP' || area === 'Tienda';
 }

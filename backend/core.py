@@ -101,16 +101,28 @@ USER_PUBLIC_FIELDS = {'_id': 0, 'password_hash': 0}
 
 # ---- Inventory module access control ----
 # Allowed: Tienda staff, store managers, Jefe ECCP, Operación manager, Director comercial, admins.
+# Per-user overrides (user['module_access']) can grant/revoke access manually.
+GATED_MODULES = ('inventario', 'reportes')
+
+
+def _module_override(user, module):
+    """Return True/False if a manual override exists for this module, else None."""
+    return (user.get('module_access') or {}).get(module)
+
+
 def can_access_inventory(user) -> bool:
     if not user:
         return False
     if user.get('role') == 'admin':
         return True
-    area = (user.get('area') or '').strip()
     cargo = (user.get('position') or '').strip()
-    if area == 'Tienda':
-        return True
     if cargo == 'Director comercial':
+        return True
+    ov = _module_override(user, 'inventario')
+    if ov is not None:
+        return bool(ov)
+    area = (user.get('area') or '').strip()
+    if area == 'Tienda':
         return True
     if cargo == 'Jefe' and area == 'ECCP':
         return True
@@ -127,7 +139,7 @@ async def require_inventory_access(user=Depends(get_current_user)):
 
 # ---- Reports module access control ----
 # The Reports module belongs to ECCP (owners) who deliver reports to Tienda.
-# Access is limited to ECCP, Tienda and admins.
+# Access is limited to ECCP, Tienda and admins. Per-user overrides apply.
 def can_access_reports(user) -> bool:
     if not user:
         return False
@@ -136,8 +148,18 @@ def can_access_reports(user) -> bool:
     cargo = (user.get('position') or '').strip()
     if cargo == 'Director comercial':
         return True
+    ov = _module_override(user, 'reportes')
+    if ov is not None:
+        return bool(ov)
     area = (user.get('area') or '').strip()
     return area in ('ECCP', 'Tienda')
+
+
+async def require_access_manager(user=Depends(get_current_user)):
+    """Only Admins and the Director comercial may grant/revoke module access."""
+    if user.get('role') == 'admin' or (user.get('position') or '').strip() == 'Director comercial':
+        return user
+    raise HTTPException(status_code=403, detail='No tienes permiso para gestionar accesos')
 
 
 async def require_reports_access(user=Depends(get_current_user)):

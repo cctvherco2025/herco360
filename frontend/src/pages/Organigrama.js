@@ -1,14 +1,19 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
 import {
   Crown, ClipboardCheck, Headphones, Globe, Map, CreditCard, Store, Coins,
   Check, X, Printer, Home, CalendarDays, Building2, Palmtree, Boxes, FileText,
-  ShieldCheck, Users, Info,
+  ShieldCheck, Users, Info, SlidersHorizontal, Search as SearchIcon,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { canAccessOrgChart } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import api from '@/lib/api';
 
 // ---- Institutional palette ----
 const C = {
@@ -105,6 +110,132 @@ function DeptCard({ dept }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function AccessManager() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [savingKey, setSavingKey] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/users/access');
+      setRows(data);
+    } catch (e) {
+      toast.error('No se pudieron cargar los accesos');
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { load(); }, []);
+
+  const toggle = async (u, moduleKey, nextEnabled) => {
+    const key = `${u.id}:${moduleKey}`;
+    setSavingKey(key);
+    try {
+      const { data } = await api.patch(`/users/${u.id}/module-access`, { module: moduleKey, enabled: nextEnabled });
+      setRows((prev) => prev.map((r) => r.id === u.id ? { ...r, access: data.access, module_access: data.module_access } : r));
+      toast.success(nextEnabled ? `Acceso a ${moduleKey} activado para ${u.name}` : `Acceso a ${moduleKey} retirado a ${u.name}`);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'No se pudo actualizar el acceso');
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const filtered = rows.filter((r) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return [r.name, r.email, r.position, r.area].filter(Boolean).some((v) => v.toLowerCase().includes(q));
+  });
+
+  const GATED = [
+    { key: 'inventario', label: 'Inventario', color: C.navy },
+    { key: 'reportes', label: 'Reportes', color: C.cyan },
+  ];
+
+  return (
+    <section className="mt-8 rounded-[22px] border bg-card p-5 sm:p-7 shadow-card no-print" data-testid="access-manager-section">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="h-6 w-1.5 rounded-full" style={{ background: C.orange }} />
+          <div>
+            <h2 className="font-heading text-lg font-semibold text-foreground flex items-center gap-2">
+              <SlidersHorizontal className="h-4 w-4" style={{ color: C.orange }} /> Gestión de accesos a módulos
+            </h2>
+            <p className="text-[12px] text-muted-foreground">Da o quita acceso a Inventario y Reportes por usuario.</p>
+          </div>
+        </div>
+        <div className="relative w-full sm:w-72">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por nombre, cargo o área…"
+            className="pl-9 h-10" data-testid="access-search-input" />
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="py-10 text-center text-sm text-muted-foreground">Cargando usuarios…</div>
+      ) : filtered.length === 0 ? (
+        <div className="py-10 text-center text-sm text-muted-foreground">Sin usuarios que coincidan.</div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="bg-muted/60">
+                <th className="px-3 py-3 text-left text-[12px] font-semibold text-foreground min-w-[220px]">Usuario</th>
+                <th className="px-3 py-3 text-left text-[12px] font-semibold text-foreground min-w-[160px]">Cargo · Área</th>
+                {GATED.map((m) => (
+                  <th key={m.key} className="px-3 py-3 text-center text-[12px] font-semibold text-foreground min-w-[130px]">{m.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((u) => (
+                <tr key={u.id} className="border-t" data-testid={`access-row-${u.id}`}>
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <img src={u.avatar_url} alt="" className="h-7 w-7 rounded-full border object-cover" />
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-medium text-foreground">{u.name}</p>
+                        <p className="truncate text-[11px] text-muted-foreground">{u.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-[12px] text-muted-foreground">
+                    {u.position || '—'}{u.area ? ` · ${u.area}` : ''}
+                  </td>
+                  {GATED.map((m) => (
+                    <td key={m.key} className="px-3 py-2.5 text-center">
+                      {u.locked ? (
+                        <Badge variant="secondary" className="gap-1 text-[10px]" data-testid={`access-locked-${u.id}`}>
+                          <ShieldCheck className="h-3 w-3" style={{ color: C.green }} /> Acceso total
+                        </Badge>
+                      ) : (
+                        <div className="flex items-center justify-center gap-2">
+                          <Switch
+                            checked={!!u.access?.[m.key]}
+                            disabled={savingKey === `${u.id}:${m.key}`}
+                            onCheckedChange={(v) => toggle(u, m.key, v)}
+                            data-testid={`access-switch-${m.key}-${u.id}`}
+                          />
+                        </div>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="mt-3 flex items-start gap-1.5 text-[12px] text-muted-foreground">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: C.orange }} />
+        Director Comercial y administradores conservan acceso total y no se pueden editar. Los cambios se aplican de inmediato; el usuario los verá en su próximo ingreso o al recargar.
+      </p>
+    </section>
   );
 }
 
@@ -276,6 +407,9 @@ export default function Organigrama() {
           </motion.div>
         </div>
       </section>
+
+      {/* SECTION 4 — Gestión de accesos (interactivo) */}
+      <AccessManager />
 
       {/* Print styles */}
       <style>{`
