@@ -133,6 +133,9 @@ def can_access_reports(user) -> bool:
         return False
     if user.get('role') == 'admin':
         return True
+    cargo = (user.get('position') or '').strip()
+    if cargo == 'Director comercial':
+        return True
     area = (user.get('area') or '').strip()
     return area in ('ECCP', 'Tienda')
 

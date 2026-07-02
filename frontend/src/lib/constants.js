@@ -86,6 +86,8 @@ export function canAccessInventory(user) {
 export function canAccessReports(user) {
   if (!user) return false;
   if (user.role === 'admin') return true;
+  const cargo = (user.position || '').trim();
+  if (cargo === 'Director comercial') return true;
   const area = (user.area || '').trim();
   return area === 'ECCP' || area === 'Tienda';
 }
