@@ -51,7 +51,7 @@ export default function Login() {
             Agenda, Sala de Juntas y colaboración corporativa en una plataforma diseñada para tu equipo.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            {['Agenda inteligente', 'Sala de Juntas', 'Notificaciones','Organiza'].map((t) => (
+            {['Agenda inteligente', 'Sala de Juntas', 'Notificaciones'].map((t) => (
               <span key={t} className="rounded-full bg-white/70 backdrop-blur px-4 py-2 text-sm font-medium text-[#1e395e] shadow-card border border-white/60">{t}</span>
             ))}
           </div>
