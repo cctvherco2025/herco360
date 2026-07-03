@@ -48,10 +48,10 @@ export default function Login() {
             La evolución digital de <span className="text-[#00a5df]">HERCO</span>.
           </motion.h1>
           <p className="mt-5 text-[#5b667a] text-lg">
-            Agenda, Sala de Juntas y colaboración corporativa en una plataforma premium diseñada para tu equipo.
+            Agenda, Sala de Juntas y colaboración corporativa en una plataforma diseñada para tu equipo.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            {['Agenda inteligente', 'Sala de Juntas', 'Notificaciones'].map((t) => (
+            {['Agenda inteligente', 'Sala de Juntas', 'Notificaciones','Organiza'].map((t) => (
               <span key={t} className="rounded-full bg-white/70 backdrop-blur px-4 py-2 text-sm font-medium text-[#1e395e] shadow-card border border-white/60">{t}</span>
             ))}
           </div>
