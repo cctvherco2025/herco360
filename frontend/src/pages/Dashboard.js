@@ -94,7 +94,7 @@ export default function Dashboard() {
       </div>
 
       {/* Today + Recent */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+      <div className="lg:col-span-3 rounded-[18px] bg-card border shadow-card p-5">
         <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}
           className="lg:col-span-2 rounded-[18px] bg-card border shadow-card p-5" data-testid="dashboard-today-activities-card">
           <div className="flex items-center gap-2.5 mb-1">
@@ -141,7 +141,7 @@ export default function Dashboard() {
         </motion.div>
 
         {/* Recent activity */}
-        <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.16 }}
+           {/*<motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.16 }}
           className="rounded-[18px] bg-card border shadow-card p-5" data-testid="dashboard-recent-activity">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2.5">
@@ -161,10 +161,11 @@ export default function Dashboard() {
             ))}
             {(data?.recent_activity || []).length === 0 && <p className="text-sm text-muted-foreground text-center py-8">Sin actividad reciente</p>}
           </div>
-        </motion.div>
+        </motion.div>*/}
       </div>
 
       {/* Mini calendar */}
+      {/*
       <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }}
         className="rounded-[18px] bg-card border shadow-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -192,7 +193,7 @@ export default function Dashboard() {
           {view === 'Día' && <DayView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} />}
           {view === 'Mes' && <MonthView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} />}
         </div>
-      </motion.div>
+      </motion.div>*/}
 
       <ActivityModal open={modalOpen} onOpenChange={setModalOpen} activity={editing} defaultDate={pendingDate} onSaved={load} />
     </div>

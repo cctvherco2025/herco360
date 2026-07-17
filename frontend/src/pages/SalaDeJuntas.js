@@ -16,11 +16,24 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 const ICONS = { CircleCheck, CircleX, Bookmark, Ban, Flag };
+const DC_BLOCK_START = '08:00';
+const DC_BLOCK_END = '16:00';
 
 function isMondayStr(ds) {
   if (!ds || typeof ds !== 'string') return false;
   const [y, m, d] = ds.split('-').map(Number);
   return new Date(y, m - 1, d).getDay() === 1;
+}
+
+function timesOverlap(aStart, aEnd, bStart, bEnd) {
+  return aStart < bEnd && bStart < aEnd;
+}
+
+// True only when the requested date/time range actually collides with the
+// Monday 08:00-16:00 "Dirección Comercial" block — not the whole day.
+function mondayBlockConflict(dateStr, startTime, endTime) {
+  if (!isMondayStr(dateStr)) return false;
+  return timesOverlap(startTime, endTime, DC_BLOCK_START, DC_BLOCK_END);
 }
 
 // Synthetic recurring "Dirección Comercial" Monday block for the visible range.
@@ -32,7 +45,7 @@ function mondayBlocks(anchor) {
     if (d.getDay() === 1) {
       out.push({
         id: `dc-${ymd(d)}`, title: 'Reunión Dirección Comercial', date: ymd(d),
-        start_time: '08:00', end_time: '18:00', color: '#712146', status: 'Bloqueado', locked: true,
+        start_time: DC_BLOCK_START, end_time: DC_BLOCK_END, color: '#712146', status: 'Bloqueado', locked: true,
       });
     }
   }
@@ -68,7 +81,7 @@ export default function SalaDeJuntas() {
     const items = reservations.filter((r) => r.date === ds);
     if (isMondayStr(ds)) {
       items.unshift({ id: 'dc-' + ds, locked: true, title: 'Reunión Dirección Comercial',
-        start_time: '08:00', end_time: '18:00', reserved_by_name: 'Dirección Comercial', status: 'Bloqueado', date: ds });
+        start_time: DC_BLOCK_START, end_time: DC_BLOCK_END, reserved_by_name: 'Dirección Comercial', status: 'Bloqueado', date: ds });
     }
     if (items.length === 0) { openReserve(ds); return; }
     setDayView({ date: ds, items });
@@ -118,12 +131,13 @@ export default function SalaDeJuntas() {
 
   const openReserve = (dateStr) => {
     if (typeof dateStr === 'string') {
-      if (isMondayStr(dateStr)) { toast.error('Los lunes la Sala de Juntas está reservada para Dirección Comercial'); return; }
-      setForm({ title: '', date: dateStr, start_time: '09:00', end_time: '10:00', notes: '' });
+      // Mondays are only blocked 08:00-16:00 — default to right after the block so the form opens valid.
+      const times = isMondayStr(dateStr) ? { start_time: DC_BLOCK_END, end_time: '17:00' } : { start_time: '09:00', end_time: '10:00' };
+      setForm({ title: '', date: dateStr, ...times, notes: '' });
     } else {
-      let d = ymd(new Date());
-      if (isMondayStr(d)) d = ymd(addDays(new Date(), 1));  // skip Monday default
-      setForm({ title: '', date: d, start_time: '09:00', end_time: '10:00', notes: '' });
+      const d = ymd(new Date());
+      const times = isMondayStr(d) ? { start_time: DC_BLOCK_END, end_time: '17:00' } : { start_time: '09:00', end_time: '10:00' };
+      setForm({ title: '', date: d, ...times, notes: '' });
     }
     setOpen(true);
   };
@@ -142,8 +156,11 @@ export default function SalaDeJuntas() {
   const save = async () => {
     if (!form.title.trim()) { toast.error('Ingresa un título'); return; }
     if (form.date < ymd(new Date())) { toast.error('No puedes reservar la sala en fechas pasadas'); return; }
-    if (isMondayStr(form.date)) { toast.error('Los lunes la sala está reservada para Dirección Comercial. Elige otro día.'); return; }
     if (form.end_time <= form.start_time) { toast.error('La hora de fin debe ser mayor'); return; }
+    if (mondayBlockConflict(form.date, form.start_time, form.end_time)) {
+      toast.error('Los lunes de 08:00 a 16:00 la sala está reservada para Dirección Comercial. Elige un horario fuera de ese rango.');
+      return;
+    }
     setSaving(true);
     try { await api.post('/reservations', { ...form, room_id: room?.id }); toast.success('Sala reservada'); setOpen(false); load(); }
     catch (err) { toast.error(err?.response?.data?.detail || 'Error al reservar'); }
@@ -237,7 +254,7 @@ export default function SalaDeJuntas() {
             </Tabs>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground mb-3">Haz clic en una fecha para reservar la sala ese día. <span className="text-[#712146] font-medium">Los lunes están reservados para Dirección Comercial.</span></p>
+        <p className="text-xs text-muted-foreground mb-3">Haz clic en una fecha para reservar la sala ese día. <span className="text-[#712146] font-medium">Los lunes de 08:00 a 16:00 están reservados para Dirección Comercial; después de las 16:00 la sala queda libre.</span></p>
         <div className="overflow-hidden">
           {view === 'Mes' && <MonthView anchor={anchor} activities={calendarEvents} onEventClick={openDetail} onSlotClick={(ds) => openDay(ds)} />}
           {view === 'Semana' && <WeekView anchor={anchor} activities={calendarEvents} onEventClick={openDetail} onSlotClick={(ds) => openReserve(ds)} />}
@@ -307,15 +324,15 @@ export default function SalaDeJuntas() {
               <div className="space-y-1.5"><Label>Fin</Label><Input type="time" value={form.end_time} onChange={set('end_time')} className="h-11" /></div>
             </div>
             <div className="space-y-1.5"><Label>Notas</Label><Textarea value={form.notes} onChange={set('notes')} rows={2} placeholder="Detalles adicionales…" /></div>
-            {isMondayStr(form.date) && (
+            {mondayBlockConflict(form.date, form.start_time, form.end_time) && (
               <div className="rounded-xl bg-[rgba(113,33,70,0.1)] text-[#712146] text-xs font-medium px-3 py-2 flex items-center gap-2">
-                <Ban className="h-4 w-4 shrink-0" /> Los lunes la sala está reservada para Dirección Comercial. Elige otro día.
+                <Ban className="h-4 w-4 shrink-0" /> Los lunes de 08:00 a 16:00 la sala está reservada para Dirección Comercial. Elige un horario fuera de ese rango.
               </div>
             )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} className="rounded-xl">Cancelar</Button>
-            <Button onClick={save} disabled={saving || isMondayStr(form.date)} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="reservation-submit">{saving ? 'Reservando…' : 'Reservar'}</Button>
+            <Button onClick={save} disabled={saving || mondayBlockConflict(form.date, form.start_time, form.end_time)} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="reservation-submit">{saving ? 'Reservando…' : 'Reservar'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -341,7 +358,7 @@ export default function SalaDeJuntas() {
           </div>
           <DialogFooter className="gap-2 sm:gap-2">
             <Button variant="outline" onClick={() => setDayView(null)} className="rounded-xl">Cerrar</Button>
-            {dayView && !isMondayStr(dayView.date) && (
+            {dayView && (
               <Button onClick={() => { const d = dayView.date; setDayView(null); openReserve(d); }} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="day-reserve-button"><Plus className="h-4 w-4 mr-1" /> Reservar</Button>
             )}
           </DialogFooter>
@@ -366,7 +383,7 @@ export default function SalaDeJuntas() {
               </div>
               {detailRes.locked && (
                 <div className="rounded-xl bg-[rgba(113,33,70,0.1)] text-[#712146] text-xs font-medium px-3 py-2 flex items-center gap-2">
-                  <Ban className="h-4 w-4 shrink-0" /> Espacio fijo semanal para Dirección Comercial (lunes).
+                  <Ban className="h-4 w-4 shrink-0" /> Espacio fijo semanal para Dirección Comercial (lunes, 08:00-16:00). Después de las 16:00 la sala queda disponible.
                 </div>
               )}
             </div>

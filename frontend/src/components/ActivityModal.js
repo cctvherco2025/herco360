@@ -32,6 +32,12 @@ const addHour = (t) => {
   const end = Math.min(h * 60 + m + 60, 20 * 60);
   return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`;
 };
+const isPastActivity = (activity) => {
+  if (!activity) return false;
+  const endDateTime = new Date(`${activity.date}T${activity.end_time || '23:59'}`);
+  return endDateTime < new Date();
+};
+
 
 const empty = (date, time) => ({
   title: '', color: DEFAULT_ACTIVITY_COLOR, date: date || ymd(new Date()),
@@ -46,7 +52,8 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   const [saving, setSaving] = useState(false);
   const isEdit = !!activity;
   const isOwner = activity ? (activity.created_by === user?.id || user?.role === 'admin') : true;
-  const readOnly = isEdit && !isOwner;
+const isPast = isEdit && isPastActivity(activity);
+const readOnly = isEdit && (!isOwner || isPast);
   const myPart = (activity?.participants || []).find((p) => p.user_id === user?.id);
 
   useEffect(() => {
@@ -100,7 +107,21 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
 
   const save = async () => {
     if (!form.title.trim()) { toast.error('Ingresa un título'); return; }
-    if (!isEdit && form.date < ymd(new Date())) { toast.error('No puedes crear actividades en fechas pasadas'); return; }
+
+  if (!isEdit) {
+  const now = new Date();
+  if (form.date < ymd(now)) {
+    toast.error('No puedes crear actividades en fechas pasadas');
+    return;
+  }
+  if (form.date === ymd(now)) {
+    const nowHM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    if (form.start_time < nowHM) {
+      toast.error('No puedes crear una actividad con hora de inicio ya pasada');
+      return;
+    }
+  }
+}
     if (form.end_time <= form.start_time) { toast.error('La hora de fin debe ser mayor a la de inicio'); return; }
     if (roomBlocked) { toast.error(MONDAY_MSG); return; }
     setSaving(true);
@@ -207,7 +228,14 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
                   ))}
                 </button>
               </PopoverTrigger>
-              <PopoverContent align="start" className="w-[--radix-popover-trigger-width] p-1.5 rounded-2xl max-h-[300px] overflow-y-auto">
+             <PopoverContent
+  align="start"
+  side="bottom"
+  sideOffset={6}
+  onWheel={(e) => e.stopPropagation()}
+  onTouchMove={(e) => e.stopPropagation()}
+  className="w-[--radix-popover-trigger-width] max-h-[300px] overflow-y-auto overscroll-contain touch-pan-y p-1.5 rounded-2xl"
+>
                 {Object.keys(groupedUsers).sort((a, b) => a.localeCompare(b)).map((area) => {
                   const allSel = areaAllSelected(area);
                   const selCount = groupedUsers[area].filter((u) => form.participant_ids.includes(u.id)).length;

@@ -43,7 +43,7 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
       onDragEnd={() => onDragEnd?.()}
       onClick={(e) => { e.stopPropagation(); onClick?.(ev); }}
       className={`absolute left-1 right-1 rounded-[12px] px-2 py-1 text-left overflow-hidden border shadow-xs hover:shadow-card transition-[transform,box-shadow] z-10 ${(draggable && !ev.foreign) ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
-      style={{ top, height, background: tint, borderColor: solid }}
+      style={{ top, height, background: tint, borderColor: solid, borderStyle: ev.pending ? 'dashed' : 'solid' }}
       data-testid="calendar-event-block">
       <span className="block h-full" style={{ borderLeft: `3px solid ${solid}`, paddingLeft: 6 }}>
         <span className="block text-[11px] font-semibold truncate" style={{ color: solid }}>{ev.title}</span>
@@ -171,7 +171,7 @@ export function MonthView({ anchor, activities, onEventClick, onSlotClick, onEve
                       onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; setDragEv(ev); }}
                       onDragEnd={() => setDragEv(null)}
                       onClick={(e) => { e.stopPropagation(); onEventClick?.(ev); }}
-                      className={`w-full flex items-center gap-1 rounded-md px-1.5 py-0.5 text-left hover:opacity-90 ${onEventMove ? 'cursor-grab active:cursor-grabbing' : ''}`} style={{ background: tint }}>
+                      className={`w-full flex items-center gap-1 rounded-md px-1.5 py-0.5 text-left hover:opacity-90 ${onEventMove ? 'cursor-grab active:cursor-grabbing' : ''}`} style={{ background: tint, border: ev.pending ? `1px dashed ${solid}` : 'none' }}>
                       <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: solid }} />
                       <span className="text-[10px] font-medium truncate" style={{ color: solid }}>{ev.start_time} {ev.title}</span>
                     </button>

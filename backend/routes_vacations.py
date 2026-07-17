@@ -9,7 +9,9 @@ router = APIRouter(prefix='/vacations', tags=['vacations'])
 
 MANAGER_POSITIONS = {'Jefe', 'Gerente', 'Director comercial'}
 
+
 TYPE_COLORS = {
+    
     'Vacaciones': '#ec9032',
     'Permiso': '#3cbef6',
     'Incapacidad': '#dc2626',
@@ -153,3 +155,79 @@ async def reject_request(request_id: str, data: VacationReview, user=Depends(get
         actor_name=user['name'], actor_avatar=user.get('avatar_url'))
     updated = await db.vacation_requests.find_one({'id': request_id}, {'_id': 0})
     return serialize_doc(updated)
+
+@router.get('/calendar')
+async def calendar(start: str, end: str, user=Depends(get_current_user)):
+    """Vacaciones/permisos visibles en el calendario, según jerarquía:
+    admin y Director comercial ven todas las áreas; jefes/gerentes ven su área;
+    un usuario normal (sin posición de mando) solo ve las suyas."""
+    q = {
+        'status': {'$in': ['approved', 'pending']},
+        'start_date': {'$lte': end},
+        'end_date': {'$gte': start},
+    }
+    if _sees_all_areas(user):
+        pass
+    elif _is_manager(user):
+        q['area'] = user.get('area')
+    else:
+        q['user_id'] = user['id']
+    rows = await db.vacation_requests.find(q, {'_id': 0}).sort('start_date', 1).to_list(500)
+    return serialize_doc(rows)
+
+@router.put('/{request_id}')
+async def update_request(request_id: str, data: VacationRequestInput, user=Depends(get_current_user)):
+    req = await db.vacation_requests.find_one({'id': request_id}, {'_id': 0})
+    if not req:
+        raise HTTPException(status_code=404, detail='Solicitud no encontrada')
+    if req['user_id'] != user['id']:
+        raise HTTPException(status_code=403, detail='No puedes editar solicitudes de otro usuario')
+    if data.end_date < data.start_date:
+        raise HTTPException(status_code=400, detail='La fecha de fin no puede ser anterior a la de inicio')
+    if data.start_date < date_cls.today().isoformat():
+        raise HTTPException(status_code=400, detail='No puedes solicitar fechas pasadas')
+    if data.type not in TYPE_COLORS:
+        raise HTTPException(status_code=400, detail='Tipo inválido')
+    overlap = await db.vacation_requests.find_one({
+        'id': {'$ne': request_id},
+        'user_id': user['id'],
+        'status': {'$in': ['pending', 'approved']},
+        'start_date': {'$lte': data.end_date},
+        'end_date': {'$gte': data.start_date},
+    })
+    if overlap:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ya tienes una solicitud de {overlap['type']} ({overlap['status']}) que se traslapa con esas fechas")
+
+    was_approved = req['status'] == 'approved'
+    await db.vacation_requests.update_one({'id': request_id}, {'$set': {
+        'start_date': data.start_date, 'end_date': data.end_date,
+        'type': data.type, 'reason': (data.reason or '').strip(),
+        'status': 'pending',
+        'reviewed_by': None, 'reviewed_by_name': None,
+        'reviewed_at': None, 'review_comment': None,
+    }})
+    if was_approved:
+        # Estaba aprobada: hay que borrar las actividades ya pintadas en el calendario y notificar de nuevo.
+        await db.activities.delete_many({'vacation_id': request_id})
+        await notify_area_managers(
+            user.get('area', ''), 'vacacion_solicitada',
+            f"{user['name']} modificó su solicitud de {data.type} ({data.start_date} al {data.end_date}), requiere nueva autorización",
+            exclude_user_id=user['id'], related_id=request_id, related_type='vacation',
+            actor_name=user['name'], actor_avatar=user.get('avatar_url'))
+    updated = await db.vacation_requests.find_one({'id': request_id}, {'_id': 0})
+    return serialize_doc(updated)
+
+
+@router.delete('/{request_id}')
+async def delete_request(request_id: str, user=Depends(get_current_user)):
+    req = await db.vacation_requests.find_one({'id': request_id}, {'_id': 0})
+    if not req:
+        raise HTTPException(status_code=404, detail='Solicitud no encontrada')
+    if req['user_id'] != user['id']:
+        raise HTTPException(status_code=403, detail='No puedes eliminar solicitudes de otro usuario')
+    if req['status'] == 'approved':
+        raise HTTPException(status_code=400, detail='No puedes eliminar una solicitud ya aprobada. Edítala primero.')
+    await db.vacation_requests.delete_one({'id': request_id})
+    return {'ok': True}
