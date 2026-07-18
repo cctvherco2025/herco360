@@ -233,7 +233,7 @@ export default function SalaPublica() {
           </div>
         </motion.div>
 
-        <p className="text-center text-xs text-muted-foreground mt-6">HERCO360 · El Universo Ferretero</p>
+        <p className="text-center text-xs text-muted-foreground mt-6">HERCO CCTV · El Universo Ferretero</p>
       </main>
 
       {/* Reserve dialog */}

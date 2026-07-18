@@ -41,13 +41,13 @@ export default function RecuperarPassword() {
         <div className="max-w-md">
           <motion.h1 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
             className="font-heading text-5xl font-semibold text-[#1e395e] leading-[1.05]">
-            Recupera tu acceso a <span className="text-[#00a5df]">HERCO360</span>.
+            Recupera tu acceso a <span className="text-[#00a5df]">HERCO CCTV</span>.
           </motion.h1>
           <p className="mt-5 text-[#5b667a] text-lg">
             Define una nueva contraseña para tu cuenta corporativa y vuelve a tu espacio de trabajo.
           </p>
         </div>
-        <p className="text-sm text-[#8a8b8b]">© 2026 HERCO — Plataforma Corporativa HERCO360</p>
+        <p className="text-sm text-[#8a8b8b]">© 2026 HERCO — Plataforma Corporativa HERCO CCTV</p>
       </div>
 
       {/* Form panel */}

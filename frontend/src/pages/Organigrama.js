@@ -249,7 +249,7 @@ export default function Organigrama() {
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-heading text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
-            Jerarquía organizacional y acceso al sistema <span style={{ color: C.cyan }}>HERCO360</span>
+            Jerarquía organizacional y acceso al sistema <span style={{ color: C.cyan }}>HERCO CCTV</span>
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">Estructura de mando y matriz de permisos por rol (RBAC)</p>
         </div>

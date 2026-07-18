@@ -12,7 +12,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { MonthView, startOfWeek, addDays } from '@/components/CalendarViews';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { MonthView, WeekView, DayView, startOfWeek, addDays } from '@/components/CalendarViews';
 
 const TYPES = ['Vacaciones', 'Permiso', 'Incapacidad'];
 const TYPE_COLOR = { Vacaciones: '#ec9032', Permiso: '#77868d', Incapacidad: '#dc2626' };
@@ -107,6 +108,7 @@ export default function Vacaciones() {
 
   // ---- Calendario de vacaciones ----
   const [calAnchor, setCalAnchor] = useState(new Date());
+  const [calView, setCalView] = useState('Mes');
   const [calRequests, setCalRequests] = useState([]);
   const [calEvents, setCalEvents] = useState([]);
   const [dayModalDate, setDayModalDate] = useState(null);
@@ -133,19 +135,41 @@ export default function Vacaciones() {
   };
 
   const loadCalendar = useCallback(async () => {
-    const first = new Date(calAnchor.getFullYear(), calAnchor.getMonth(), 1);
-    const gridStart = startOfWeek(first);
-    const gridEnd = addDays(gridStart, 41);
+    let gridStart, gridEnd;
+    if (calView === 'Día') {
+      gridStart = calAnchor;
+      gridEnd = calAnchor;
+    } else if (calView === 'Semana') {
+      gridStart = startOfWeek(calAnchor);
+      gridEnd = addDays(gridStart, 6);
+    } else {
+      const first = new Date(calAnchor.getFullYear(), calAnchor.getMonth(), 1);
+      gridStart = startOfWeek(first);
+      gridEnd = addDays(gridStart, 41);
+    }
     try {
       const { data } = await api.get(`/vacations/calendar?start=${ymd(gridStart)}&end=${ymd(gridEnd)}`);
       setCalRequests(data);
       setCalEvents(expandRequests(data));
     } catch (e) {}
-  }, [calAnchor]);
+  }, [calAnchor, calView]);
 
   useEffect(() => { loadCalendar(); }, [loadCalendar]);
 
   const requestsForDay = (dateStr) => calRequests.filter((r) => r.start_date <= dateStr && r.end_date >= dateStr);
+
+  const moveCal = (dir) => {
+    if (calView === 'Mes') setCalAnchor(new Date(calAnchor.getFullYear(), calAnchor.getMonth() + dir, 1));
+    else if (calView === 'Día') setCalAnchor(addDays(calAnchor, dir));
+    else setCalAnchor(addDays(calAnchor, dir * 7));
+  };
+
+  const calRangeLabel = () => {
+    if (calView === 'Mes') return `${capitalize(MESES[calAnchor.getMonth()])} ${calAnchor.getFullYear()}`;
+    if (calView === 'Día') return capitalize(fullDateEs(ymd(calAnchor)));
+    const s = startOfWeek(calAnchor); const e = addDays(s, 6);
+    return `${s.getDate()} ${MESES[s.getMonth()].slice(0, 3)} - ${e.getDate()} ${MESES[e.getMonth()].slice(0, 3)} ${e.getFullYear()}`;
+  };
 
   const RangeRow = ({ r }) => (
     <div className="flex items-center gap-2 text-sm text-foreground">
@@ -249,25 +273,32 @@ export default function Vacaciones() {
         className="rounded-[18px] bg-card border shadow-card p-5 mt-5" data-testid="vacations-calendar">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
           <h2 className="font-heading text-lg font-semibold">Calendario de vacaciones</h2>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-1 rounded-xl border bg-card p-1">
               <button
-                onClick={() => setCalAnchor(new Date(calAnchor.getFullYear(), calAnchor.getMonth() - 1, 1))}
+                onClick={() => moveCal(-1)}
                 className="p-1.5 rounded-lg hover:bg-muted" data-testid="vacations-cal-prev">
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <button
                 onClick={() => setCalAnchor(new Date())}
                 className="px-3 py-1 text-sm font-medium rounded-lg hover:bg-muted" data-testid="vacations-cal-today">
-                MES
+                Hoy
               </button>
               <button
-                onClick={() => setCalAnchor(new Date(calAnchor.getFullYear(), calAnchor.getMonth() + 1, 1))}
+                onClick={() => moveCal(1)}
                 className="p-1.5 rounded-lg hover:bg-muted" data-testid="vacations-cal-next">
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
-            <span className="text-sm font-medium">{capitalize(MESES[calAnchor.getMonth()])} {calAnchor.getFullYear()}</span>
+            <span className="text-sm font-medium">{calRangeLabel()}</span>
+            <Tabs value={calView} onValueChange={setCalView}>
+              <TabsList className="rounded-xl">
+                <TabsTrigger value="Día" className="rounded-lg text-xs" data-testid="vacations-view-dia">Día</TabsTrigger>
+                <TabsTrigger value="Semana" className="rounded-lg text-xs" data-testid="vacations-view-semana">Semana</TabsTrigger>
+                <TabsTrigger value="Mes" className="rounded-lg text-xs" data-testid="vacations-view-mes">Mes</TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
         </div>
         <div className="flex items-center flex-wrap gap-4 text-xs text-muted-foreground mb-3">
@@ -276,12 +307,32 @@ export default function Vacaciones() {
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: APPROVED_COLOR.Permiso }} /> Permiso aprobado</span>
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: APPROVED_COLOR.Incapacidad }} /> Incapacidad aprobada</span>
         </div>
-        <MonthView
-          anchor={calAnchor}
-          activities={calEvents}
-          onEventClick={(ev) => setDayModalDate(ev.date)}
-          onSlotClick={(ds) => { if (requestsForDay(ds).length > 0) setDayModalDate(ds); }}
-        />
+        <div className="overflow-hidden">
+          {calView === 'Semana' && (
+            <WeekView
+              anchor={calAnchor}
+              activities={calEvents}
+              onEventClick={(ev) => setDayModalDate(ev.date)}
+              onSlotClick={(ds) => { if (requestsForDay(ds).length > 0) setDayModalDate(ds); }}
+            />
+          )}
+          {calView === 'Día' && (
+            <DayView
+              anchor={calAnchor}
+              activities={calEvents}
+              onEventClick={(ev) => setDayModalDate(ev.date)}
+              onSlotClick={(ds) => { if (requestsForDay(ds).length > 0) setDayModalDate(ds); }}
+            />
+          )}
+          {calView === 'Mes' && (
+            <MonthView
+              anchor={calAnchor}
+              activities={calEvents}
+              onEventClick={(ev) => setDayModalDate(ev.date)}
+              onSlotClick={(ds) => { if (requestsForDay(ds).length > 0) setDayModalDate(ds); }}
+            />
+          )}
+        </div>
       </motion.div>
 
       {/* Day detail dialog */}

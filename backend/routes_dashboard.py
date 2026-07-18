@@ -22,9 +22,19 @@ async def dashboard(user=Depends(get_current_user)):
                 or any(p['user_id'] == user['id'] for p in a.get('participants', []))
                 or user['role'] == 'admin']
 
+    
     # Upcoming (next 7 days, excluding today)
     end = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
-    upcoming = await db.activities.count_documents({'date': {'$gt': today, '$lte': end}})
+    if user['role'] == 'admin':
+        upcoming = await db.activities.count_documents({'date': {'$gt': today, '$lte': end}})
+    else:
+        upcoming = await db.activities.count_documents({
+            'date': {'$gt': today, '$lte': end},
+            '$or': [
+                {'created_by': user['id']},
+                {'participants.user_id': user['id']},
+            ],
+        })
 
     # Room status
     room = await db.rooms.find_one({}, {'_id': 0})

@@ -190,16 +190,17 @@ export default function SalaDeJuntas() {
 
   return (
     <div className="max-w-[1320px] mx-auto pt-2">
-      <div className="flex items-center justify-between mb-5">
-        <div>
-          <h1 className="font-heading text-2xl sm:text-3xl font-semibold">Sala de Juntas</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Consulta el estado y gestiona las reservas</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={() => setQrOpen(true)} variant="outline" className="rounded-xl" data-testid="room-qr-button"><QrCode className="h-4 w-4 mr-1.5" /> QR para reservar</Button>
-          <Button onClick={() => openReserve()} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="room-reserve-button"><Plus className="h-4 w-4 mr-1" /> Reservar sala</Button>
-        </div>
-      </div>
+      
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+  <div>
+    <h1 className="font-heading text-2xl sm:text-3xl font-semibold">Sala de Juntas</h1>
+    <p className="text-muted-foreground text-sm mt-0.5">Consulta el estado y gestiona las reservas</p>
+  </div>
+  <div className="flex items-center gap-2">
+    <Button onClick={() => setQrOpen(true)} variant="outline" className="rounded-xl flex-1 sm:flex-none" data-testid="room-qr-button"><QrCode className="h-4 w-4 mr-1.5" /> QR para reservar</Button>
+    <Button onClick={() => openReserve()} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white flex-1 sm:flex-none" data-testid="room-reserve-button"><Plus className="h-4 w-4 mr-1" /> Reservar sala</Button>
+  </div>
+</div>
 
       {/* Hero status card */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}

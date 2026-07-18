@@ -58,10 +58,10 @@ export default function Register() {
             Únete al equipo <span className="text-[#00a5df]">HERCO</span>.
           </motion.h1>
           <p className="mt-5 text-[#5b667a] text-lg">
-            Crea tu cuenta y accede de inmediato a la plataforma corporativa HERCO360.
+            Crea tu cuenta y accede de inmediato a la plataforma corporativa HERCO CCTV.
           </p>
         </div>
-        <p className="text-sm text-[#8a8b8b]">© 2026 HERCO — Plataforma Corporativa HERCO360</p>
+        <p className="text-sm text-[#8a8b8b]">© 2026 HERCO — Plataforma Corporativa HERCO CCTV</p>
       </div>
 
       <div className="flex items-center justify-center p-6 sm:p-10">
@@ -69,7 +69,7 @@ export default function Register() {
           className="w-full max-w-md glass rounded-[24px] border border-white/60 dark:border-white/10 shadow-float p-8">
           <div className="lg:hidden mb-6 flex justify-center"><Logo size="md" /></div>
           <h2 className="font-heading text-2xl font-semibold text-foreground">Crear cuenta</h2>
-          <p className="text-sm text-muted-foreground mt-1">Registra tus datos para unirte a HERCO360</p>
+          <p className="text-sm text-muted-foreground mt-1">Registra tus datos para unirte a HERCO CCTV</p>
 
           <form onSubmit={submit} className="mt-7 space-y-4">
             <div className="space-y-1.5">

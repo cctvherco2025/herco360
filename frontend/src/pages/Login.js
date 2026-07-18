@@ -56,7 +56,7 @@ export default function Login() {
             ))}
           </div>
         </div>
-        <p className="text-sm text-[#8a8b8b]">© 2026 HERCO — Plataforma Corporativa HERCO360</p>
+        <p className="text-sm text-[#8a8b8b]">© 2026 HERCO — Plataforma Corporativa HERCO CCTV</p>
       </div>
 
       {/* Form panel */}
@@ -65,7 +65,7 @@ export default function Login() {
           className="w-full max-w-md glass rounded-[24px] border border-white/60 dark:border-white/10 shadow-float p-8">
           <div className="lg:hidden mb-6 flex justify-center"><Logo size="md" /></div>
           <h2 className="font-heading text-2xl font-semibold text-foreground">Iniciar sesión</h2>
-          <p className="text-sm text-muted-foreground mt-1">Accede a tu espacio de trabajo HERCO360</p>
+          <p className="text-sm text-muted-foreground mt-1">Accede a tu espacio de trabajo HERCO CCTV</p>
 
           <form onSubmit={submit} className="mt-7 space-y-4">
             <div className="space-y-1.5">

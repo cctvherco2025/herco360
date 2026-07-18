@@ -148,20 +148,22 @@ export default function Usuarios() {
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
           {approved.map((u) => (
             <div key={u.id} className="rounded-xl border p-4 hover:shadow-card transition-shadow" data-testid="user-card">
-              <div className="flex items-center gap-3">
-                <Avatar className="h-12 w-12 border"><AvatarImage src={u.avatar_url} /><AvatarFallback>{u.name?.[0]}</AvatarFallback></Avatar>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{u.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">{u.position}{u.area ? ` · ${u.area}` : ''}</p>
-                </div>
-                {u.role === 'admin'
-                  ? <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(30,57,94,0.1)] text-[#1e395e] dark:text-[#3cbef6] text-[11px] font-semibold px-2 py-0.5"><Shield className="h-3 w-3" /> Admin</span>
-                  : <span className="rounded-full bg-muted text-muted-foreground text-[11px] font-medium px-2 py-0.5">Usuario</span>}
-              </div>
-              <div className="flex items-center justify-between mt-3 pt-3 border-t">
-                <span className="text-xs text-muted-foreground inline-flex items-center gap-1 truncate"><Mail className="h-3 w-3" /> {u.email}</span>
-                {isAdmin && (
-                  <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-start gap-3">
+  <Avatar className="h-12 w-12 border shrink-0"><AvatarImage src={u.avatar_url} /><AvatarFallback>{u.name?.[0]}</AvatarFallback></Avatar>
+  <div className="flex-1 min-w-0">
+    <div className="flex items-center justify-between gap-2 flex-wrap">
+      <p className="font-medium truncate">{u.name}</p>
+      {u.role === 'admin'
+        ? <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(30,57,94,0.1)] text-[#1e395e] dark:text-[#3cbef6] text-[11px] font-semibold px-2 py-0.5 shrink-0"><Shield className="h-3 w-3" /> Admin</span>
+        : <span className="rounded-full bg-muted text-muted-foreground text-[11px] font-medium px-2 py-0.5 shrink-0">Usuario</span>}
+    </div>
+    <p className="text-xs text-muted-foreground truncate">{u.position}{u.area ? ` · ${u.area}` : ''}</p>
+  </div>
+</div>
+              <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t">
+  <span className="text-xs text-muted-foreground inline-flex items-center gap-1 truncate min-w-0 flex-1"><Mail className="h-3 w-3 shrink-0" /> <span className="truncate">{u.email}</span></span>
+  {isAdmin && (
+    <div className="flex items-center gap-1 shrink-0">
                     <button onClick={() => openEdit(u)} title="Editar" className="h-8 w-8 grid place-items-center rounded-lg text-muted-foreground hover:text-[#1e395e] dark:hover:text-[#3cbef6] hover:bg-muted" data-testid="edit-user-button"><Pencil className="h-3.5 w-3.5" /></button>
                     {u.id !== user?.id && (
                       <>

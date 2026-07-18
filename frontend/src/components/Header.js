@@ -61,11 +61,16 @@ export default function Header({ onMenuClick }) {
         <Popover open={searchOpen} onOpenChange={setSearchOpen}>
           <PopoverTrigger asChild>
             <button data-testid="topbar-global-search"
-  className="flex-1 min-w-0 max-w-md flex items-center gap-2 rounded-xl border bg-card/60 px-3 h-10 text-sm text-muted-foreground hover:bg-card transition-colors">
+  className="flex-1 min-w-0 max-w-md lg:max-w-none flex items-center gap-2 rounded-xl border bg-card/60 px-3 h-10 text-sm text-muted-foreground hover:bg-card transition-colors">
               <span className="truncate">Buscar actividades, usuarios…</span>
             </button>
           </PopoverTrigger>
-          <PopoverContent align="start" className="w-[min(92vw,460px)] p-0 rounded-2xl overflow-hidden">
+          <PopoverContent
+  align="start"
+  sideOffset={8}
+  collisionPadding={16}
+  className="w-[min(92vw,460px)] p-0 rounded-2xl overflow-hidden"
+>
             <div className="flex items-center gap-2 border-b px-3 h-12">
               <Search className="h-4 w-4 text-muted-foreground" />
               <input ref={searchRef} autoFocus value={q} onChange={(e) => setQ(e.target.value)} data-testid="global-search-input"
@@ -102,12 +107,12 @@ export default function Header({ onMenuClick }) {
                   ))}
                 </div>
               )}
-              {!q && <p className="text-sm text-muted-foreground text-center py-6">Escribe para buscar en HERCO360</p>}
+              {!q && <p className="text-sm text-muted-foreground text-center py-6">Escribe para buscar en HERCO CCTV</p>}
             </div>
           </PopoverContent>
         </Popover>
 
-        <div className="flex-1" />
+     
 
         {/* Notifications */}
         <Popover>

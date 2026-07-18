@@ -137,19 +137,18 @@ export default function Agenda() {
 
   return (
     <div className="max-w-[1320px] mx-auto pt-2">
-      <div className="flex items-center justify-between mb-5">
-        <div>
-          <h1 className="font-heading text-2xl sm:text-3xl font-semibold">Agenda</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Gestiona las actividades y reuniones de tu equipo</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button asChild variant="outline" className="rounded-xl" data-testid="agenda-vacations-button">
-            <Link to="/vacaciones"><Palmtree className="h-4 w-4 mr-1.5" /> Vacaciones</Link>
-          </Button>
-          <Button onClick={openNew} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="agenda-new-activity-button"><Plus className="h-4 w-4 mr-1" /> Nueva actividad</Button>
-        </div>
-      </div>
-
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+  <div>
+    <h1 className="font-heading text-2xl sm:text-3xl font-semibold">Agenda</h1>
+    <p className="text-muted-foreground text-sm mt-0.5">Gestiona las actividades y reuniones de tu equipo</p>
+  </div>
+  <div className="flex items-center gap-2">
+    <Button asChild variant="outline" className="rounded-xl flex-1 sm:flex-none" data-testid="agenda-vacations-button">
+      <Link to="/vacaciones"><Palmtree className="h-4 w-4 mr-1.5" /> Vacaciones</Link>
+    </Button>
+    <Button onClick={openNew} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white flex-1 sm:flex-none" data-testid="agenda-new-activity-button"><Plus className="h-4 w-4 mr-1" /> Nueva actividad</Button>
+  </div>
+</div>
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
           className="lg:col-span-3 rounded-[18px] bg-card border shadow-card p-4 sm:p-5">
