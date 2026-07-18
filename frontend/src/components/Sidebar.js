@@ -119,8 +119,12 @@ export default function Sidebar({ mobileOpen, setMobileOpen }) {
       <AnimatePresence>
         {mobileOpen && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setMobileOpen(false)} className="lg:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" />
+           <motion.div
+  initial={{ opacity: 0, pointerEvents: 'none' }}
+  animate={{ opacity: 1, pointerEvents: 'auto' }}
+  exit={{ opacity: 0, pointerEvents: 'none' }}
+  onClick={() => setMobileOpen(false)}
+  className="lg:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" />
             <motion.aside initial={{ x: -320 }} animate={{ x: 0 }} exit={{ x: -320 }} transition={{ type: 'spring', damping: 28, stiffness: 260 }}
               className="lg:hidden fixed left-3 top-3 bottom-3 w-[272px] z-50">
               <div className="h-full glass rounded-[22px] border shadow-float overflow-hidden relative">

@@ -61,8 +61,7 @@ export default function Header({ onMenuClick }) {
         <Popover open={searchOpen} onOpenChange={setSearchOpen}>
           <PopoverTrigger asChild>
             <button data-testid="topbar-global-search"
-              className="flex-1 max-w-md flex items-center gap-2 rounded-xl border bg-card/60 px-3 h-10 text-sm text-muted-foreground hover:bg-card transition-colors">
-              <Search className="h-4 w-4" />
+  className="flex-1 min-w-0 max-w-md flex items-center gap-2 rounded-xl border bg-card/60 px-3 h-10 text-sm text-muted-foreground hover:bg-card transition-colors">
               <span className="truncate">Buscar actividades, usuarios…</span>
             </button>
           </PopoverTrigger>

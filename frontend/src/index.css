@@ -75,8 +75,15 @@
   border-color: hsl(var(--border));
 }
 
+html {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 body {
   margin: 0;
+  overflow-x: hidden;
+  max-width: 100%;
   font-family: var(--font-body);
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
@@ -84,7 +91,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
   transition: background-color 0.4s ease, color 0.4s ease;
 }
-
 .font-heading { font-family: var(--font-heading); letter-spacing: -0.02em; }
 
 /* Brand utility classes */
