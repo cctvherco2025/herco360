@@ -32,12 +32,6 @@ const addHour = (t) => {
   const end = Math.min(h * 60 + m + 60, 20 * 60);
   return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`;
 };
-const isPastActivity = (activity) => {
-  if (!activity) return false;
-  const endDateTime = new Date(`${activity.date}T${activity.end_time || '23:59'}`);
-  return endDateTime < new Date();
-};
-
 
 const empty = (date, time) => ({
   title: '', color: DEFAULT_ACTIVITY_COLOR, date: date || ymd(new Date()),
@@ -52,8 +46,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   const [saving, setSaving] = useState(false);
   const isEdit = !!activity;
   const isOwner = activity ? (activity.created_by === user?.id || user?.role === 'admin') : true;
-const isPast = isEdit && isPastActivity(activity);
-const readOnly = isEdit && (!isOwner || isPast);
+  const readOnly = isEdit && !isOwner;
   const myPart = (activity?.participants || []).find((p) => p.user_id === user?.id);
 
   useEffect(() => {
@@ -107,21 +100,6 @@ const readOnly = isEdit && (!isOwner || isPast);
 
   const save = async () => {
     if (!form.title.trim()) { toast.error('Ingresa un título'); return; }
-
-  if (!isEdit) {
-  const now = new Date();
-  if (form.date < ymd(now)) {
-    toast.error('No puedes crear actividades en fechas pasadas');
-    return;
-  }
-  if (form.date === ymd(now)) {
-    const nowHM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    if (form.start_time < nowHM) {
-      toast.error('No puedes crear una actividad con hora de inicio ya pasada');
-      return;
-    }
-  }
-}
     if (form.end_time <= form.start_time) { toast.error('La hora de fin debe ser mayor a la de inicio'); return; }
     if (roomBlocked) { toast.error(MONDAY_MSG); return; }
     setSaving(true);
@@ -202,7 +180,7 @@ const readOnly = isEdit && (!isOwner || isPast);
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label>Fecha</Label>
-              <Input data-testid="activity-form-date-picker" type="date" min={!isEdit ? ymd(new Date()) : undefined} value={form.date} onChange={(e) => set('date', e.target.value)} className="h-11" />
+              <Input data-testid="activity-form-date-picker" type="date" value={form.date} onChange={(e) => set('date', e.target.value)} className="h-11" />
             </div>
             <div className="space-y-1.5">
               <Label>Inicio</Label>

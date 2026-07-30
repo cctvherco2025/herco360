@@ -60,10 +60,12 @@ def _times_overlap(start_a: str, end_a: str, start_b: str, end_b: str) -> bool:
 async def _check_conflicts(date: str, start_time: str, end_time: str,
                            participant_ids, creator_id: str, uses_meeting_room: bool,
                            exclude_activity_id: str = None):
-    """Raise 409 if the proposed slot clashes with the meeting room or any participant.
+    """Raise 409 if the proposed slot clashes with the meeting room.
 
     - Vacation markers (is_vacation=True) never block a slot.
     - Cancelled/finished room reservations never block.
+    - Participant conflicts are intentionally NOT checked: people can be
+      double-booked across activities.
     """
     # --- Room conflict (source of truth: reservations collection) ---
     if uses_meeting_room:
@@ -80,29 +82,8 @@ async def _check_conflicts(date: str, start_time: str, end_time: str,
                     detail=(f"La Sala de Juntas ya está reservada de "
                             f"{r.get('start_time')} a {r.get('end_time')} ese día."))
 
-    # --- Participant conflict (activities collection, excluding vacations) ---
-    people = set(participant_ids or [])
-    if creator_id:
-        people.add(creator_id)
-    if not people:
-        return
-    act_query = {'date': date, 'is_vacation': {'$ne': True}}
-    if exclude_activity_id:
-        act_query['id'] = {'$ne': exclude_activity_id}
-    activities = await db.activities.find(act_query, {'_id': 0}).to_list(1000)
-    for a in activities:
-        if not _times_overlap(start_time, end_time, a.get('start_time', ''), a.get('end_time', '')):
-            continue
-        a_people = {p.get('user_id') for p in a.get('participants', [])}
-        if a.get('created_by'):
-            a_people.add(a.get('created_by'))
-        if people & a_people:
-            raise HTTPException(
-                status_code=409,
-                detail=(f"Uno o más participantes ya tienen la reunión "
-                        f"'{a.get('title')}' de {a.get('start_time')} a "
-                        f"{a.get('end_time')} ese día."))
-
+    # Participant conflict check removed — participants can now be double-booked.
+    return
 
 
 async def _build_participants(participant_ids):
@@ -178,9 +159,6 @@ async def get_activity(activity_id: str, user=Depends(get_current_user)):
 
 @router.post('')
 async def create_activity(data: ActivityInput, user=Depends(get_current_user)):
-    # Cannot create activities in the past.
-    if data.date < date_cls.today().isoformat():
-        raise HTTPException(status_code=400, detail='No puedes crear actividades en fechas pasadas')
     # Mondays the meeting room is reserved for Dirección Comercial.
     if data.uses_meeting_room and _is_monday(data.date):
         raise HTTPException(status_code=409,
@@ -237,15 +215,12 @@ async def update_activity(activity_id: str, data: ActivityInput, user=Depends(ge
     a = await db.activities.find_one({'id': activity_id}, {'_id': 0})
     if not a:
         raise HTTPException(status_code=404, detail='Actividad no encontrada')
-    # Only the creator (or an admin) can edit an activity.
-    if a.get('created_by') != user['id'] and user.get('role') != 'admin':
-        raise HTTPException(status_code=403, detail='Solo el creador puede editar esta actividad')
     # Mondays the meeting room is reserved for Dirección Comercial.
     if data.uses_meeting_room and _is_monday(data.date):
         raise HTTPException(status_code=409,
                             detail='Los lunes la Sala de Juntas está reservada para Dirección Comercial')
     participants = await _build_participants(data.participant_ids)
-    # Prevent overlapping bookings (room + participants), excluding this activity itself.
+    # Prevent overlapping bookings (room only), excluding this activity itself.
     await _check_conflicts(data.date, data.start_time, data.end_time,
                            data.participant_ids, a.get('created_by'), data.uses_meeting_room,
                            exclude_activity_id=activity_id)
@@ -274,9 +249,6 @@ async def delete_activity(activity_id: str, user=Depends(get_current_user)):
     a = await db.activities.find_one({'id': activity_id}, {'_id': 0})
     if not a:
         raise HTTPException(status_code=404, detail='Actividad no encontrada')
-    # Only the creator (or an admin) can delete an activity.
-    if a.get('created_by') != user['id'] and user.get('role') != 'admin':
-        raise HTTPException(status_code=403, detail='Solo el creador puede eliminar esta actividad')
     await db.activities.delete_one({'id': activity_id})
     await db.reservations.delete_many({'activity_id': activity_id})
     return {'message': 'Actividad eliminada'}

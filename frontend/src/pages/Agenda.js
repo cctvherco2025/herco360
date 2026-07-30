@@ -91,9 +91,6 @@ export default function Agenda() {
     if (ev.created_by !== user?.id && user?.role !== 'admin') {
       toast.error('Solo el creador puede mover esta actividad'); return;
     }
-    if (newDate < ymd(new Date())) {
-      toast.error('No puedes mover una actividad a una fecha pasada'); return;
-    }
     if (ev.date === newDate && ev.start_time === newStart) return;
     const dur = Math.max(30, toMin(ev.end_time) - toMin(ev.start_time));
     let endM = Math.min(toMin(newStart) + dur, 20 * 60);
