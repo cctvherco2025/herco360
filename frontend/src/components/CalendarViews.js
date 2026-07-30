@@ -31,10 +31,34 @@ function evStyle(ev, isDark) {
   return catStyle(ev.category, isDark);
 }
 
+// Line height (px) used by the event title, matched to text-[11px] leading-[14px].
+const TITLE_LINE_H = 14;
+// Line height (px) used by the owner/time subtitle, matched to text-[9px]/text-[10px] leading-[14px].
+const SUBTITLE_LINE_H = 14;
+// Vertical padding inside the block (py-1 = 4px top + 4px bottom).
+const BLOCK_V_PADDING = 8;
+
+// Multi-line clamp so text wraps to fill the block instead of being forced onto
+// a single truncated line — mirrors how Google Calendar sizes event titles.
+function clampStyle(lines) {
+  return {
+    display: '-webkit-box',
+    WebkitLineClamp: lines,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
+  };
+}
+
 function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDragEnd }) {
   const { solid, tint } = evStyle(ev, isDark);
   const top = ((toMin(ev.start_time) - START_HOUR * 60) / 60) * HOUR_H;
-  const height = Math.max(26, ((toMin(ev.end_time) - toMin(ev.start_time)) / 60) * HOUR_H - 4);
+  const height = Math.max(30, ((toMin(ev.end_time) - toMin(ev.start_time)) / 60) * HOUR_H - 4);
+
+  const showSubtitle = !!ev.owner_name || !compact;
+  const availableForTitle = height - BLOCK_V_PADDING - (showSubtitle ? SUBTITLE_LINE_H : 0);
+  // At least 1 line, but let the title use as many lines as the block's real height allows.
+  const titleLines = Math.max(1, Math.min(6, Math.floor(availableForTitle / TITLE_LINE_H)));
+
   return (
     <button
       type="button"
@@ -46,9 +70,22 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
       style={{ top, height, background: tint, borderColor: solid, borderStyle: ev.pending ? 'dashed' : 'solid' }}
       data-testid="calendar-event-block">
       <span className="block h-full" style={{ borderLeft: `3px solid ${solid}`, paddingLeft: 6 }}>
-        <span className="block text-[11px] font-semibold truncate" style={{ color: solid }}>{ev.title}</span>
-        {ev.owner_name && <span className="block text-[9px] font-medium truncate opacity-80" style={{ color: solid }}>{ev.owner_name}</span>}
-        {!compact && !ev.owner_name && <span className="block text-[10px] text-muted-foreground truncate">{ev.start_time} - {ev.end_time}</span>}
+        <span
+          className="block text-[11px] font-semibold leading-[14px] break-words whitespace-normal"
+          style={{ color: solid, ...clampStyle(titleLines) }}
+        >
+          {ev.title}
+        </span>
+        {ev.owner_name && (
+          <span className="block text-[9px] font-medium leading-[14px] truncate opacity-80" style={{ color: solid }}>
+            {ev.owner_name}
+          </span>
+        )}
+        {!compact && !ev.owner_name && (
+          <span className="block text-[10px] leading-[14px] text-muted-foreground truncate">
+            {ev.start_time} - {ev.end_time}
+          </span>
+        )}
       </span>
     </button>
   );
