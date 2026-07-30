@@ -133,7 +133,7 @@ export function WeekView({ anchor, activities, onEventClick, onSlotClick, onEven
                 {Array.from({ length: railHours }).map((_, i) => (
                   <div key={i} style={{ height: HOUR_H }} className="border-t border-dashed border-border/60" />
                 ))}
-                {dayEvents.map((ev) => <EventBlock key={ev.id} ev={ev} isDark={isDark} onClick={onEventClick} compact draggable={!!onEventMove} onDragStart={setDragEv} onDragEnd={() => setDragEv(null)} />)}
+                {dayEvents.map((ev) => <EventBlock key={ev.id} ev={ev} isDark={isDark} onClick={onEventClick} draggable={!!onEventMove} onDragStart={setDragEv} onDragEnd={() => setDragEv(null)} />)}
               </div>
             </div>
           );
