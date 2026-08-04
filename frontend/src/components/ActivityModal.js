@@ -148,144 +148,146 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
             Fuiste invitado por <span className="font-semibold">{activity?.created_by_name || 'otro usuario'}</span>. Solo el creador puede editar o eliminar esta actividad.
           </div>
         )}
-        <fieldset disabled={readOnly} className="px-6 pb-2 space-y-4 overflow-y-auto min-w-0 border-0">
-          <div className="space-y-1.5">
-            <Label>Título</Label>
-            <Input data-testid="activity-form-title-input" value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Ej. Reunión de seguimiento" className="h-11" />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Color</Label>
-            <div className="flex flex-wrap items-center gap-2.5" data-testid="activity-form-color-select">
-              {ACTIVITY_COLORS.map((c) => {
-                const active = (form.color || '').toLowerCase() === c.value.toLowerCase();
-                return (
-                  <button key={c.value} type="button" title={c.name} onClick={() => set('color', c.value)}
-                    aria-label={c.name}
-                    className={`h-8 w-8 rounded-full transition-transform hover:scale-110 grid place-items-center ${active ? 'ring-2 ring-offset-2 ring-offset-background scale-110' : ''}`}
-                    style={{ background: c.value, boxShadow: active ? `0 0 0 2px ${c.value}` : 'none' }}>
-                    {active && <Check className="h-4 w-4 text-white" />}
-                  </button>
-                );
-              })}
-              {/* Custom color */}
-              <label className="relative h-8 w-8 rounded-full cursor-pointer border-2 border-dashed border-border grid place-items-center overflow-hidden hover:border-foreground/40" title="Color personalizado">
-                <span className="text-[10px] font-bold text-muted-foreground">+</span>
-                <input type="color" value={form.color} onChange={(e) => set('color', e.target.value)}
-                  className="absolute inset-0 opacity-0 cursor-pointer" data-testid="activity-form-color-custom" />
-              </label>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <fieldset disabled={readOnly} className="px-6 pb-2 space-y-4 min-w-0 border-0">
             <div className="space-y-1.5">
-              <Label>Fecha</Label>
-              <Input data-testid="activity-form-date-picker" type="date" value={form.date} onChange={(e) => set('date', e.target.value)} className="h-11" />
+              <Label>Título</Label>
+              <Input data-testid="activity-form-title-input" value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Ej. Reunión de seguimiento" className="h-11" />
             </div>
-            <div className="space-y-1.5">
-              <Label>Inicio</Label>
-              <Input type="time" value={form.start_time} onChange={(e) => set('start_time', e.target.value)} className="h-11" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Fin</Label>
-              <Input type="time" value={form.end_time} onChange={(e) => set('end_time', e.target.value)} className="h-11" />
-            </div>
-          </div>
 
-          <div className="space-y-1.5">
-            <Label>Participantes</Label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <button type="button" data-testid="activity-form-participants" className="w-full min-h-11 flex items-center gap-2 flex-wrap rounded-xl border bg-card px-3 py-2 text-sm text-left hover:bg-muted/50">
-                  <UsersIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                  {selectedUsers.length === 0 && <span className="text-muted-foreground">Añadir participantes</span>}
-                  {selectedUsers.map((u) => (
-                    <span key={u.id} className="inline-flex items-center gap-1 rounded-full bg-[rgba(0,165,223,0.12)] text-[#1e395e] dark:text-[#3cbef6] px-2 py-0.5 text-xs">
-                      {u.name}
-                    </span>
-                  ))}
-                </button>
-              </PopoverTrigger>
-             <PopoverContent
-  align="start"
-  side="bottom"
-  sideOffset={6}
-  onWheel={(e) => e.stopPropagation()}
-  onTouchMove={(e) => e.stopPropagation()}
-  className="w-[--radix-popover-trigger-width] max-h-[300px] overflow-y-auto overscroll-contain touch-pan-y p-1.5 rounded-2xl"
->
-                {Object.keys(groupedUsers).sort((a, b) => a.localeCompare(b)).map((area) => {
-                  const allSel = areaAllSelected(area);
-                  const selCount = groupedUsers[area].filter((u) => form.participant_ids.includes(u.id)).length;
+            <div className="space-y-1.5">
+              <Label>Color</Label>
+              <div className="flex flex-wrap items-center gap-2.5" data-testid="activity-form-color-select">
+                {ACTIVITY_COLORS.map((c) => {
+                  const active = (form.color || '').toLowerCase() === c.value.toLowerCase();
                   return (
-                    <div key={area} className="mb-1.5 last:mb-0">
-                      <div className="flex items-center justify-between gap-2 px-2 py-1.5 sticky top-0 bg-popover/95 backdrop-blur z-10">
-                        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground truncate">
-                          {area}{selCount > 0 && <span className="text-[#00a5df] normal-case"> · {selCount}</span>}
-                        </span>
-                        <button type="button" onClick={() => toggleArea(area)}
-                          className="text-[11px] font-medium text-[#00a5df] hover:underline shrink-0"
-                          data-testid="participants-area-toggle">
-                          {allSel ? 'Quitar todos' : 'Seleccionar todos'}
-                        </button>
-                      </div>
-                      {groupedUsers[area].map((u) => {
-                        const active = form.participant_ids.includes(u.id);
-                        return (
-                          <button key={u.id} type="button" onClick={() => toggleParticipant(u.id)}
-                            className="w-full flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-muted text-left">
-                            <Avatar className="h-7 w-7"><AvatarImage src={u.avatar_url} /><AvatarFallback>{u.name?.[0]}</AvatarFallback></Avatar>
-                            <span className="flex-1 min-w-0">
-                              <span className="block text-sm truncate">{u.name}</span>
-                              <span className="block text-xs text-muted-foreground truncate">{u.position}</span>
-                            </span>
-                            {active && <Check className="h-4 w-4 text-[#00a5df]" />}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <button key={c.value} type="button" title={c.name} onClick={() => set('color', c.value)}
+                      aria-label={c.name}
+                      className={`h-8 w-8 rounded-full transition-transform hover:scale-110 grid place-items-center ${active ? 'ring-2 ring-offset-2 ring-offset-background scale-110' : ''}`}
+                      style={{ background: c.value, boxShadow: active ? `0 0 0 2px ${c.value}` : 'none' }}>
+                      {active && <Check className="h-4 w-4 text-white" />}
+                    </button>
                   );
                 })}
-                {users.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin usuarios</p>}
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          <div className="flex items-center justify-between rounded-xl border bg-card px-4 py-3">
-            <div>
-              <p className="text-sm font-medium text-foreground">Reservar Sala de Juntas</p>
-              <p className="text-xs text-muted-foreground">Bloquea la sala para esta actividad</p>
+                {/* Custom color */}
+                <label className="relative h-8 w-8 rounded-full cursor-pointer border-2 border-dashed border-border grid place-items-center overflow-hidden hover:border-foreground/40" title="Color personalizado">
+                  <span className="text-[10px] font-bold text-muted-foreground">+</span>
+                  <input type="color" value={form.color} onChange={(e) => set('color', e.target.value)}
+                    className="absolute inset-0 opacity-0 cursor-pointer" data-testid="activity-form-color-custom" />
+                </label>
+              </div>
             </div>
-            <Switch checked={form.uses_meeting_room} onCheckedChange={(v) => set('uses_meeting_room', v)} data-testid="activity-form-room-switch" />
-          </div>
 
-          {roomBlocked && (
-            <div className="flex items-start gap-2 rounded-xl border border-[rgba(220,38,38,0.35)] bg-[rgba(220,38,38,0.08)] px-4 py-3" data-testid="activity-form-monday-warning">
-              <AlertTriangle className="h-4 w-4 text-[#dc2626] shrink-0 mt-0.5" />
-              <p className="text-xs text-[#dc2626]">{MONDAY_MSG}. Elige otro día o desactiva la reserva de sala.</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label>Fecha</Label>
+                <Input data-testid="activity-form-date-picker" type="date" value={form.date} onChange={(e) => set('date', e.target.value)} className="h-11" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Inicio</Label>
+                <Input type="time" value={form.start_time} onChange={(e) => set('start_time', e.target.value)} className="h-11" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Fin</Label>
+                <Input type="time" value={form.end_time} onChange={(e) => set('end_time', e.target.value)} className="h-11" />
+              </div>
             </div>
-          )}
 
-          {!isEdit && (
             <div className="space-y-1.5">
-              <Label>Repetición</Label>
-              <Select value={form.recurrence} onValueChange={(v) => set('recurrence', v)}>
-                <SelectTrigger className="h-11" data-testid="activity-form-recurrence-select"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {RECURRENCE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              {RECURRENCE_HINT[form.recurrence] && (
-                <p className="text-xs text-muted-foreground">{RECURRENCE_HINT[form.recurrence]}</p>
-              )}
+              <Label>Participantes</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button type="button" data-testid="activity-form-participants" className="w-full min-h-11 flex items-center gap-2 flex-wrap rounded-xl border bg-card px-3 py-2 text-sm text-left hover:bg-muted/50">
+                    <UsersIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                    {selectedUsers.length === 0 && <span className="text-muted-foreground">Añadir participantes</span>}
+                    {selectedUsers.map((u) => (
+                      <span key={u.id} className="inline-flex items-center gap-1 rounded-full bg-[rgba(0,165,223,0.12)] text-[#1e395e] dark:text-[#3cbef6] px-2 py-0.5 text-xs">
+                        {u.name}
+                      </span>
+                    ))}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  side="bottom"
+                  sideOffset={6}
+                  onWheel={(e) => e.stopPropagation()}
+                  onTouchMove={(e) => e.stopPropagation()}
+                  className="w-[--radix-popover-trigger-width] max-h-[300px] overflow-y-auto overscroll-contain touch-pan-y p-1.5 rounded-2xl"
+                >
+                  {Object.keys(groupedUsers).sort((a, b) => a.localeCompare(b)).map((area) => {
+                    const allSel = areaAllSelected(area);
+                    const selCount = groupedUsers[area].filter((u) => form.participant_ids.includes(u.id)).length;
+                    return (
+                      <div key={area} className="mb-1.5 last:mb-0">
+                        <div className="flex items-center justify-between gap-2 px-2 py-1.5 sticky top-0 bg-popover/95 backdrop-blur z-10">
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground truncate">
+                            {area}{selCount > 0 && <span className="text-[#00a5df] normal-case"> · {selCount}</span>}
+                          </span>
+                          <button type="button" onClick={() => toggleArea(area)}
+                            className="text-[11px] font-medium text-[#00a5df] hover:underline shrink-0"
+                            data-testid="participants-area-toggle">
+                            {allSel ? 'Quitar todos' : 'Seleccionar todos'}
+                          </button>
+                        </div>
+                        {groupedUsers[area].map((u) => {
+                          const active = form.participant_ids.includes(u.id);
+                          return (
+                            <button key={u.id} type="button" onClick={() => toggleParticipant(u.id)}
+                              className="w-full flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-muted text-left">
+                              <Avatar className="h-7 w-7"><AvatarImage src={u.avatar_url} /><AvatarFallback>{u.name?.[0]}</AvatarFallback></Avatar>
+                              <span className="flex-1 min-w-0">
+                                <span className="block text-sm truncate">{u.name}</span>
+                                <span className="block text-xs text-muted-foreground truncate">{u.position}</span>
+                              </span>
+                              {active && <Check className="h-4 w-4 text-[#00a5df]" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                  {users.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin usuarios</p>}
+                </PopoverContent>
+              </Popover>
             </div>
-          )}
 
-          <div className="space-y-1.5">
-            <Label>Notas</Label>
-            <Textarea value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Detalles de la actividad…" rows={2} />
-          </div>
-        </fieldset>
+            <div className="flex items-center justify-between rounded-xl border bg-card px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">Reservar Sala de Juntas</p>
+                <p className="text-xs text-muted-foreground">Bloquea la sala para esta actividad</p>
+              </div>
+              <Switch checked={form.uses_meeting_room} onCheckedChange={(v) => set('uses_meeting_room', v)} data-testid="activity-form-room-switch" />
+            </div>
+
+            {roomBlocked && (
+              <div className="flex items-start gap-2 rounded-xl border border-[rgba(220,38,38,0.35)] bg-[rgba(220,38,38,0.08)] px-4 py-3" data-testid="activity-form-monday-warning">
+                <AlertTriangle className="h-4 w-4 text-[#dc2626] shrink-0 mt-0.5" />
+                <p className="text-xs text-[#dc2626]">{MONDAY_MSG}. Elige otro día o desactiva la reserva de sala.</p>
+              </div>
+            )}
+
+            {!isEdit && (
+              <div className="space-y-1.5">
+                <Label>Repetición</Label>
+                <Select value={form.recurrence} onValueChange={(v) => set('recurrence', v)}>
+                  <SelectTrigger className="h-11" data-testid="activity-form-recurrence-select"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {RECURRENCE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                {RECURRENCE_HINT[form.recurrence] && (
+                  <p className="text-xs text-muted-foreground">{RECURRENCE_HINT[form.recurrence]}</p>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label>Notas</Label>
+              <Textarea value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Detalles de la actividad…" rows={2} />
+            </div>
+          </fieldset>
+        </div>
         <DialogFooter className="px-6 py-4 border-t gap-2 sm:gap-2">
           {isEdit && isOwner && (
             <Button variant="ghost" onClick={remove} disabled={saving} className="text-[#dc2626] hover:text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)] mr-auto" data-testid="activity-form-delete">

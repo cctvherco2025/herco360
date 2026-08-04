@@ -8,6 +8,11 @@ from notifications import create_notification, log_activity
 router = APIRouter(prefix='/rooms', tags=['rooms'])
 res_router = APIRouter(prefix='/reservations', tags=['reservations'])
 
+# Ventana bloqueada los lunes para la Reunión de Dirección Comercial.
+# Fuera de este rango (ej. 18:00-19:00) sí se puede reservar aunque sea lunes.
+MONDAY_BLOCK_START = '08:00'
+MONDAY_BLOCK_END = '16:00'
+
 
 def _today_str():
     return datetime.now().strftime('%Y-%m-%d')
@@ -15,6 +20,20 @@ def _today_str():
 
 def _now_hm():
     return datetime.now().strftime('%H:%M')
+
+
+def _is_monday(date_str):
+    try:
+        return datetime.strptime(date_str, '%Y-%m-%d').weekday() == 0
+    except Exception:
+        return False
+
+
+def _monday_block_overlaps(date_str, start_time, end_time):
+    """True solo si es lunes Y el rango solicitado se solapa con 08:00-16:00."""
+    if not _is_monday(date_str):
+        return False
+    return start_time < MONDAY_BLOCK_END and end_time > MONDAY_BLOCK_START
 
 
 async def _derive_room_status(room_id):
@@ -71,15 +90,13 @@ async def create_reservation(data: ReservationInput, user=Depends(get_current_us
     # Cannot reserve on past dates.
     if data.date < _today_str():
         raise HTTPException(status_code=400, detail='No puedes reservar la sala en fechas pasadas')
-    # Mondays are reserved for Dirección Comercial's weekly meeting.
-    try:
-        if datetime.strptime(data.date, '%Y-%m-%d').weekday() == 0:
-            raise HTTPException(status_code=409,
-                                detail='Los lunes la Sala de Juntas está reservada para la reunión de Dirección Comercial')
-    except HTTPException:
-        raise
-    except Exception:
-        pass
+    # Mondays are reserved for Dirección Comercial's weekly meeting, pero solo de
+    # 08:00 a 16:00. Fuera de ese rango sí se puede reservar aunque sea lunes.
+    if _monday_block_overlaps(data.date, data.start_time, data.end_time):
+        raise HTTPException(
+            status_code=409,
+            detail=f'Los lunes de {MONDAY_BLOCK_START} a {MONDAY_BLOCK_END} la Sala de Juntas '
+                   f'está reservada para la reunión de Dirección Comercial')
     room = None
     if data.room_id:
         room = await db.rooms.find_one({'id': data.room_id}, {'_id': 0})

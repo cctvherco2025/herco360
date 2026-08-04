@@ -3,8 +3,10 @@
 Guests reserve the room by entering only their name. A per-reservation
 `guest_token` is returned and required to cancel — so a guest can only cancel
 their own bookings (token kept in their browser). Mondays remain reserved for
-Dirección Comercial. Guest reservations live in the same `reservations`
-collection, so authenticated staff also see them on the internal calendar.
+Dirección Comercial from 08:00 to 16:00 only — outside that window guests can
+book normally even on a Monday. Guest reservations live in the same
+`reservations` collection, so authenticated staff also see them on the
+internal calendar.
 """
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
@@ -12,6 +14,25 @@ from core import db, serialize_doc, new_id, now_iso
 from models import PublicReservationInput, GuestCancelInput
 
 router = APIRouter(prefix='/public', tags=['public'])
+
+# Ventana bloqueada los lunes para la Reunión de Dirección Comercial.
+# Fuera de este rango (ej. 18:00-19:00) sí se puede reservar aunque sea lunes.
+MONDAY_BLOCK_START = '08:00'
+MONDAY_BLOCK_END = '16:00'
+
+
+def _is_monday(date_str):
+    try:
+        return datetime.strptime(date_str, '%Y-%m-%d').weekday() == 0
+    except Exception:
+        return False
+
+
+def _monday_block_overlaps(date_str, start_time, end_time):
+    """True solo si es lunes Y el rango solicitado se solapa con 08:00-16:00."""
+    if not _is_monday(date_str):
+        return False
+    return start_time < MONDAY_BLOCK_END and end_time > MONDAY_BLOCK_START
 
 
 @router.get('/room')
@@ -46,17 +67,15 @@ async def public_create(data: PublicReservationInput):
     # Cannot reserve on past dates.
     if data.date < datetime.now().strftime('%Y-%m-%d'):
         raise HTTPException(status_code=400, detail='No puedes reservar la sala en fechas pasadas')
-    # Mondays are reserved for Dirección Comercial.
-    try:
-        if datetime.strptime(data.date, '%Y-%m-%d').weekday() == 0:
-            raise HTTPException(status_code=409,
-                                detail='Los lunes la Sala de Juntas está reservada para Dirección Comercial')
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(status_code=400, detail='Fecha inválida')
     if data.end_time <= data.start_time:
         raise HTTPException(status_code=400, detail='La hora de fin debe ser mayor que la de inicio')
+    # Mondays are reserved for Dirección Comercial, pero solo de 08:00 a 16:00.
+    # Fuera de ese rango sí se puede reservar aunque sea lunes.
+    if _monday_block_overlaps(data.date, data.start_time, data.end_time):
+        raise HTTPException(
+            status_code=409,
+            detail=f'Los lunes de {MONDAY_BLOCK_START} a {MONDAY_BLOCK_END} la Sala de Juntas '
+                   f'está reservada para Dirección Comercial')
 
     room = await db.rooms.find_one({}, {'_id': 0})
     if not room:
