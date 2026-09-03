@@ -1,20 +1,16 @@
 {
   "short_name": "HERCO CCTV",
   "name": "HERCO CCTV",
-  "icons": [
-    {
-      "src": "icon-192.png",
-      "type": "image/png",
-      "sizes": "192x192"
-    },
-    {
-      "src": "icon-512.png",
-      "type": "image/png",
-      "sizes": "512x512"
-    }
-  ],
+  "id": "/",
+  "scope": "/",
   "start_url": ".",
   "display": "standalone",
   "theme_color": "#1e395e",
-  "background_color": "#f1f3fa"
+  "background_color": "#f1f3fa",
+  "icons": [
+    { "src": "icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any" },
+    { "src": "icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any" },
+    { "src": "icon-192-maskable.png", "type": "image/png", "sizes": "192x192", "purpose": "maskable" },
+    { "src": "icon-512-maskable.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" }
+  ]
 }

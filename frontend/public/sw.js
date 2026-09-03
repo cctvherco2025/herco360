@@ -16,8 +16,8 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'HERCO360';
   const options = {
     body: data.body || '',
-    icon: data.icon || '/icon-192.png',
-    badge: '/icon-192.png',
+    icon: data.icon || '/icon-192.png',       // large colour logo (el "universo")
+    badge: '/badge-96.png',                    // monochrome status-bar mark, not the default bell
     tag: data.tag || 'general',
     renotify: true,
     data: { url: data.url || '/notificaciones' },
