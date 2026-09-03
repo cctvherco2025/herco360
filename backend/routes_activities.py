@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from core import db, get_current_user, serialize_doc, new_id, now_iso
 from models import ActivityInput, RespondInput
 from notifications import create_notification, log_activity
+from reminders import DEFAULT_REMINDER_OFFSETS
 
 router = APIRouter(prefix='/activities', tags=['activities'])
 
@@ -43,22 +44,25 @@ def _gen_dates(start_str: str, recurrence: str, count) -> list:
     return out
 
 
-DEFAULT_REMINDER_MIN = 15
+def _norm_offsets(offsets, legacy_minutes, keep):
+    """Normalise the reminder config coming from the client.
 
-
-def _norm_reminder(minutes, default: int = 0) -> int:
-    """Clamp the requested reminder lead to 0..1440 minutes (0 = disabled).
-
-    `minutes is None` means the field was omitted (e.g. an older cached
-    frontend) -> fall back to `default` instead of forcing a value.
+    - `offsets` is a list -> clean it (drop non-positive, cap at 1440, dedupe,
+      sort descending). An explicit empty list means "no reminder".
+    - else if the legacy single `reminder_minutes` was sent -> [that] or [].
+    - else (both omitted, e.g. an older cached client) -> `keep` (the value the
+      activity already had, or the default set for a brand-new activity).
     """
-    if minutes is None:
-        return default
-    try:
-        m = int(minutes)
-    except (TypeError, ValueError):
-        return default
-    return max(0, min(m, 24 * 60))
+    if isinstance(offsets, list):
+        clean = sorted({int(x) for x in offsets if isinstance(x, (int, float)) and 0 < int(x) <= 24 * 60}, reverse=True)
+        return clean
+    if legacy_minutes is not None:
+        try:
+            m = int(legacy_minutes)
+        except (TypeError, ValueError):
+            return list(keep)
+        return [m] if 0 < m <= 24 * 60 else []
+    return list(keep)
 
 
 def _is_monday(date_str: str) -> bool:
@@ -200,8 +204,8 @@ async def create_activity(data: ActivityInput, user=Depends(get_current_user)):
             'description': data.description or '', 'location': data.location or '',
             'participants': participants, 'uses_meeting_room': data.uses_meeting_room,
             'recurrence': recurrence, 'series_id': series_id,
-            'reminder_minutes': _norm_reminder(data.reminder_minutes, DEFAULT_REMINDER_MIN),
-            'reminder_sent': False,
+            'reminder_offsets': _norm_offsets(data.reminder_offsets, data.reminder_minutes, DEFAULT_REMINDER_OFFSETS),
+            'reminders_sent': [],
             'created_by': user['id'], 'created_by_name': user['name'],
             'created_by_avatar': user.get('avatar_url'), 'created_at': now_iso(),
         }
@@ -250,20 +254,25 @@ async def update_activity(activity_id: str, data: ActivityInput, user=Depends(ge
         if p['user_id'] in prev:
             p['status'] = prev[p['user_id']]
     # Field omitted (older cached client) -> keep whatever the activity already had.
-    new_reminder = _norm_reminder(data.reminder_minutes, a.get('reminder_minutes') or 0)
+    _existing_offsets = a.get('reminder_offsets')
+    if not isinstance(_existing_offsets, list):
+        _existing_offsets = _norm_offsets(None, a.get('reminder_minutes'), DEFAULT_REMINDER_OFFSETS)
+    new_offsets = _norm_offsets(data.reminder_offsets, data.reminder_minutes, _existing_offsets)
     updates = {
         'title': data.title, 'color': data.color, 'date': data.date,
         'start_time': data.start_time, 'end_time': data.end_time,
         'description': data.description or '', 'location': data.location or '',
         'participants': participants, 'uses_meeting_room': data.uses_meeting_room,
-        'reminder_minutes': new_reminder,
+        'reminder_offsets': new_offsets,
     }
-    # Re-arm the reminder whenever the schedule or the lead changes, so an edited
-    # activity can notify again.
+    # Re-arm reminders whenever the schedule or the reminder set changes.
     if (a.get('date') != data.date or a.get('start_time') != data.start_time
-            or a.get('reminder_minutes') != new_reminder):
-        updates['reminder_sent'] = False
-    await db.activities.update_one({'id': activity_id}, {'$set': updates})
+            or sorted(_existing_offsets) != sorted(new_offsets)):
+        updates['reminders_sent'] = []
+    await db.activities.update_one(
+        {'id': activity_id},
+        {'$set': updates, '$unset': {'reminder_minutes': '', 'reminder_sent': ''}},
+    )
     saved = await db.activities.find_one({'id': activity_id}, {'_id': 0})
     # Reconcile the meeting-room reservation tied to this activity.
     await db.reservations.delete_many({'activity_id': activity_id})

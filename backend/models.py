@@ -98,8 +98,10 @@ class ActivityInput(BaseModel):
     uses_meeting_room: bool = False
     recurrence: Optional[str] = 'none'  # none | daily | weekly | monthly
     recurrence_count: Optional[int] = None
-    # Minutes before start_time to send a reminder. 0 disables it; None (field
-    # omitted, e.g. an older cached frontend) means "use the default / keep as-is".
+    # Reminders: list of "minutes before start_time" to notify at, e.g. [60, 15].
+    # [] = no reminder. None (field omitted) = use the default set / keep as-is.
+    reminder_offsets: Optional[List[int]] = None
+    # Deprecated single-value field, still accepted from older cached clients.
     reminder_minutes: Optional[int] = None
 
 

@@ -101,7 +101,9 @@ export default function Agenda() {
         description: ev.description || '', location: ev.location || '',
         participant_ids: (ev.participants || []).map((p) => p.user_id),
         uses_meeting_room: ev.uses_meeting_room || false,
-        reminder_minutes: ev.reminder_minutes ?? 15,
+        reminder_offsets: Array.isArray(ev.reminder_offsets)
+          ? ev.reminder_offsets
+          : (ev.reminder_minutes != null ? (ev.reminder_minutes > 0 ? [ev.reminder_minutes] : []) : [60, 15]),
       });
       toast.success('Actividad movida');
       load();

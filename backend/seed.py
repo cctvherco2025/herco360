@@ -214,6 +214,36 @@ async def migrate_activity_colors():
         print(f'[MIGRATE] Backfilled color on {len(legacy)} activities.')
 
 
+async def migrate_activity_reminders():
+    """Move activities to the multi-offset reminder model.
+
+    - Non-vacation activities without `reminder_offsets` get one:
+        legacy `reminder_minutes` > 0  -> [that value]
+        legacy `reminder_minutes` == 0 -> []            (user had disabled it)
+        no legacy field                -> [60, 15]       (new default set)
+    - The legacy `reminder_minutes` / `reminder_sent` fields are dropped.
+    Idempotent: only touches docs that still lack `reminder_offsets`.
+    """
+    pending = await db.activities.find(
+        {'reminder_offsets': {'$exists': False}, 'is_vacation': {'$ne': True}},
+        {'_id': 0, 'id': 1, 'reminder_minutes': 1, 'reminder_sent': 1},
+    ).to_list(5000)
+    for a in pending:
+        legacy = a.get('reminder_minutes')
+        if isinstance(legacy, int):
+            offsets = [legacy] if legacy > 0 else []
+        else:
+            offsets = [60, 15]
+        sent = [legacy] if (a.get('reminder_sent') and isinstance(legacy, int) and legacy > 0) else []
+        await db.activities.update_one(
+            {'id': a['id']},
+            {'$set': {'reminder_offsets': offsets, 'reminders_sent': sent},
+             '$unset': {'reminder_minutes': '', 'reminder_sent': ''}},
+        )
+    if pending:
+        print(f'[MIGRATE] Reminder model updated on {len(pending)} activities.')
+
+
 
 # Official HERCO article catalog (provided by the client)
 SAMPLE_ARTICLES = [

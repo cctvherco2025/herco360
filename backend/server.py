@@ -6,7 +6,8 @@ import logging
 from pathlib import Path
 
 from core import client
-from seed import seed_if_needed, migrate_activity_colors, seed_inventory, bootstrap_admins, migrate_room_info
+from seed import (seed_if_needed, migrate_activity_colors, seed_inventory, bootstrap_admins,
+                  migrate_room_info, migrate_activity_reminders)
 import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard, routes_inventory, routes_reports, routes_public, routes_vacations, routes_push
 import storage
 import reminders
@@ -66,6 +67,7 @@ async def startup():
         await seed_inventory()
         await bootstrap_admins()
         await migrate_room_info()
+        await migrate_activity_reminders()
     except Exception as e:
         logger.error(f'Seed error: {e}')
     try:

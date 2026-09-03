@@ -27,15 +27,24 @@ const RECURRENCE_HINT = {
   monthly: 'Se crearán 6 actividades mensuales (mismo día del mes).',
 };
 
-const REMINDER_OPTIONS = [
-  { value: '0', label: 'Sin recordatorio' },
-  { value: '10', label: '10 minutos antes' },
-  { value: '15', label: '15 minutos antes' },
-  { value: '30', label: '30 minutos antes' },
-  { value: '60', label: '1 hora antes' },
-  { value: '1440', label: '1 día antes' },
+const REMINDER_CHOICES = [
+  { value: 1440, label: '1 día antes' },
+  { value: 60, label: '1 hora antes' },
+  { value: 30, label: '30 minutos antes' },
+  { value: 15, label: '15 minutos antes' },
+  { value: 10, label: '10 minutos antes' },
 ];
-const DEFAULT_REMINDER = 15; // aplicado a actividades nuevas
+// Recordatorios por defecto cuando no se elige nada (coincide con el backend).
+const DEFAULT_REMINDERS = [60, 15];
+
+// Normaliza lo que llega del backend (nuevo campo lista o el antiguo entero).
+function readOffsets(activity) {
+  if (Array.isArray(activity?.reminder_offsets)) return activity.reminder_offsets;
+  if (activity?.reminder_minutes != null) {
+    return activity.reminder_minutes > 0 ? [activity.reminder_minutes] : [];
+  }
+  return [...DEFAULT_REMINDERS];
+}
 
 const addHour = (t) => {
   const [h, m] = (t || '09:00').split(':').map(Number);
@@ -47,7 +56,7 @@ const empty = (date, time) => ({
   title: '', color: DEFAULT_ACTIVITY_COLOR, date: date || ymd(new Date()),
   start_time: time || '09:00', end_time: addHour(time || '09:00'), description: '', location: '',
   participant_ids: [], uses_meeting_room: false, recurrence: 'none',
-  reminder_minutes: DEFAULT_REMINDER,
+  reminder_offsets: [...DEFAULT_REMINDERS],
 });
 
 export default function ActivityModal({ open, onOpenChange, activity, defaultDate, defaultTime, onSaved }) {
@@ -71,7 +80,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
           participant_ids: (activity.participants || []).map((p) => p.user_id),
           uses_meeting_room: activity.uses_meeting_room || false,
           recurrence: 'none',
-          reminder_minutes: activity.reminder_minutes ?? DEFAULT_REMINDER,
+          reminder_offsets: readOffsets(activity),
         });
       } else {
         setForm(empty(defaultDate, defaultTime));
@@ -295,17 +304,32 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
             )}
 
             <div className="space-y-1.5">
-              <Label>Recordatorio</Label>
-              <Select value={String(form.reminder_minutes ?? 0)} onValueChange={(v) => set('reminder_minutes', Number(v))}>
-                <SelectTrigger className="h-11" data-testid="activity-form-reminder-select"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {REMINDER_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label>Recordatorios</Label>
+              <div className="flex flex-wrap gap-2" data-testid="activity-form-reminders">
+                {REMINDER_CHOICES.map((c) => {
+                  const on = (form.reminder_offsets || []).includes(c.value);
+                  return (
+                    <button
+                      key={c.value}
+                      type="button"
+                      data-testid={`reminder-chip-${c.value}`}
+                      onClick={() => set('reminder_offsets',
+                        on
+                          ? (form.reminder_offsets || []).filter((x) => x !== c.value)
+                          : [...(form.reminder_offsets || []), c.value].sort((a, b) => b - a))}
+                      className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        on ? 'bg-[#1e395e] text-white border-transparent' : 'bg-card text-muted-foreground hover:bg-muted'
+                      }`}>
+                      {on && <Check className="h-3 w-3" />}
+                      {c.label}
+                    </button>
+                  );
+                })}
+              </div>
               <p className="text-xs text-muted-foreground">
-                {form.reminder_minutes > 0
-                  ? 'Se avisará al creador y a los participantes (campana y notificación push si está activada).'
-                  : 'No se enviará ningún aviso previo.'}
+                {(form.reminder_offsets || []).length === 0
+                  ? 'Sin recordatorio: no se enviará ningún aviso.'
+                  : 'Se avisará al creador y a los participantes (campana y notificación push si está activada).'}
               </p>
             </div>
 
