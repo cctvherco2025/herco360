@@ -71,14 +71,16 @@ def _effective_offsets(activity) -> list:
     return list(DEFAULT_REMINDER_OFFSETS)
 
 
-def _humanize(minutes: int) -> str:
-    if minutes >= 1440:
-        d = minutes // 1440
+def _humanize(minutes: float) -> str:
+    """Human "time until" label from the real remaining minutes."""
+    m = max(1, int(round(minutes)))
+    if m >= 1440:
+        d = round(m / 1440)
         return "mañana" if d == 1 else f"en {d} días"
-    if minutes >= 60 and minutes % 60 == 0:
-        h = minutes // 60
-        return "en 1 hora" if h == 1 else f"en {h} horas"
-    return f"en {minutes} minutos"
+    if m >= 50:
+        h = round(m / 60)
+        return "en 1 hora" if h <= 1 else f"en {h} horas"
+    return "en 1 minuto" if m == 1 else f"en {m} minutos"
 
 
 async def _scan_and_send() -> None:
@@ -121,7 +123,7 @@ async def _scan_and_send() -> None:
                 recipients.add(p.get("user_id"))
         recipients.discard(None)
 
-        msg = f"'{a['title']}' empieza {_humanize(fire_for)} · {a['start_time']}"
+        msg = f"'{a['title']}' empieza {_humanize(delta_min)} · {a['start_time']}"
         for uid in recipients:
             try:
                 await create_notification(
