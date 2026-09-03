@@ -37,6 +37,13 @@ services:
       # --- Recordatorios de agenda ---
       - key: APP_UTC_OFFSET_HOURS
         value: "-6"          # Honduras (sin horario de verano)
+      # --- Reportes CAMS (ingesta del agente de conteo) ---
+      - key: CAM_INGEST_KEY
+        sync: false          # clave compartida en la URL de ingesta
+      - key: CAM_PILOT_SUCURSAL
+        value: H1
+      - key: CAM_PILOT_CAMARA
+        value: P1 PuertaEntrada
       # --- Notificaciones push (Web Push / VAPID) ---
       - key: VAPID_PUBLIC_KEY
         sync: false          # base64url del punto público EC P-256 (empieza con "B")

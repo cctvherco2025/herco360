@@ -165,3 +165,11 @@ class PublicReservationInput(BaseModel):
 class GuestCancelInput(BaseModel):
     guest_token: str
 
+
+# ---- Reportes CAMS (people-counting agent ingest) ----
+class CamsIngestInput(BaseModel):
+    batch_id: str
+    timestamp: str  # ISO-8601 UTC, when the batch was sent
+    entradas: int
+    eventos: List[str] = []  # individual entry timestamps (ISO-8601 UTC)
+

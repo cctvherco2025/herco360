@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/context/ThemeContext';
@@ -22,6 +22,13 @@ import Configuracion from '@/pages/Configuracion';
 import Notificaciones from '@/pages/Notificaciones';
 import '@/App.css';
 
+// Carga diferida: arrastra recharts, solo lo necesita quien abre este módulo.
+const ReportesCams = lazy(() => import('@/pages/ReportesCams'));
+
+const PageFallback = () => (
+  <div className="p-10 text-center text-sm text-muted-foreground">Cargando…</div>
+);
+
 function App() {
   return (
     <ThemeProvider>
@@ -40,6 +47,7 @@ function App() {
               <Route path="/sala-de-juntas" element={<SalaDeJuntas />} />
               <Route path="/inventario" element={<Inventario />} />
               <Route path="/reportes" element={<Reportes />} />
+              <Route path="/reportes-cams" element={<Suspense fallback={<PageFallback />}><ReportesCams /></Suspense>} />
               <Route path="/usuarios" element={<Usuarios />} />
               <Route path="/organigrama" element={<Organigrama />} />
               <Route path="/configuracion" element={<Configuracion />} />

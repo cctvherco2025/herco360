@@ -102,3 +102,10 @@ export function canAccessOrgChart(user) {
   if (user.role === 'admin') return true;
   return (user.position || '').trim() === 'Director comercial';
 }
+
+// Reportes CAMS (conteo de personas por cámara): solo dirección y administración.
+export function canAccessCams(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  return (user.position || '').trim() === 'Director comercial';
+}
