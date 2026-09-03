@@ -68,6 +68,11 @@ export async function enablePush() {
   return 'granted-on';
 }
 
+export async function sendTestPush() {
+  const { data } = await api.post('/push/test');
+  return data; // { devices: <count> }
+}
+
 export async function disablePush() {
   const reg = await navigator.serviceWorker.getRegistration();
   const sub = reg ? await reg.pushManager.getSubscription() : null;

@@ -47,9 +47,16 @@ def _send_one(subscription_info: dict, data: str) -> int:
         )
         return getattr(resp, "status_code", 201)
     except WebPushException as e:
-        return getattr(getattr(e, "response", None), "status_code", 0) or 0
+        code = getattr(getattr(e, "response", None), "status_code", 0) or 0
+        body = ""
+        try:
+            body = e.response.text[:200] if e.response is not None else ""
+        except Exception:
+            pass
+        logger.warning(f"web push rejected (HTTP {code}) {body}".strip())
+        return code
     except Exception as e:  # pragma: no cover - network/lib edge cases
-        logger.warning(f"web push error: {e}")
+        logger.warning(f"web push error: {e!r}")
         return 0
 
 
@@ -57,11 +64,15 @@ def _deliver_sync(subs: list, payload: dict) -> list:
     """Blocking fan-out. Returns endpoints that must be pruned (expired/gone)."""
     data = json.dumps(payload)
     dead = []
+    ok = 0
     for s in subs:
         info = {"endpoint": s["endpoint"], "keys": s.get("keys", {})}
         code = _send_one(info, data)
         if code in (404, 410):
             dead.append(s["endpoint"])
+        elif code in (200, 201):
+            ok += 1
+    logger.info(f"web push fan-out: {ok}/{len(subs)} accepted, {len(dead)} expired")
     return dead
 
 

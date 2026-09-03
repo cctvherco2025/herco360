@@ -54,3 +54,19 @@ async def subscribe(data: PushSubscriptionInput, user=Depends(get_current_user))
 async def unsubscribe(data: PushUnsubscribeInput, user=Depends(get_current_user)):
     await db.push_subscriptions.delete_one({'endpoint': data.endpoint, 'user_id': user['id']})
     return {'message': 'ok'}
+
+
+@router.post('/test')
+async def test_push(user=Depends(get_current_user)):
+    """Send a push to the current user's devices — used to diagnose background delivery."""
+    if not push.is_configured():
+        raise HTTPException(status_code=503, detail='El servidor no tiene configuradas las notificaciones push')
+    devices = await db.push_subscriptions.count_documents({'user_id': user['id']})
+    if devices == 0:
+        raise HTTPException(status_code=400, detail='No hay ningún dispositivo suscrito. Activa el interruptor primero.')
+    await push.send_push_to_user(user['id'], {
+        'title': 'Prueba de notificación',
+        'body': 'Si ves esto con la app cerrada, las notificaciones en segundo plano funcionan.',
+        'url': '/notificaciones', 'icon': '/icon-192.png', 'tag': 'test',
+    })
+    return {'devices': devices}

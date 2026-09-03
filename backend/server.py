@@ -11,6 +11,7 @@ from seed import (seed_if_needed, migrate_activity_colors, seed_inventory, boots
 import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard, routes_inventory, routes_reports, routes_public, routes_vacations, routes_push
 import storage
 import reminders
+import push
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -79,6 +80,9 @@ async def startup():
         reminders.start()
     except Exception as e:
         logger.error(f'Reminder loop failed to start: {e}')
+    logger.info(f'Web Push configured: {push.is_configured()} '
+                f'(public key {"set" if push.VAPID_PUBLIC_KEY else "MISSING"}, '
+                f'private key {"set" if push.VAPID_PRIVATE_KEY else "MISSING"})')
 
 
 @app.on_event('shutdown')

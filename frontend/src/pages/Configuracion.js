@@ -13,7 +13,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { CARGOS, AREAS, SUCURSALES } from '@/lib/constants';
-import { pushSupported, getPushState, enablePush, disablePush } from '@/lib/push';
+import { pushSupported, getPushState, enablePush, disablePush, sendTestPush } from '@/lib/push';
 
 function isIosNonStandalone() {
   const ios = /iP(hone|ad|od)/.test(navigator.userAgent);
@@ -61,6 +61,18 @@ function NotificationsSettings() {
     }
   };
 
+  const test = async () => {
+    setWorking(true);
+    try {
+      const { devices } = await sendTestPush();
+      toast.success(`Enviada a ${devices} dispositivo(s). Cierra la app y espera unos segundos.`);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'No se pudo enviar la prueba');
+    } finally {
+      setWorking(false);
+    }
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
       className="rounded-[18px] bg-card border shadow-card p-6" data-testid="config-notifications-panel">
@@ -103,6 +115,16 @@ function NotificationsSettings() {
             </div>
           </div>
           <Switch checked={on} disabled={working} onCheckedChange={toggle} data-testid="config-push-switch" />
+        </div>
+      )}
+
+      {on && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button onClick={test} disabled={working} data-testid="config-push-test"
+            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50">
+            <BellRing className="h-3.5 w-3.5" /> Enviar notificación de prueba
+          </button>
+          <span className="text-[11px] text-muted-foreground">Pulsa, cierra la app y verifica que llega igual.</span>
         </div>
       )}
 
