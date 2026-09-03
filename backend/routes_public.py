@@ -10,7 +10,7 @@ internal calendar.
 """
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
-from core import db, serialize_doc, new_id, now_iso
+from core import db, serialize_doc, new_id, now_iso, today_local_str
 from models import PublicReservationInput, GuestCancelInput
 
 router = APIRouter(prefix='/public', tags=['public'])
@@ -64,8 +64,8 @@ async def public_create(data: PublicReservationInput):
         raise HTTPException(status_code=400, detail='Indica tu nombre')
     if not (data.title or '').strip():
         raise HTTPException(status_code=400, detail='Indica el motivo de la reserva')
-    # Cannot reserve on past dates.
-    if data.date < datetime.now().strftime('%Y-%m-%d'):
+    # Cannot reserve on past dates (company local time).
+    if data.date < today_local_str():
         raise HTTPException(status_code=400, detail='No puedes reservar la sala en fechas pasadas')
     if data.end_time <= data.start_time:
         raise HTTPException(status_code=400, detail='La hora de fin debe ser mayor que la de inicio')

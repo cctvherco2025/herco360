@@ -16,15 +16,14 @@ APP_UTC_OFFSET_HOURS to compare against "now".
 import os
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
-from core import db
+from core import db, now_local, APP_UTC_OFFSET_HOURS
 from notifications import create_notification
 
 logger = logging.getLogger("reminders")
 
 POLL_SECONDS = int(os.environ.get("REMINDER_POLL_SECONDS", "60"))
-APP_UTC_OFFSET_HOURS = float(os.environ.get("APP_UTC_OFFSET_HOURS", "-6"))
 
 
 def _parse_offsets(raw: str, fallback):
@@ -43,12 +42,7 @@ DEFAULT_REMINDER_OFFSETS = _parse_offsets(
 # Widest lead we support (bounds the DB query).
 MAX_LEAD_MINUTES = 24 * 60
 
-_APP_TZ = timezone(timedelta(hours=APP_UTC_OFFSET_HOURS))
 _task = None
-
-
-def _now_local() -> datetime:
-    return datetime.now(timezone.utc).astimezone(_APP_TZ).replace(tzinfo=None)
 
 
 def _start_dt(activity):
@@ -84,7 +78,7 @@ def _humanize(minutes: float) -> str:
 
 
 async def _scan_and_send() -> None:
-    now = _now_local()
+    now = now_local()
     horizon = now + timedelta(minutes=MAX_LEAD_MINUTES)
     query = {
         "date": {"$gte": now.strftime("%Y-%m-%d"), "$lte": horizon.strftime("%Y-%m-%d")},

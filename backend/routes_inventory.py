@@ -3,10 +3,9 @@ import os
 import re
 import io
 import logging
-from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.responses import StreamingResponse
-from core import db, require_inventory_access, serialize_doc, new_id, now_iso
+from core import db, require_inventory_access, serialize_doc, new_id, now_iso, now_local
 from models import InventoryIntake, InventoryMovementInput, CatalogItemInput, SUCURSALES
 
 router = APIRouter(prefix='/inventory', tags=['inventory'])
@@ -180,7 +179,7 @@ async def _get_movement_rows(sucursal=None):
 
 
 def _ts():
-    return datetime.now().strftime('%Y%m%d_%H%M')
+    return now_local().strftime('%Y%m%d_%H%M')
 
 
 def _build_stock_xlsx(rows):
@@ -246,7 +245,7 @@ def _build_pdf(title, columns, data_rows, col_widths):
                             topMargin=14 * mm, bottomMargin=14 * mm)
     styles = getSampleStyleSheet()
     elems = [Paragraph(f'<b>{title}</b>', styles['Title']),
-             Paragraph(datetime.now().strftime('Generado: %d/%m/%Y %H:%M'), styles['Normal']),
+             Paragraph(now_local().strftime('Generado: %d/%m/%Y %H:%M'), styles['Normal']),
              Spacer(1, 8)]
     cell = styles['BodyText']; cell.fontSize = 8; cell.leading = 10
     table_data = [columns] + [[Paragraph(str(c), cell) for c in row] for row in data_rows]

@@ -1,7 +1,7 @@
 """Vacation / leave requests with area-manager authorization."""
 from datetime import date as date_cls, timedelta
 from fastapi import APIRouter, HTTPException, Depends
-from core import db, get_current_user, serialize_doc, now_iso, new_id
+from core import db, get_current_user, serialize_doc, now_iso, new_id, today_local_str
 from models import VacationRequestInput, VacationReview
 from notifications import create_notification, notify_area_managers, log_activity
 
@@ -42,7 +42,7 @@ def _date_range(start, end):
 async def create_request(data: VacationRequestInput, user=Depends(get_current_user)):
     if data.end_date < data.start_date:
         raise HTTPException(status_code=400, detail='La fecha de fin no puede ser anterior a la de inicio')
-    if data.start_date < date_cls.today().isoformat():
+    if data.start_date < today_local_str():
         raise HTTPException(status_code=400, detail='No puedes solicitar fechas pasadas')
     if data.type not in TYPE_COLORS:
         raise HTTPException(status_code=400, detail='Tipo inválido')
@@ -184,7 +184,7 @@ async def update_request(request_id: str, data: VacationRequestInput, user=Depen
         raise HTTPException(status_code=403, detail='No puedes editar solicitudes de otro usuario')
     if data.end_date < data.start_date:
         raise HTTPException(status_code=400, detail='La fecha de fin no puede ser anterior a la de inicio')
-    if data.start_date < date_cls.today().isoformat():
+    if data.start_date < today_local_str():
         raise HTTPException(status_code=400, detail='No puedes solicitar fechas pasadas')
     if data.type not in TYPE_COLORS:
         raise HTTPException(status_code=400, detail='Tipo inválido')

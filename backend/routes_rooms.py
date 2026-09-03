@@ -1,7 +1,7 @@
 """Meeting room + reservation routes."""
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
-from core import db, get_current_user, serialize_doc, new_id, now_iso
+from core import db, get_current_user, serialize_doc, new_id, now_iso, today_local_str, local_hm
 from models import ReservationInput
 from notifications import create_notification, log_activity
 
@@ -15,11 +15,11 @@ MONDAY_BLOCK_END = '16:00'
 
 
 def _today_str():
-    return datetime.now().strftime('%Y-%m-%d')
+    return today_local_str()
 
 
 def _now_hm():
-    return datetime.now().strftime('%H:%M')
+    return local_hm()
 
 
 def _is_monday(date_str):

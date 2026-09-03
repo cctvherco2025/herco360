@@ -51,7 +51,29 @@ def new_id() -> str:
 
 
 def now_iso() -> str:
+    """Absolute instant in UTC ISO-8601. Use for stored `created_at` timestamps."""
     return datetime.now(timezone.utc).isoformat()
+
+
+# ---- Company local time ----
+# Stored dates/times for agenda and the meeting room are LOCAL wall-clock
+# (Honduras, UTC-6, no DST). The server runs in UTC, so anything that compares
+# stored data against "now" must use these helpers instead of datetime.now().
+APP_UTC_OFFSET_HOURS = float(os.environ.get('APP_UTC_OFFSET_HOURS', '-6'))
+_APP_TZ = timezone(timedelta(hours=APP_UTC_OFFSET_HOURS))
+
+
+def now_local() -> datetime:
+    """Current company wall-clock time as a naive datetime."""
+    return datetime.now(timezone.utc).astimezone(_APP_TZ).replace(tzinfo=None)
+
+
+def today_local_str() -> str:
+    return now_local().strftime('%Y-%m-%d')
+
+
+def local_hm() -> str:
+    return now_local().strftime('%H:%M')
 
 
 def serialize_doc(doc):

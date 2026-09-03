@@ -1,14 +1,14 @@
 """Dashboard summary + global search routes."""
-from datetime import datetime, timedelta
+from datetime import timedelta
 from fastapi import APIRouter, Depends
-from core import db, get_current_user, serialize_doc
+from core import db, get_current_user, serialize_doc, now_local
 from routes_rooms import _derive_room_status
 
 router = APIRouter(tags=['dashboard'])
 
 
 def _today_str():
-    return datetime.now().strftime('%Y-%m-%d')
+    return now_local().strftime('%Y-%m-%d')
 
 
 @router.get('/dashboard')
@@ -24,7 +24,7 @@ async def dashboard(user=Depends(get_current_user)):
 
     
     # Upcoming (next 7 days, excluding today)
-    end = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+    end = (now_local() + timedelta(days=7)).strftime('%Y-%m-%d')
     if user['role'] == 'admin':
         upcoming = await db.activities.count_documents({'date': {'$gt': today, '$lte': end}})
     else:
