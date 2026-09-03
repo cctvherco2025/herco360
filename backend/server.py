@@ -7,8 +7,9 @@ from pathlib import Path
 
 from core import client
 from seed import seed_if_needed, migrate_activity_colors, seed_inventory, bootstrap_admins, migrate_room_info
-import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard, routes_inventory, routes_reports, routes_public, routes_vacations
+import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard, routes_inventory, routes_reports, routes_public, routes_vacations, routes_push
 import storage
+import reminders
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -35,6 +36,7 @@ api_router.include_router(routes_inventory.router)
 api_router.include_router(routes_reports.router)
 api_router.include_router(routes_public.router)
 api_router.include_router(routes_vacations.router)
+api_router.include_router(routes_push.router)
 
 app.include_router(api_router)
 
@@ -71,8 +73,13 @@ async def startup():
         logger.info('Object storage initialized')
     except Exception as e:
         logger.error(f'Storage init failed: {e}')
+    try:
+        reminders.start()
+    except Exception as e:
+        logger.error(f'Reminder loop failed to start: {e}')
 
 
 @app.on_event('shutdown')
 async def shutdown_db_client():
+    await reminders.stop()
     client.close()

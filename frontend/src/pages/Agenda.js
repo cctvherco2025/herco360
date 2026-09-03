@@ -101,6 +101,7 @@ export default function Agenda() {
         description: ev.description || '', location: ev.location || '',
         participant_ids: (ev.participants || []).map((p) => p.user_id),
         uses_meeting_room: ev.uses_meeting_room || false,
+        reminder_minutes: ev.reminder_minutes ?? 15,
       });
       toast.success('Actividad movida');
       load();

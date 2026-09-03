@@ -43,6 +43,24 @@ def _gen_dates(start_str: str, recurrence: str, count) -> list:
     return out
 
 
+DEFAULT_REMINDER_MIN = 15
+
+
+def _norm_reminder(minutes, default: int = 0) -> int:
+    """Clamp the requested reminder lead to 0..1440 minutes (0 = disabled).
+
+    `minutes is None` means the field was omitted (e.g. an older cached
+    frontend) -> fall back to `default` instead of forcing a value.
+    """
+    if minutes is None:
+        return default
+    try:
+        m = int(minutes)
+    except (TypeError, ValueError):
+        return default
+    return max(0, min(m, 24 * 60))
+
+
 def _is_monday(date_str: str) -> bool:
     try:
         return datetime.strptime(date_str, '%Y-%m-%d').weekday() == 0
@@ -182,6 +200,8 @@ async def create_activity(data: ActivityInput, user=Depends(get_current_user)):
             'description': data.description or '', 'location': data.location or '',
             'participants': participants, 'uses_meeting_room': data.uses_meeting_room,
             'recurrence': recurrence, 'series_id': series_id,
+            'reminder_minutes': _norm_reminder(data.reminder_minutes, DEFAULT_REMINDER_MIN),
+            'reminder_sent': False,
             'created_by': user['id'], 'created_by_name': user['name'],
             'created_by_avatar': user.get('avatar_url'), 'created_at': now_iso(),
         }
@@ -229,12 +249,20 @@ async def update_activity(activity_id: str, data: ActivityInput, user=Depends(ge
     for p in participants:
         if p['user_id'] in prev:
             p['status'] = prev[p['user_id']]
+    # Field omitted (older cached client) -> keep whatever the activity already had.
+    new_reminder = _norm_reminder(data.reminder_minutes, a.get('reminder_minutes') or 0)
     updates = {
         'title': data.title, 'color': data.color, 'date': data.date,
         'start_time': data.start_time, 'end_time': data.end_time,
         'description': data.description or '', 'location': data.location or '',
         'participants': participants, 'uses_meeting_room': data.uses_meeting_room,
+        'reminder_minutes': new_reminder,
     }
+    # Re-arm the reminder whenever the schedule or the lead changes, so an edited
+    # activity can notify again.
+    if (a.get('date') != data.date or a.get('start_time') != data.start_time
+            or a.get('reminder_minutes') != new_reminder):
+        updates['reminder_sent'] = False
     await db.activities.update_one({'id': activity_id}, {'$set': updates})
     saved = await db.activities.find_one({'id': activity_id}, {'_id': 0})
     # Reconcile the meeting-room reservation tied to this activity.

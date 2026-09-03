@@ -34,6 +34,16 @@ services:
       # --- CORS: dominio(s) del frontend separados por coma ---
       - key: CORS_ORIGINS
         sync: false          # https://app.tudominio.com,https://herco360-web.onrender.com
+      # --- Recordatorios de agenda ---
+      - key: APP_UTC_OFFSET_HOURS
+        value: "-6"          # Honduras (sin horario de verano)
+      # --- Notificaciones push (Web Push / VAPID) ---
+      - key: VAPID_PUBLIC_KEY
+        sync: false          # base64url del punto público EC P-256 (empieza con "B")
+      - key: VAPID_PRIVATE_KEY
+        sync: false          # base64url de la clave privada cruda de 32 bytes
+      - key: VAPID_SUBJECT
+        value: mailto:soporte@herco.com
       # --- Almacenamiento de archivos: Cloudflare R2 ---
       - key: STORAGE_PROVIDER
         value: r2

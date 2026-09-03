@@ -98,6 +98,9 @@ class ActivityInput(BaseModel):
     uses_meeting_room: bool = False
     recurrence: Optional[str] = 'none'  # none | daily | weekly | monthly
     recurrence_count: Optional[int] = None
+    # Minutes before start_time to send a reminder. 0 disables it; None (field
+    # omitted, e.g. an older cached frontend) means "use the default / keep as-is".
+    reminder_minutes: Optional[int] = None
 
 
 class RespondInput(BaseModel):

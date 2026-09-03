@@ -26,3 +26,6 @@ pillow>=10
 # Almacenamiento de objetos (Cloudflare R2 / S3) y HTTP
 boto3>=1.34
 requests>=2.31
+
+# Notificaciones push (Web Push / VAPID)
+pywebpush>=2.0.0

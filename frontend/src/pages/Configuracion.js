@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { User as UserIcon, Palette, Save, Moon, Sun, Shield } from 'lucide-react';
+import { User as UserIcon, Palette, Save, Moon, Sun, Shield, Bell, BellRing, BellOff, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -9,9 +9,112 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { CARGOS, AREAS, SUCURSALES } from '@/lib/constants';
+import { pushSupported, getPushState, enablePush, disablePush } from '@/lib/push';
+
+function isIosNonStandalone() {
+  const ios = /iP(hone|ad|od)/.test(navigator.userAgent);
+  const standalone = window.navigator.standalone === true ||
+    window.matchMedia('(display-mode: standalone)').matches;
+  return ios && !standalone;
+}
+
+function NotificationsSettings() {
+  const [state, setState] = useState('loading'); // loading|unsupported|denied|granted-on|granted-off|default
+  const [working, setWorking] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!pushSupported()) { setState('unsupported'); return; }
+    try { setState(await getPushState()); } catch (e) { setState('granted-off'); }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const on = state === 'granted-on';
+  const canToggle = state === 'granted-on' || state === 'granted-off' || state === 'default';
+
+  const toggle = async (next) => {
+    setWorking(true);
+    try {
+      if (next) {
+        await enablePush();
+        toast.success('Notificaciones activadas en este dispositivo');
+      } else {
+        await disablePush();
+        toast.success('Notificaciones desactivadas en este dispositivo');
+      }
+      await refresh();
+    } catch (e) {
+      if (e?.code === 'denied' || Notification?.permission === 'denied') {
+        setState('denied');
+        toast.error('El navegador bloqueó las notificaciones. Actívalas en los ajustes del sitio.');
+      } else if (e?.response?.status === 503) {
+        toast.error('El servidor aún no tiene configuradas las notificaciones push');
+      } else {
+        toast.error(e?.message || 'No se pudo cambiar la preferencia');
+      }
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
+      className="rounded-[18px] bg-card border shadow-card p-6" data-testid="config-notifications-panel">
+      <h3 className="font-heading font-semibold mb-1 flex items-center gap-2">
+        <BellRing className="h-4 w-4 text-[#00a5df]" /> Notificaciones push
+      </h3>
+      <p className="text-sm text-muted-foreground mb-4">
+        Recibe un aviso en este dispositivo cuando te asignen una actividad, aprueben tus vacaciones,
+        reserven la sala y más — aunque no tengas la app abierta.
+      </p>
+
+      {state === 'loading' && <p className="text-sm text-muted-foreground">Comprobando…</p>}
+
+      {state === 'unsupported' && (
+        <div className="flex items-start gap-2 rounded-xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+          <Info className="h-4 w-4 shrink-0 mt-0.5" />
+          Este navegador no soporta notificaciones push. Prueba con Chrome, Edge o Firefox actualizados.
+        </div>
+      )}
+
+      {state === 'denied' && (
+        <div className="flex items-start gap-2 rounded-xl border border-[rgba(220,38,38,0.35)] bg-[rgba(220,38,38,0.08)] px-4 py-3 text-sm text-[#dc2626]">
+          <BellOff className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>
+            Las notificaciones están <b>bloqueadas</b> para este sitio en tu navegador.
+            Ábrelas desde el candado de la barra de direcciones → Notificaciones → Permitir, y recarga.
+          </span>
+        </div>
+      )}
+
+      {canToggle && (
+        <div className="flex items-center justify-between rounded-xl border bg-card px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="h-9 w-9 grid place-items-center rounded-full" style={{ background: on ? 'rgba(0,165,223,0.14)' : 'rgba(138,139,139,0.14)' }}>
+              {on ? <Bell className="h-4 w-4 text-[#00a5df]" /> : <BellOff className="h-4 w-4 text-muted-foreground" />}
+            </span>
+            <div>
+              <p className="text-sm font-medium text-foreground">Activar en este dispositivo</p>
+              <p className="text-xs text-muted-foreground">{on ? 'Estás recibiendo notificaciones aquí' : 'Actualmente desactivadas'}</p>
+            </div>
+          </div>
+          <Switch checked={on} disabled={working} onCheckedChange={toggle} data-testid="config-push-switch" />
+        </div>
+      )}
+
+      {isIosNonStandalone() && (
+        <p className="mt-3 flex items-start gap-1.5 text-[12px] text-muted-foreground">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          En iPhone/iPad primero añade la app a la pantalla de inicio (Compartir → Añadir a inicio) y ábrela desde ahí. Requiere iOS 16.4 o superior.
+        </p>
+      )}
+    </motion.div>
+  );
+}
 
 export default function Configuracion() {
   const { user, refreshUser } = useAuth();
@@ -38,6 +141,7 @@ export default function Configuracion() {
         <TabsList className="rounded-xl mb-5">
           <TabsTrigger value="perfil" className="rounded-lg" data-testid="config-tab-perfil"><UserIcon className="h-4 w-4 mr-1.5" /> Perfil</TabsTrigger>
           <TabsTrigger value="preferencias" className="rounded-lg" data-testid="config-tab-preferencias"><Palette className="h-4 w-4 mr-1.5" /> Preferencias</TabsTrigger>
+          <TabsTrigger value="notificaciones" className="rounded-lg" data-testid="config-tab-notificaciones"><Bell className="h-4 w-4 mr-1.5" /> Notificaciones</TabsTrigger>
         </TabsList>
 
         <TabsContent value="perfil">
@@ -106,6 +210,10 @@ export default function Configuracion() {
               </button>
             </div>
           </motion.div>
+        </TabsContent>
+
+        <TabsContent value="notificaciones">
+          <NotificationsSettings />
         </TabsContent>
       </Tabs>
     </div>

@@ -459,10 +459,18 @@ function MovimientosTab({ onChanged, refreshKey }) {
   const [solicitante, setSolicitante] = useState('');
   const [saving, setSaving] = useState(false);
   const [movs, setMovs] = useState([]);
+  // Filtros del historial de movimientos.
+  const [fType, setFType] = useState('todos'); // todos | entrada | salida
+  const [fSuc, setFSuc] = useState('todas');   // todas | H1..H6
+  const [fQ, setFQ] = useState('');
 
   const loadMovs = useCallback(async () => {
-    try { const { data } = await api.get('/inventory/movements'); setMovs(data); } catch (e) {}
-  }, []);
+    const params = new URLSearchParams();
+    if (fType !== 'todos') params.set('type', fType);
+    if (fSuc !== 'todas') params.set('sucursal', fSuc);
+    const qs = params.toString();
+    try { const { data } = await api.get(`/inventory/movements${qs ? `?${qs}` : ''}`); setMovs(data); } catch (e) {}
+  }, [fType, fSuc]);
   useEffect(() => { loadMovs(); }, [loadMovs, refreshKey]);
 
   const stockFetcher = useCallback(async (qq) => {
@@ -487,6 +495,10 @@ function MovimientosTab({ onChanged, refreshKey }) {
     } catch (err) { toast.error(err?.response?.data?.detail || 'Error al registrar'); }
     finally { setSaving(false); }
   };
+
+  const shown = movs.filter((m) => m.article.toLowerCase().includes(fQ.trim().toLowerCase()));
+  const nIn = shown.filter((m) => m.type === 'entrada').length;
+  const nOut = shown.filter((m) => m.type === 'salida').length;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
@@ -533,9 +545,44 @@ function MovimientosTab({ onChanged, refreshKey }) {
           <ArrowDownUp className="h-5 w-5 text-[#1e395e] dark:text-[#3cbef6]" />
           <h3 className="font-heading font-semibold">Historial de movimientos</h3>
         </div>
+
+        {/* Filtros: tipo (entradas / salidas), sucursal y búsqueda por artículo */}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <div className="flex items-center gap-1 rounded-xl border bg-card p-1">
+            {[
+              { k: 'todos', label: 'Todos' },
+              { k: 'entrada', label: 'Entradas' },
+              { k: 'salida', label: 'Salidas' },
+            ].map((o) => (
+              <button key={o.k} onClick={() => setFType(o.k)} data-testid={`mov-filter-${o.k}`}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${fType === o.k ? 'bg-[#1e395e] text-white' : 'text-muted-foreground hover:bg-muted'}`}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <Select value={fSuc} onValueChange={setFSuc}>
+            <SelectTrigger className="h-9 w-[150px]" data-testid="mov-filter-sucursal"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas las sucursales</SelectItem>
+              {SUCURSALES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <div className="relative flex-1 min-w-[160px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input value={fQ} onChange={(e) => setFQ(e.target.value)} placeholder="Buscar artículo…" className="pl-9 h-9" data-testid="mov-filter-search" />
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          {shown.length} movimiento{shown.length === 1 ? '' : 's'}
+          <span className="mx-1">·</span>
+          <span className="font-medium text-[#16a34a]">{nIn} entrada{nIn === 1 ? '' : 's'}</span>
+          <span className="mx-1">·</span>
+          <span className="font-medium text-[#dc2626]">{nOut} salida{nOut === 1 ? '' : 's'}</span>
+        </p>
+
         <div className="space-y-2 max-h-[560px] overflow-y-auto pr-1">
-          {movs.length === 0 && <p className="text-sm text-muted-foreground text-center py-10">Sin movimientos</p>}
-          {movs.map((m) => {
+          {shown.length === 0 && <p className="text-sm text-muted-foreground text-center py-10">Sin movimientos con estos filtros</p>}
+          {shown.map((m) => {
             const isOut = m.type === 'salida';
             return (
               <div key={m.id} className="flex items-start gap-3 rounded-xl border p-3.5" data-testid="movement-row">
