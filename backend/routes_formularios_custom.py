@@ -19,6 +19,7 @@ Visibilidad de un formulario ya creado:
   - Ver todas las respuestas: admin, Director comercial o el creador.
     Cualquier otra persona solo ve las respuestas que ella misma envió.
 """
+import io
 import json
 import logging
 from typing import List, Optional
@@ -37,6 +38,9 @@ logger = logging.getLogger('formularios_custom')
 TIPOS_VALIDOS = {'opcion_unica', 'checklist', 'texto'}
 MAX_PHOTO_SIZE = 8 * 1024 * 1024  # 8 MB por foto
 MAX_ITEMS = 60
+MAX_EXCEL_ROWS = 500
+
+_MAIN_COL_KEYWORDS = ('promocion', 'promoción', 'producto', 'articulo', 'artículo', 'descripcion', 'descripción', 'nombre')
 
 
 async def require_builder_access(user=Depends(get_current_user)):
@@ -116,6 +120,96 @@ async def _get_form_or_404(form_id: str) -> dict:
     if not form:
         raise HTTPException(status_code=404, detail='Formulario no encontrado')
     return form
+
+
+def _guess_main_column(headers: list, rows: list) -> Optional[str]:
+    """Heurística para adivinar cuál columna trae el nombre de la
+    promoción/producto: primero por nombre de columna (palabras clave
+    comunes), si ninguna calza cae a la primera columna cuyo contenido es
+    mayormente texto (no numérico) en la muestra de filas."""
+    norm = [h.strip().lower() for h in headers]
+    for kw in _MAIN_COL_KEYWORDS:
+        for i, h in enumerate(norm):
+            if kw in h:
+                return headers[i]
+    for h in headers:
+        non_empty, text_like = 0, 0
+        for row in rows[:50]:
+            v = row.get(h)
+            if v in (None, ''):
+                continue
+            non_empty += 1
+            if not isinstance(v, (int, float)):
+                text_like += 1
+        if non_empty and text_like / non_empty > 0.7:
+            return h
+    return headers[0] if headers else None
+
+
+# --------------------------------------------------------------------------- #
+#  Promociones del mes — inspección de Excel (paso "Cargar Excel" / "Detectar
+#  columnas"). No guarda nada: el front arma las preguntas con esta data y
+#  las manda ya armadas al crear el formulario (create_form de abajo).
+# --------------------------------------------------------------------------- #
+@router.post('/inspeccionar-excel')
+async def inspect_excel(file: UploadFile = File(...), user=Depends(require_promo_access)):
+    fn = (file.filename or '').lower()
+    if fn.endswith('.xls') and not fn.endswith('.xlsx'):
+        raise HTTPException(status_code=400,
+                             detail='Ese formato .xls antiguo no se puede leer directo — guarda el archivo como .xlsx desde Excel e inténtalo de nuevo')
+    if not fn.endswith('.xlsx'):
+        raise HTTPException(status_code=400, detail='El archivo debe ser .xlsx')
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail='El archivo está vacío')
+
+    from openpyxl import load_workbook
+    try:
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        ws = wb.active
+        rows_raw = list(ws.iter_rows(values_only=True))
+    except Exception:
+        raise HTTPException(status_code=400, detail='No se pudo leer el archivo Excel')
+    if not rows_raw:
+        raise HTTPException(status_code=400, detail='El archivo no tiene datos')
+
+    header_row = rows_raw[0]
+    headers, seen = [], set()
+    for i, c in enumerate(header_row):
+        name = str(c).strip() if (c is not None and str(c).strip()) else f'Columna {i + 1}'
+        base, n = name, 2
+        while name in seen:  # encabezados duplicados o vacíos repetidos
+            name = f'{base} ({n})'; n += 1
+        seen.add(name)
+        headers.append(name)
+
+    rows_out = []
+    truncated = False
+    for row in rows_raw[1:]:
+        if row is None or all((c is None or str(c).strip() == '') for c in row):
+            continue
+        if len(rows_out) >= MAX_EXCEL_ROWS:
+            truncated = True
+            break
+        item = {}
+        for i, h in enumerate(headers):
+            v = row[i] if i < len(row) else None
+            if v is not None and not isinstance(v, (int, float)):
+                v = str(v).strip()
+            item[h] = v
+        rows_out.append(item)
+
+    if not rows_out:
+        raise HTTPException(status_code=400, detail='No se encontraron filas con datos debajo del encabezado')
+
+    return {
+        'headers': headers,
+        'suggested_main_column': _guess_main_column(headers, rows_out),
+        'total_rows': len(rows_out),
+        'truncated': truncated,
+        'rows': rows_out,
+    }
 
 
 # --------------------------------------------------------------------------- #
