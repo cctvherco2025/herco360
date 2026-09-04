@@ -26,7 +26,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 
 from core import db, get_current_user, serialize_doc, new_id, now_iso, can_use_formulario_module, can_manage_promos, require_promo_access
 from models import CustomFormInput
@@ -144,6 +144,56 @@ def _guess_main_column(headers: list, rows: list) -> Optional[str]:
         if non_empty and text_like / non_empty > 0.7:
             return h
     return headers[0] if headers else None
+
+
+# --------------------------------------------------------------------------- #
+#  Promociones del mes — plantilla de Excel para guiar al usuario en el paso
+#  "Cargar Excel". Cualquier estructura de columnas funciona igual (Fase 1 la
+#  detecta sola); esta plantilla es solo una guía con un ejemplo llenado.
+# --------------------------------------------------------------------------- #
+@router.get('/promociones/plantilla')
+async def promo_template(user=Depends(require_promo_access)):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Promociones'
+    ws.append(['Promoción', 'Categoría', 'Descuento', 'Vigencia'])
+    for c in ws[1]:
+        c.font = Font(bold=True, color='FFFFFF')
+        c.fill = PatternFill('solid', fgColor='16A34A')
+        c.alignment = Alignment(horizontal='center')
+    ws.append(['2x1 Detergente Ariel 900ml', 'Limpieza', '50%', '01 al 30 de septiembre'])
+    ws.append(["Combo desayuno Kellogg's", 'Alimentos', '20%', '01 al 15 de septiembre'])
+    ws.append(['Descuento llantas Goodyear', 'Automotriz', '15%', 'Todo el mes'])
+    ws.column_dimensions['A'].width = 40
+    ws.column_dimensions['B'].width = 18
+    ws.column_dimensions['C'].width = 14
+    ws.column_dimensions['D'].width = 26
+
+    ws2 = wb.create_sheet('Instrucciones')
+    for row in [
+        ['Instrucciones para Promociones del mes'],
+        [''],
+        ['Columna', 'Descripción'],
+        ['Promoción', 'Obligatoria. El nombre de cada promoción o producto — cada fila se convierte en una pregunta del formulario.'],
+        ['Categoría / Descuento / Vigencia', 'Opcionales. Se muestran como referencia junto a cada pregunta; puedes agregar, quitar o renombrar estas columnas libremente.'],
+        [''],
+        ['Nota', 'La estructura de columnas no está fija: al subir tu Excel, HERCO360 detecta las columnas reales y te deja elegir cuál es el nombre de la promoción.'],
+        ['Nota', 'Cada promoción se pregunta como "¿La promoción está visible en tienda?" con opciones Sí / No / No aplica, más un campo de notas para observaciones.'],
+    ]:
+        ws2.append(row)
+    ws2.column_dimensions['A'].width = 22
+    ws2.column_dimensions['B'].width = 90
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': 'attachment; filename="plantilla_promociones_herco360.xlsx"'},
+    )
 
 
 # --------------------------------------------------------------------------- #

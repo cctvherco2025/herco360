@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import {
   UploadCloud, FileSpreadsheet, X, ChevronLeft, ChevronRight, ListChecks,
   Trash2, Plus, ArrowUp, ArrowDown, Check, Users as UsersIcon, Building2,
-  Briefcase, Rocket, Loader2,
+  Briefcase, Rocket, Loader2, FileDown,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { AREAS, CARGOS } from '@/lib/constants';
@@ -29,6 +29,19 @@ function fmtSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function downloadTemplate() {
+  try {
+    const res = await api.get('/formularios-custom/promociones/plantilla', { responseType: 'blob' });
+    const disp = res.headers['content-disposition'] || '';
+    const m = disp.match(/filename="?([^"]+)"?/);
+    const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
+    const a = document.createElement('a');
+    a.href = blobUrl; a.download = m ? m[1] : 'plantilla_promociones_herco360.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (e) { toast.error('No se pudo descargar la plantilla'); }
 }
 
 // ---------------------------------------------------------------------------
@@ -279,8 +292,15 @@ export default function PromoPublishWizard() {
           {/* Paso 1: Cargar Excel */}
           {step === 0 && (
             <div className="rounded-[18px] bg-card border shadow-card p-6 sm:p-8">
-              <h2 className="font-heading text-lg font-semibold mb-1">Cargar Excel</h2>
-              <p className="text-sm text-muted-foreground mb-5">Sube el archivo con la lista de promociones del mes. Puedes traerlo con cualquier estructura de columnas.</p>
+              <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+                <div>
+                  <h2 className="font-heading text-lg font-semibold mb-1">Cargar Excel</h2>
+                  <p className="text-sm text-muted-foreground">Sube el archivo con la lista de promociones del mes. Puedes traerlo con cualquier estructura de columnas.</p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={downloadTemplate} className="rounded-xl shrink-0" data-testid="promo-download-template">
+                  <FileDown className="h-3.5 w-3.5 mr-1.5" /> Descargar plantilla
+                </Button>
+              </div>
 
               {!file ? (
                 <div
