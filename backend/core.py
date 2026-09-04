@@ -124,7 +124,7 @@ USER_PUBLIC_FIELDS = {'_id': 0, 'password_hash': 0}
 # ---- Inventory module access control ----
 # Allowed: Tienda staff, store managers, Jefe ECCP, Operación manager, Director comercial, admins.
 # Per-user overrides (user['module_access']) can grant/revoke access manually.
-GATED_MODULES = ('inventario', 'reportes')
+GATED_MODULES = ('inventario', 'reportes', 'cams', 'formulario')
 
 
 def _module_override(user, module):
@@ -187,4 +187,48 @@ async def require_access_manager(user=Depends(get_current_user)):
 async def require_reports_access(user=Depends(get_current_user)):
     if not can_access_reports(user):
         raise HTTPException(status_code=403, detail='No tienes acceso al módulo de Reportes')
+    return user
+
+
+# ---- Reportes CAMS module access control ----
+# Base access: admins and Director comercial. Anyone else needs a manual override.
+def can_access_cams(user) -> bool:
+    if not user:
+        return False
+    if user.get('role') == 'admin':
+        return True
+    cargo = (user.get('position') or '').strip()
+    if cargo == 'Director comercial':
+        return True
+    ov = _module_override(user, 'cams')
+    if ov is not None:
+        return bool(ov)
+    return False
+
+
+async def require_cams_access(user=Depends(get_current_user)):
+    if not can_access_cams(user):
+        raise HTTPException(status_code=403, detail='No tienes acceso al módulo de Reportes CAMS')
+    return user
+
+
+# ---- Formulario (auditorías FLOS) module access control ----
+# Base access: admins, Director comercial y Gerentes. Per-user overrides apply.
+def can_access_formulario(user) -> bool:
+    if not user:
+        return False
+    if user.get('role') == 'admin':
+        return True
+    cargo = (user.get('position') or '').strip()
+    if cargo == 'Director comercial':
+        return True
+    ov = _module_override(user, 'formulario')
+    if ov is not None:
+        return bool(ov)
+    return cargo == 'Gerente'
+
+
+async def require_formulario_access(user=Depends(get_current_user)):
+    if not can_access_formulario(user):
+        raise HTTPException(status_code=403, detail='No tienes acceso al módulo Formulario')
     return user

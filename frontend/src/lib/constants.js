@@ -103,9 +103,26 @@ export function canAccessOrgChart(user) {
   return (user.position || '').trim() === 'Director comercial';
 }
 
-// Reportes CAMS (conteo de personas por cámara): solo dirección y administración.
+// Reportes CAMS (conteo de personas por cámara): dirección y administración por
+// defecto; Organigrama > Gestión de accesos puede dar/quitar acceso a otros.
 export function canAccessCams(user) {
   if (!user) return false;
   if (user.role === 'admin') return true;
-  return (user.position || '').trim() === 'Director comercial';
+  const cargo = (user.position || '').trim();
+  if (cargo === 'Director comercial') return true;
+  const ov = (user.module_access || {}).cams;
+  if (ov !== undefined && ov !== null) return !!ov;
+  return false;
+}
+
+// Formulario (auditoría de piso FLOS): gerentes, Director comercial y admins
+// por defecto; Organigrama > Gestión de accesos puede dar/quitar acceso a otros.
+export function canAccessFlos(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const cargo = (user.position || '').trim();
+  if (cargo === 'Director comercial') return true;
+  const ov = (user.module_access || {}).formulario;
+  if (ov !== undefined && ov !== null) return !!ov;
+  return cargo === 'Gerente';
 }

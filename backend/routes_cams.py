@@ -26,7 +26,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
 
-from core import db, get_current_user, serialize_doc, new_id, now_iso, now_local, APP_UTC_OFFSET_HOURS
+from core import db, serialize_doc, new_id, now_iso, now_local, APP_UTC_OFFSET_HOURS, require_cams_access
 from models import CamsIngestInput
 
 router = APIRouter(prefix='/cams', tags=['cams'])
@@ -103,14 +103,8 @@ async def ingesta(data: CamsIngestInput, k: str = Query(default='')):
 
 
 # --------------------------------------------------------------------------- #
-#  Reporting (admins + Director comercial)
+#  Reporting (require_cams_access: admins, Director comercial, o acceso manual)
 # --------------------------------------------------------------------------- #
-async def require_cams_access(user=Depends(get_current_user)):
-    if user.get('role') == 'admin' or (user.get('position') or '').strip() == 'Director comercial':
-        return user
-    raise HTTPException(status_code=403, detail='No tienes acceso al módulo de Reportes CAMS')
-
-
 async def _agent_state(sucursal=None):
     q = {} if not sucursal else {'sucursal': sucursal}
     agents = await db.cam_agentes.find(q, {'_id': 0}).to_list(50)
