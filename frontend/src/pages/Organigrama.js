@@ -157,6 +157,7 @@ function AccessManager() {
     { key: 'reportes', label: 'Reportes', color: C.cyan },
     { key: 'cams', label: 'Reportes CAMS', color: C.green },
     { key: 'formulario', label: 'Formulario', color: C.purple },
+    { key: 'rutina', label: 'Rutina Operativa', color: C.orange },
   ];
 
   return (
@@ -168,7 +169,7 @@ function AccessManager() {
             <h2 className="font-heading text-lg font-semibold text-foreground flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4" style={{ color: C.orange }} /> Gestión de accesos a módulos
             </h2>
-            <p className="text-[12px] text-muted-foreground">Da o quita acceso a Inventario, Reportes, Reportes CAMS y Formulario por usuario.</p>
+            <p className="text-[12px] text-muted-foreground">Da o quita acceso a Inventario, Reportes, Reportes CAMS, Formulario y Rutina Operativa por usuario.</p>
           </div>
         </div>
         <div className="relative w-full sm:w-72">

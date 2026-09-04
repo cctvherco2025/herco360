@@ -126,3 +126,26 @@ export function canAccessFlos(user) {
   if (ov !== undefined && ov !== null) return !!ov;
   return cargo === 'Gerente';
 }
+
+// Rutina Operativa (evaluación mensual de Gerentes): ven el historial admins,
+// Director comercial, Gerentes (quienes la llenan) y el Jefe de Operación
+// Tienda (supervisa la operación de todas las tiendas). Override manual aplica.
+export function canAccessRutina(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const cargo = (user.position || '').trim();
+  if (cargo === 'Director comercial') return true;
+  const ov = (user.module_access || {}).rutina;
+  if (ov !== undefined && ov !== null) return !!ov;
+  if (cargo === 'Gerente') return true;
+  return cargo === 'Jefe' && (user.area || '').trim() === 'Operación Tienda';
+}
+
+// Solo quienes efectivamente la llenan cada mes: Gerentes + admins/Director
+// comercial de soporte. El Jefe de Operación puede ver pero no crear.
+export function canFillRutina(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const cargo = (user.position || '').trim();
+  return cargo === 'Director comercial' || cargo === 'Gerente';
+}

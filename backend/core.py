@@ -124,7 +124,7 @@ USER_PUBLIC_FIELDS = {'_id': 0, 'password_hash': 0}
 # ---- Inventory module access control ----
 # Allowed: Tienda staff, store managers, Jefe ECCP, Operación manager, Director comercial, admins.
 # Per-user overrides (user['module_access']) can grant/revoke access manually.
-GATED_MODULES = ('inventario', 'reportes', 'cams', 'formulario')
+GATED_MODULES = ('inventario', 'reportes', 'cams', 'formulario', 'rutina')
 
 
 def _module_override(user, module):
@@ -232,3 +232,44 @@ async def require_formulario_access(user=Depends(get_current_user)):
     if not can_access_formulario(user):
         raise HTTPException(status_code=403, detail='No tienes acceso al módulo Formulario')
     return user
+
+
+# ---- Rutina Operativa (evaluación mensual de Gerentes) access control ----
+# Ven el historial: admins, Director comercial, Gerentes (quienes la llenan) y
+# el Jefe de Operación Tienda (supervisa la operación de todas las tiendas).
+# Per-user overrides apply on top of that baseline.
+def can_access_rutina(user) -> bool:
+    if not user:
+        return False
+    if user.get('role') == 'admin':
+        return True
+    cargo = (user.get('position') or '').strip()
+    if cargo == 'Director comercial':
+        return True
+    ov = _module_override(user, 'rutina')
+    if ov is not None:
+        return bool(ov)
+    if cargo == 'Gerente':
+        return True
+    area = (user.get('area') or '').strip()
+    if cargo == 'Jefe' and area == 'Operación Tienda':
+        return True
+    return False
+
+
+async def require_rutina_access(user=Depends(get_current_user)):
+    if not can_access_rutina(user):
+        raise HTTPException(status_code=403, detail='No tienes acceso a Rutina Operativa')
+    return user
+
+
+def can_fill_rutina(user) -> bool:
+    """Solo quienes efectivamente llenan la rutina cada mes: Gerentes, y
+    admins/Director comercial para soporte. El Jefe de Operación puede
+    consultarla (can_access_rutina) pero no crear evaluaciones."""
+    if not user:
+        return False
+    if user.get('role') == 'admin':
+        return True
+    cargo = (user.get('position') or '').strip()
+    return cargo in ('Director comercial', 'Gerente')

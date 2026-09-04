@@ -3,11 +3,13 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun, Boxes, FileText,
-  Palmtree, Network, Video, ClipboardCheck, ChevronDown,
+  Palmtree, Network, Video, ClipboardCheck, ClipboardList, ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
-import { canAccessInventory, canAccessReports, canAccessOrgChart, canAccessCams, canAccessFlos } from '@/lib/constants';
+import {
+  canAccessInventory, canAccessReports, canAccessOrgChart, canAccessCams, canAccessFlos, canAccessRutina,
+} from '@/lib/constants';
 import { Logo } from '@/components/Logo';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
@@ -121,15 +123,16 @@ function SidebarContent({ onNavigate }) {
     const idx = navItems.findIndex((n) => n.to === '/reportes');
     navItems.splice(idx >= 0 ? idx + 1 : 4, 0, { to: '/reportes-cams', label: 'Reportes CAMS', icon: Video, testid: 'sidebar-nav-reportes-cams' });
   }
-  if (canAccessFlos(user)) {
+  if (canAccessFlos(user) || canAccessRutina(user)) {
+    const children = [{ to: '/formularios', label: 'Formularios', icon: FileText, testid: 'sidebar-nav-formularios' }];
+    if (canAccessFlos(user)) {
+      children.push({ to: '/formulario', label: 'Evaluación FLOS', icon: ClipboardCheck, testid: 'sidebar-nav-formulario-flos' });
+    }
+    if (canAccessRutina(user)) {
+      children.push({ to: '/rutina-operativa', label: 'Rutina Operativa', icon: ClipboardList, testid: 'sidebar-nav-rutina-operativa' });
+    }
     const idx = navItems.findIndex((n) => n.to === '/reportes-cams');
-    navItems.splice(idx >= 0 ? idx + 1 : 4, 0, {
-      label: 'Formulario', icon: ClipboardCheck, testid: 'sidebar-nav-formulario',
-      children: [
-        { to: '/formularios', label: 'Formularios', icon: FileText, testid: 'sidebar-nav-formularios' },
-        { to: '/formulario', label: 'Evaluación FLOS', icon: ClipboardCheck, testid: 'sidebar-nav-formulario-flos' },
-      ],
-    });
+    navItems.splice(idx >= 0 ? idx + 1 : 4, 0, { label: 'Formulario', icon: ClipboardCheck, testid: 'sidebar-nav-formulario', children });
   }
   if (canAccessOrgChart(user)) {
     const idx = navItems.findIndex((n) => n.to === '/usuarios');

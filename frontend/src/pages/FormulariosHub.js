@@ -1,20 +1,22 @@
 import React from 'react';
 import { Navigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ClipboardCheck, FileText, ChevronRight } from 'lucide-react';
+import { ClipboardCheck, ClipboardList, FileText, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { canAccessFlos } from '@/lib/constants';
+import { canAccessFlos, canAccessRutina } from '@/lib/constants';
 
-// Catálogo de evaluaciones disponibles. Hoy solo existe FLOS; cuando se sume
-// otra (auditoría de seguridad, checklist de apertura…) se agrega aquí y
-// aparece como otra tarjeta.
-const EVALUATIONS = [
-  { to: '/formulario', label: 'Evaluación FLOS', desc: 'Frenteo · Limpieza · Orden · Surtido', icon: ClipboardCheck, color: '#00a5df' },
+// Catálogo de evaluaciones disponibles. Cuando se sume otra (checklist de
+// apertura, auditoría de seguridad…) se agrega aquí y aparece como otra
+// tarjeta, filtrada por su propio permiso.
+const ALL_EVALUATIONS = [
+  { to: '/formulario', label: 'Evaluación FLOS', desc: 'Frenteo · Limpieza · Orden · Surtido', icon: ClipboardCheck, color: '#00a5df', access: canAccessFlos },
+  { to: '/rutina-operativa', label: 'Rutina Operativa', desc: 'Evaluación mensual de gestión — Gerentes', icon: ClipboardList, color: '#ec9032', access: canAccessRutina },
 ];
 
 export default function FormulariosHub() {
   const { user } = useAuth();
-  if (!canAccessFlos(user)) return <Navigate to="/" replace />;
+  const EVALUATIONS = ALL_EVALUATIONS.filter((e) => e.access(user));
+  if (EVALUATIONS.length === 0) return <Navigate to="/" replace />;
 
   return (
     <div className="max-w-[1000px] mx-auto pt-2">
