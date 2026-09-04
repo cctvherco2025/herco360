@@ -155,3 +155,8 @@ export function canFillRutina(user) {
 export function canUseFormularioModule(user) {
   return canAccessFlos(user) || canAccessRutina(user);
 }
+
+// Quién puede crear/publicar "Promociones del mes" (mismo grupo que FLOS).
+export function canManagePromos(user) {
+  return canAccessFlos(user);
+}

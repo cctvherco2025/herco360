@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { ClipboardCheck, ClipboardList, FileText, ChevronRight, Plus, Users, Building2, User as UserIcon } from 'lucide-react';
+import { ClipboardCheck, ClipboardList, FileText, ChevronRight, Plus, Users, Building2, User as UserIcon, Percent } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { canAccessFlos, canAccessRutina, canUseFormularioModule } from '@/lib/constants';
@@ -11,9 +11,12 @@ import { Button } from '@/components/ui/button';
 // Evaluaciones fijas del sistema. Cuando se sume otra igual de "oficial" se
 // agrega aquí; los formularios que arma cada usuario ("Haz tu form
 // personalizado") no están hardcodeados — se cargan desde el backend.
+// Promociones del mes siempre se muestra: a quién le toca responder o ver
+// resultados lo decide la audiencia de cada publicación, no un cargo fijo.
 const BUILT_IN = [
   { to: '/formulario', label: 'Evaluación FLOS', desc: 'Frenteo · Limpieza · Orden · Surtido', icon: ClipboardCheck, color: '#00a5df', access: canAccessFlos },
   { to: '/rutina-operativa', label: 'Rutina Operativa', desc: 'Evaluación mensual de gestión — Gerentes', icon: ClipboardList, color: '#ec9032', access: canAccessRutina },
+  { to: '/formularios/promociones', label: 'Promociones del mes', desc: 'Seguimiento a la disponibilidad y correcta exhibición de promociones en tienda', icon: Percent, color: '#16a34a', access: () => true },
 ];
 
 // Audiencia por listas: puede combinar todos/áreas/cargos/usuarios a la vez;

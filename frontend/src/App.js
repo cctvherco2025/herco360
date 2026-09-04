@@ -17,6 +17,7 @@ import SalaPublica from '@/pages/SalaPublica';
 import Inventario from '@/pages/Inventario';
 import Reportes from '@/pages/Reportes';
 import FormulariosHub from '@/pages/FormulariosHub';
+import PromocionesHome from '@/pages/PromocionesHome';
 import Usuarios from '@/pages/Usuarios';
 import Organigrama from '@/pages/Organigrama';
 import Configuracion from '@/pages/Configuracion';
@@ -30,6 +31,7 @@ const Formulario = lazy(() => import('@/pages/Formulario'));
 const RutinaOperativa = lazy(() => import('@/pages/RutinaOperativa'));
 const CustomFormBuilderPage = lazy(() => import('@/pages/CustomFormBuilderPage'));
 const CustomFormPage = lazy(() => import('@/pages/CustomFormPage'));
+const PromoPublishWizardPage = lazy(() => import('@/pages/PromoPublishWizardPage'));
 
 const PageFallback = () => (
   <div className="p-10 text-center text-sm text-muted-foreground">Cargando…</div>
@@ -55,6 +57,8 @@ function App() {
               <Route path="/reportes" element={<Reportes />} />
               <Route path="/reportes-cams" element={<Suspense fallback={<PageFallback />}><ReportesCams /></Suspense>} />
               <Route path="/formularios" element={<FormulariosHub />} />
+              <Route path="/formularios/promociones" element={<PromocionesHome />} />
+              <Route path="/formularios/promociones/nuevo" element={<Suspense fallback={<PageFallback />}><PromoPublishWizardPage /></Suspense>} />
               <Route path="/formulario" element={<Suspense fallback={<PageFallback />}><Formulario /></Suspense>} />
               <Route path="/rutina-operativa" element={<Suspense fallback={<PageFallback />}><RutinaOperativa /></Suspense>} />
               <Route path="/formularios/nuevo" element={<Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense>} />

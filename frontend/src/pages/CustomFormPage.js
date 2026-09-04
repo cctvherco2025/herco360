@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import CustomFormWizard from '@/components/customform/CustomFormWizard';
 import CustomFormHistorial from '@/components/customform/CustomFormHistorial';
+import PromoResultados from '@/components/promociones/PromoResultados';
 
 export default function CustomFormPage() {
   const { id } = useParams();
@@ -67,6 +68,9 @@ export default function CustomFormPage() {
         <TabsList className="rounded-xl mb-5">
           <TabsTrigger value="responder" className="rounded-lg" data-testid="customform-tab-responder">Responder</TabsTrigger>
           <TabsTrigger value="historial" className="rounded-lg" data-testid="customform-tab-historial">Historial</TabsTrigger>
+          {schema.kind === 'promociones' && (
+            <TabsTrigger value="resultados" className="rounded-lg" data-testid="customform-tab-resultados">Resultados</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="responder">
@@ -75,6 +79,11 @@ export default function CustomFormPage() {
         <TabsContent value="historial">
           <CustomFormHistorial key={historyKey} schema={schema} canSeeAll={canSeeAll} />
         </TabsContent>
+        {schema.kind === 'promociones' && (
+          <TabsContent value="resultados">
+            <PromoResultados formId={schema.id} />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
