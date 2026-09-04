@@ -83,6 +83,7 @@ export const RUTINA_SCHEMA = [
           { label: 'Entre 90 y 95', pts: 2 },
           { label: 'Menor que 90', pts: 0 },
         ],
+        evidencia: { tipo: 'foto', prompt: 'Adjunte evidencia (opcional)' },
       },
       {
         id: 'exactitud_inventarios',
@@ -93,6 +94,7 @@ export const RUTINA_SCHEMA = [
           { label: 'Entre 98% y 99%', pts: 2 },
           { label: 'Menor que 98%', pts: 0 },
         ],
+        evidencia: { tipo: 'foto', prompt: 'Adjunte evidencia (opcional)' },
       },
     ],
   },
@@ -108,6 +110,7 @@ export const RUTINA_SCHEMA = [
           { label: 'Entre 95% y 98%', pts: 5 },
           { label: 'Menor que 95%', pts: 0 },
         ],
+        evidencia: { tipo: 'foto', prompt: 'Adjunte evidencia (opcional)' },
       },
       {
         id: 'pendientes_entrega',
@@ -125,7 +128,7 @@ export const RUTINA_SCHEMA = [
         titulo: 'Reunión uno a uno con coordinador',
         pregunta: 'Seleccione el nivel de ejecución',
         opciones: [
-          { label: 'Reuniones 1:1 ejecutadas', pts: 16 },
+          { label: 'Reuniones 1:1 ejecutadas', pts: 11 },
           { label: 'Ejecución parcial', pts: 8 },
           { label: 'No realizadas', pts: 0 },
         ],
@@ -143,6 +146,7 @@ export const RUTINA_SCHEMA = [
         titulo: 'Limpieza general de Tienda',
         pregunta: '¿Se revisaron todas las áreas de la tienda durante el mes?',
         opciones: [{ label: 'Sí', pts: 5 }, { label: 'No', pts: 0 }],
+        evidencia: { tipo: 'foto', prompt: 'Adjunte evidencia (opcional)' },
       },
     ],
   },
