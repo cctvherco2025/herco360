@@ -439,6 +439,98 @@ async def list_responses(form_id: str, user=Depends(get_current_user)):
     return serialize_doc(rows)
 
 
+@router.get('/{form_id}/reporte')
+async def get_report(form_id: str, user=Depends(get_current_user)):
+    """Panel de resultados y seguimiento — pensado para "Promociones del mes"
+    pero funciona para cualquier formulario con audiencia_resueltos: cruza
+    los usuarios asignados (foto fija al publicar) con sus respuestas para
+    armar KPIs, un reporte por pregunta/promoción y otro por sucursal.
+    Mismo permiso que ver todas las respuestas (admin, Director comercial o
+    el creador del formulario)."""
+    form = await _get_form_or_404(form_id)
+    if not _sees_all_responses(user, form):
+        raise HTTPException(status_code=403, detail='No tienes acceso al reporte de este formulario')
+
+    assigned_ids = list(dict.fromkeys(form.get('audiencia_resueltos') or []))
+    assigned_users = []
+    if assigned_ids:
+        assigned_users = await db.users.find(
+            {'id': {'$in': assigned_ids}}, {'_id': 0, 'id': 1, 'name': 1, 'sucursal': 1, 'position': 1}
+        ).to_list(2000)
+    users_by_id = {u['id']: u for u in assigned_users}
+
+    responses = await db.custom_form_responses.find({'form_id': form_id}, {'_id': 0}).to_list(2000)
+    # si un usuario respondió más de una vez, cuenta como "respondió" una sola vez
+    responded_ids = {r['respondent_id'] for r in responses}
+
+    stores = {}
+    for uid in assigned_ids:
+        u = users_by_id.get(uid)
+        suc = ((u or {}).get('sucursal') or '').strip() or 'Sin sucursal'
+        entry = stores.setdefault(suc, {'sucursal': suc, 'asignados': set(), 'respondieron': set()})
+        entry['asignados'].add(uid)
+        if uid in responded_ids:
+            entry['respondieron'].add(uid)
+
+    por_sucursal = []
+    for suc, info in stores.items():
+        suc_resp = [r for r in responses if r['respondent_id'] in info['respondieron']]
+        yes = no = na = 0
+        for r in suc_resp:
+            for e in r.get('entries', []):
+                v = e.get('respuesta')
+                if v == 'Sí':
+                    yes += 1
+                elif v == 'No':
+                    no += 1
+                elif v == 'No aplica':
+                    na += 1
+        evaluated = yes + no
+        n_asig, n_resp = len(info['asignados']), len(info['respondieron'])
+        estado = 'Completo' if n_resp and n_resp >= n_asig else ('Parcial' if n_resp else 'Pendiente')
+        por_sucursal.append({
+            'sucursal': suc, 'estado': estado, 'asignados': n_asig, 'respondieron': n_resp,
+            'promociones_evaluadas': evaluated,
+            'cumplimiento': round(yes / evaluated * 100) if evaluated else None,
+        })
+    por_sucursal.sort(key=lambda x: x['sucursal'])
+
+    por_promo = {it['id']: {'id': it['id'], 'titulo': it['titulo'], 'visibles': 0, 'no_visibles': 0, 'no_aplica': 0}
+                 for it in form.get('items', [])}
+    for r in responses:
+        for e in r.get('entries', []):
+            row = por_promo.get(e['id'])
+            if not row:
+                continue
+            v = e.get('respuesta')
+            if v == 'Sí':
+                row['visibles'] += 1
+            elif v == 'No':
+                row['no_visibles'] += 1
+            elif v == 'No aplica':
+                row['no_aplica'] += 1
+    por_promocion = []
+    for row in por_promo.values():
+        evaluated = row['visibles'] + row['no_visibles']
+        row['cumplimiento'] = round(row['visibles'] / evaluated * 100) if evaluated else None
+        por_promocion.append(row)
+    por_promocion.sort(key=lambda r: r['titulo'])
+
+    total_yes = sum(r['visibles'] for r in por_promocion)
+    total_no = sum(r['no_visibles'] for r in por_promocion)
+    total_eval = total_yes + total_no
+    kpis = {
+        'cumplimiento_general': round(total_yes / total_eval * 100) if total_eval else None,
+        'tiendas_reportadas': sum(1 for s in por_sucursal if s['respondieron'] > 0),
+        'tiendas_total': len(por_sucursal),
+        'promociones_evaluadas': len(por_promocion),
+        'asignados': len(assigned_ids),
+        'respondieron': len(responded_ids),
+        'pendientes': max(0, len(assigned_ids) - len(responded_ids)),
+    }
+    return {'kpis': kpis, 'por_promocion': por_promocion, 'por_sucursal': por_sucursal}
+
+
 @router.get('/{form_id}/respuestas/{resp_id}')
 async def get_response(form_id: str, resp_id: str, user=Depends(get_current_user)):
     form = await _get_form_or_404(form_id)
