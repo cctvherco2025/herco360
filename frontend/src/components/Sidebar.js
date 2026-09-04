@@ -1,10 +1,13 @@
-import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun, Boxes, FileText, Palmtree, Network, Video } from 'lucide-react';
+import {
+  Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun, Boxes, FileText,
+  Palmtree, Network, Video, ClipboardCheck, ChevronDown,
+} from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
-import { canAccessInventory, canAccessReports, canAccessOrgChart, canAccessCams } from '@/lib/constants';
+import { canAccessInventory, canAccessReports, canAccessOrgChart, canAccessCams, canAccessFlos } from '@/lib/constants';
 import { Logo } from '@/components/Logo';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
@@ -17,12 +20,95 @@ const baseNavItems = [
   { to: '/configuracion', label: 'Configuración', icon: Settings, testid: 'sidebar-nav-configuracion' },
 ];
 
+function NavItem({ item, onNavigate }) {
+  return (
+    <NavLink
+      to={item.to}
+      end={item.end}
+      data-testid={item.testid}
+      onClick={() => onNavigate?.()}
+      className={({ isActive }) =>
+        `group relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
+          isActive
+            ? 'bg-[rgba(0,165,223,0.12)] text-[#1e395e] dark:text-[#3cbef6]'
+            : 'text-muted-foreground hover:bg-[rgba(60,190,246,0.08)] hover:text-foreground'
+        }`
+      }>
+      {({ isActive }) => (
+        <>
+          {isActive && (
+            <motion.span layoutId="sidebar-active" className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-full bg-[#00a5df]" />
+          )}
+          <item.icon className="h-[18px] w-[18px] shrink-0" />
+          {item.label}
+        </>
+      )}
+    </NavLink>
+  );
+}
+
+// Item de navegación con subitems plegables (ej. "Formulario" -> Formularios /
+// Evaluación FLOS). Se abre solo si uno de sus hijos está activo, y se puede
+// desplegar/plegar a mano con la flecha.
+function NavGroup({ item, onNavigate }) {
+  const location = useLocation();
+  const childActive = item.children.some((c) => location.pathname === c.to || location.pathname.startsWith(`${c.to}/`));
+  const [open, setOpen] = useState(childActive);
+
+  useEffect(() => { if (childActive) setOpen(true); }, [childActive]);
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        data-testid={item.testid}
+        aria-expanded={open}
+        className={`group relative w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
+          childActive
+            ? 'bg-[rgba(0,165,223,0.12)] text-[#1e395e] dark:text-[#3cbef6]'
+            : 'text-muted-foreground hover:bg-[rgba(60,190,246,0.08)] hover:text-foreground'
+        }`}>
+        {childActive && (
+          <motion.span layoutId="sidebar-active" className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-full bg-[#00a5df]" />
+        )}
+        <item.icon className="h-[18px] w-[18px] shrink-0" />
+        <span className="flex-1 text-left">{item.label}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${open ? '' : '-rotate-90'}`} />
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }} className="overflow-hidden">
+            <div className="mt-1 mb-1 space-y-1 rounded-xl bg-card border p-1.5 shadow-card">
+              {item.children.map((c) => (
+                <NavLink key={c.to} to={c.to} data-testid={c.testid} onClick={() => onNavigate?.()}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+                      isActive
+                        ? 'bg-[rgba(0,165,223,0.12)] text-[#1e395e] dark:text-[#3cbef6] font-medium'
+                        : 'text-muted-foreground hover:bg-muted'
+                    }`
+                  }>
+                  <c.icon className="h-4 w-4 shrink-0" />
+                  {c.label}
+                </NavLink>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function SidebarContent({ onNavigate }) {
   const { user, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
-  // Build nav: insert "Inventario" and "Reportes" (Tienda-only) right after Sala de Juntas
+  // Build nav: insert "Inventario" y "Reportes" (Tienda-only) right after Sala de Juntas
   const navItems = [...baseNavItems];
   if (canAccessInventory(user)) {
     navItems.splice(3, 0, { to: '/inventario', label: 'Inventario', icon: Boxes, testid: 'sidebar-nav-inventario' });
@@ -34,6 +120,16 @@ function SidebarContent({ onNavigate }) {
   if (canAccessCams(user)) {
     const idx = navItems.findIndex((n) => n.to === '/reportes');
     navItems.splice(idx >= 0 ? idx + 1 : 4, 0, { to: '/reportes-cams', label: 'Reportes CAMS', icon: Video, testid: 'sidebar-nav-reportes-cams' });
+  }
+  if (canAccessFlos(user)) {
+    const idx = navItems.findIndex((n) => n.to === '/reportes-cams');
+    navItems.splice(idx >= 0 ? idx + 1 : 4, 0, {
+      label: 'Formulario', icon: ClipboardCheck, testid: 'sidebar-nav-formulario',
+      children: [
+        { to: '/formularios', label: 'Formularios', icon: FileText, testid: 'sidebar-nav-formularios' },
+        { to: '/formulario', label: 'Evaluación FLOS', icon: ClipboardCheck, testid: 'sidebar-nav-formulario-flos' },
+      ],
+    });
   }
   if (canAccessOrgChart(user)) {
     const idx = navItems.findIndex((n) => n.to === '/usuarios');
@@ -55,29 +151,9 @@ function SidebarContent({ onNavigate }) {
 
       <nav className="flex-1 px-3 space-y-1 overflow-y-auto no-scrollbar">
         {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            data-testid={item.testid}
-            onClick={() => onNavigate?.()}
-            className={({ isActive }) =>
-              `group relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                isActive
-                  ? 'bg-[rgba(0,165,223,0.12)] text-[#1e395e] dark:text-[#3cbef6]'
-                  : 'text-muted-foreground hover:bg-[rgba(60,190,246,0.08)] hover:text-foreground'
-              }`
-            }>
-            {({ isActive }) => (
-              <>
-                {isActive && (
-                  <motion.span layoutId="sidebar-active" className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-full bg-[#00a5df]" />
-                )}
-                <item.icon className="h-[18px] w-[18px] shrink-0" />
-                {item.label}
-              </>
-            )}
-          </NavLink>
+          item.children
+            ? <NavGroup key={item.label} item={item} onNavigate={onNavigate} />
+            : <NavItem key={item.to} item={item} onNavigate={onNavigate} />
         ))}
       </nav>
 

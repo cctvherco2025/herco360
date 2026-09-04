@@ -16,6 +16,7 @@ import SalaDeJuntas from '@/pages/SalaDeJuntas';
 import SalaPublica from '@/pages/SalaPublica';
 import Inventario from '@/pages/Inventario';
 import Reportes from '@/pages/Reportes';
+import FormulariosHub from '@/pages/FormulariosHub';
 import Usuarios from '@/pages/Usuarios';
 import Organigrama from '@/pages/Organigrama';
 import Configuracion from '@/pages/Configuracion';
@@ -24,6 +25,8 @@ import '@/App.css';
 
 // Carga diferida: arrastra recharts, solo lo necesita quien abre este módulo.
 const ReportesCams = lazy(() => import('@/pages/ReportesCams'));
+// Carga diferida: arrastra jsPDF, solo lo necesita quien abre este módulo.
+const Formulario = lazy(() => import('@/pages/Formulario'));
 
 const PageFallback = () => (
   <div className="p-10 text-center text-sm text-muted-foreground">Cargando…</div>
@@ -48,6 +51,8 @@ function App() {
               <Route path="/inventario" element={<Inventario />} />
               <Route path="/reportes" element={<Reportes />} />
               <Route path="/reportes-cams" element={<Suspense fallback={<PageFallback />}><ReportesCams /></Suspense>} />
+              <Route path="/formularios" element={<FormulariosHub />} />
+              <Route path="/formulario" element={<Suspense fallback={<PageFallback />}><Formulario /></Suspense>} />
               <Route path="/usuarios" element={<Usuarios />} />
               <Route path="/organigrama" element={<Organigrama />} />
               <Route path="/configuracion" element={<Configuracion />} />
