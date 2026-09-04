@@ -192,13 +192,21 @@ class CustomFormItem(BaseModel):
 
 
 class CustomFormAudience(BaseModel):
-    tipo: str  # 'todos' | 'area' | 'cargo'
-    valor: Optional[str] = None
+    """Audiencia por listas: puede combinar varias áreas, varios cargos y
+    usuarios individuales sueltos a la vez (no un solo tipo excluyente)."""
+    todos: bool = False
+    areas: List[str] = []
+    cargos: List[str] = []
+    user_ids: List[str] = []
 
 
 class CustomFormInput(BaseModel):
     titulo: str
     descripcion: Optional[str] = ''
+    kind: Optional[str] = 'generic'  # 'generic' (form builder libre) | 'promociones'
+    periodo: Optional[str] = None  # 'YYYY-MM', solo formularios periódicos (Promociones)
+    serie_key: Optional[str] = None  # agrupa publicaciones del mismo programa a través de meses
+    status: Optional[str] = 'publicado'  # 'borrador' | 'publicado'
     audiencia: CustomFormAudience
     items: List[CustomFormItem]
 

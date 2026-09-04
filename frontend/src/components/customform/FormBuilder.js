@@ -63,7 +63,12 @@ export default function FormBuilder() {
     try {
       const payload = {
         titulo: titulo.trim(), descripcion: descripcion.trim(),
-        audiencia: { tipo: audTipo, valor: audTipo === 'todos' ? null : audValor },
+        audiencia: {
+          todos: audTipo === 'todos',
+          areas: audTipo === 'area' ? [audValor] : [],
+          cargos: audTipo === 'cargo' ? [audValor] : [],
+          user_ids: [],
+        },
         items: items.map((it) => ({
           seccion: it.seccion.trim() || 'General', titulo: it.titulo.trim(), pregunta: it.pregunta.trim(),
           tipo: it.tipo, scored: it.tipo !== 'texto' && it.scored, permite_foto: it.permite_foto,

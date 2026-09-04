@@ -263,6 +263,18 @@ async def require_rutina_access(user=Depends(get_current_user)):
     return user
 
 
+def can_manage_promos(user) -> bool:
+    """Quién puede crear/publicar "Promociones del mes": admins, Director
+    comercial y Gerentes — el mismo grupo que ya define can_access_formulario."""
+    return can_access_formulario(user)
+
+
+async def require_promo_access(user=Depends(get_current_user)):
+    if not can_manage_promos(user):
+        raise HTTPException(status_code=403, detail='No tienes permiso para administrar Promociones del mes')
+    return user
+
+
 def can_use_formulario_module(user) -> bool:
     """Puede crear formularios personalizados: cualquiera que ya tenga acceso
     a alguna evaluación del módulo Formulario (FLOS o Rutina Operativa)."""

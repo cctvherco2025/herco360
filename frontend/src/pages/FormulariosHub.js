@@ -16,13 +16,23 @@ const BUILT_IN = [
   { to: '/rutina-operativa', label: 'Rutina Operativa', desc: 'Evaluación mensual de gestión — Gerentes', icon: ClipboardList, color: '#ec9032', access: canAccessRutina },
 ];
 
-const AUD_ICON = { todos: Users, area: Building2, cargo: UserIcon };
+// Audiencia por listas: puede combinar todos/áreas/cargos/usuarios a la vez;
+// el ícono y la etiqueta muestran lo primero que aplique.
+const AUD_ICON_FOR = (a) => {
+  if (!a) return Users;
+  if (a.todos) return Users;
+  if ((a.areas || []).length) return Building2;
+  if ((a.cargos || []).length) return UserIcon;
+  return Users;
+};
 const AUD_LABEL = (a) => {
   if (!a) return '';
-  if (a.tipo === 'todos') return 'Todos';
-  if (a.tipo === 'area') return `Área: ${a.valor}`;
-  if (a.tipo === 'cargo') return `Cargo: ${a.valor}`;
-  return '';
+  if (a.todos) return 'Todos';
+  const parts = [];
+  if ((a.areas || []).length) parts.push(`Área: ${a.areas.join(', ')}`);
+  if ((a.cargos || []).length) parts.push(`Cargo: ${a.cargos.join(', ')}`);
+  if ((a.user_ids || []).length) parts.push(`${a.user_ids.length} usuario(s)`);
+  return parts.join(' · ');
 };
 
 export default function FormulariosHub() {
@@ -82,7 +92,7 @@ export default function FormulariosHub() {
           <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Formularios personalizados</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {customForms.map((f, i) => {
-              const AudIcon = AUD_ICON[f.audiencia?.tipo] || Users;
+              const AudIcon = AUD_ICON_FOR(f.audiencia);
               return (
                 <Link key={f.id} to={`/formularios/custom/${f.id}`} data-testid={`formularios-hub-custom-${f.id}`}>
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: i * 0.05 }}
