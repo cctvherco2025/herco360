@@ -149,3 +149,9 @@ export function canFillRutina(user) {
   const cargo = (user.position || '').trim();
   return cargo === 'Director comercial' || cargo === 'Gerente';
 }
+
+// "Haz tu form personalizado": puede crear formularios propios cualquiera que
+// ya tenga acceso a alguna evaluación del módulo (FLOS o Rutina Operativa).
+export function canUseFormularioModule(user) {
+  return canAccessFlos(user) || canAccessRutina(user);
+}

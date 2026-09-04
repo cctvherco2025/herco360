@@ -28,6 +28,8 @@ const ReportesCams = lazy(() => import('@/pages/ReportesCams'));
 // Carga diferida: arrastra jsPDF, solo lo necesita quien abre este módulo.
 const Formulario = lazy(() => import('@/pages/Formulario'));
 const RutinaOperativa = lazy(() => import('@/pages/RutinaOperativa'));
+const CustomFormBuilderPage = lazy(() => import('@/pages/CustomFormBuilderPage'));
+const CustomFormPage = lazy(() => import('@/pages/CustomFormPage'));
 
 const PageFallback = () => (
   <div className="p-10 text-center text-sm text-muted-foreground">Cargando…</div>
@@ -55,6 +57,8 @@ function App() {
               <Route path="/formularios" element={<FormulariosHub />} />
               <Route path="/formulario" element={<Suspense fallback={<PageFallback />}><Formulario /></Suspense>} />
               <Route path="/rutina-operativa" element={<Suspense fallback={<PageFallback />}><RutinaOperativa /></Suspense>} />
+              <Route path="/formularios/nuevo" element={<Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense>} />
+              <Route path="/formularios/custom/:id" element={<Suspense fallback={<PageFallback />}><CustomFormPage /></Suspense>} />
               <Route path="/usuarios" element={<Usuarios />} />
               <Route path="/organigrama" element={<Organigrama />} />
               <Route path="/configuracion" element={<Configuracion />} />

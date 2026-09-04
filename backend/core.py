@@ -263,6 +263,12 @@ async def require_rutina_access(user=Depends(get_current_user)):
     return user
 
 
+def can_use_formulario_module(user) -> bool:
+    """Puede crear formularios personalizados: cualquiera que ya tenga acceso
+    a alguna evaluación del módulo Formulario (FLOS o Rutina Operativa)."""
+    return can_access_formulario(user) or can_access_rutina(user)
+
+
 def can_fill_rutina(user) -> bool:
     """Solo quienes efectivamente llenan la rutina cada mes: Gerentes, y
     admins/Director comercial para soporte. El Jefe de Operación puede

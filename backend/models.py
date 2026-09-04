@@ -173,3 +173,32 @@ class CamsIngestInput(BaseModel):
     entradas: int
     eventos: List[str] = []  # individual entry timestamps (ISO-8601 UTC)
 
+
+# ---- Formularios personalizados (form builder) ----
+class CustomFormOption(BaseModel):
+    label: str
+    pts: Optional[int] = None  # None si la pregunta no lleva puntaje
+
+
+class CustomFormItem(BaseModel):
+    id: Optional[str] = None  # el backend asigna uno si falta
+    seccion: Optional[str] = 'General'
+    titulo: str
+    pregunta: Optional[str] = ''
+    tipo: str  # 'opcion_unica' | 'checklist' | 'texto'
+    scored: bool = False
+    opciones: List[CustomFormOption] = []
+    permite_foto: bool = True
+
+
+class CustomFormAudience(BaseModel):
+    tipo: str  # 'todos' | 'area' | 'cargo'
+    valor: Optional[str] = None
+
+
+class CustomFormInput(BaseModel):
+    titulo: str
+    descripcion: Optional[str] = ''
+    audiencia: CustomFormAudience
+    items: List[CustomFormItem]
+
