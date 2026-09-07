@@ -134,6 +134,9 @@ class InventoryMovementInput(BaseModel):
     sucursal: str  # source branch where stock is deducted
     description: str
     solicitante: Optional[str] = ''
+    # Si se indica, la rebaja es un traslado: la misma cantidad se SUMA al
+    # inventario de esta sucursal. Debe ser distinta al origen.
+    sucursal_destino: Optional[str] = None
 
 
 class CatalogItemInput(BaseModel):

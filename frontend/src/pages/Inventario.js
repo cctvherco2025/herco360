@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import {
-  Boxes, PackagePlus, Store, ArrowDownUp, Save, MapPin, Search, Lock,
+  Boxes, PackagePlus, Store, ArrowDownUp, ArrowRight, Save, MapPin, Search, Lock,
   TrendingDown, TrendingUp, Package, ClipboardList, FileSpreadsheet, FileText,
   Download, Upload, Loader2, FileDown, Image as ImageIcon, ImageOff,
 } from 'lucide-react';
@@ -452,6 +452,7 @@ function TiendasTab({ refreshKey }) {
 /* ----------------- Movimientos (rebajas / salidas) ----------------- */
 function MovimientosTab({ onChanged, refreshKey }) {
   const [sucursal, setSucursal] = useState('H1');
+  const [sucursalDestino, setSucursalDestino] = useState(''); // '' = sin traslado
   const [article, setArticle] = useState('');
   const [preview, setPreview] = useState('');
   const [quantity, setQuantity] = useState('');
@@ -484,13 +485,19 @@ function MovimientosTab({ onChanged, refreshKey }) {
     const qty = parseInt(quantity, 10);
     if (!qty || qty <= 0) { toast.error('La cantidad debe ser mayor a 0'); return; }
     if (!description.trim()) { toast.error('La descripción es obligatoria'); return; }
+    if (sucursalDestino && sucursalDestino === sucursal) { toast.error('La sucursal destino debe ser distinta al origen'); return; }
     setSaving(true);
     try {
       const { data } = await api.post('/inventory/movement', {
-        article: article.trim(), quantity: qty, sucursal, description: description.trim(), solicitante: solicitante.trim(),
+        article: article.trim(), quantity: qty, sucursal, description: description.trim(),
+        solicitante: solicitante.trim(), sucursal_destino: sucursalDestino || undefined,
       });
-      toast.success(`Rebaja registrada en ${sucursal} · Stock ${data.stock}`);
-      setArticle(''); setQuantity(''); setDescription(''); setSolicitante(''); setPreview('');
+      if (data.sucursal_destino) {
+        toast.success(`Traslado ${sucursal} → ${data.sucursal_destino} · ${sucursal}: ${data.stock} · ${data.sucursal_destino}: ${data.stock_destino}`);
+      } else {
+        toast.success(`Rebaja registrada en ${sucursal} · Stock ${data.stock}`);
+      }
+      setArticle(''); setQuantity(''); setDescription(''); setSolicitante(''); setPreview(''); setSucursalDestino('');
       loadMovs(); onChanged?.();
     } catch (err) { toast.error(err?.response?.data?.detail || 'Error al registrar'); }
     finally { setSaving(false); }
@@ -508,12 +515,24 @@ function MovimientosTab({ onChanged, refreshKey }) {
           <TrendingDown className="h-5 w-5 text-[#dc2626]" />
           <h3 className="font-heading font-semibold">Registrar rebaja</h3>
         </div>
-        <p className="text-sm text-muted-foreground mb-5">Descuenta del inventario de la sucursal de origen.</p>
+        <p className="text-sm text-muted-foreground mb-5">Descuenta del inventario de la sucursal de origen. Si eliges una sucursal destino, la misma cantidad se traslada a su inventario.</p>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label>Sucursal de origen</Label>
-            <SucursalSelect value={sucursal} onChange={(v) => { setSucursal(v); setArticle(''); setPreview(''); }} testid="mov-sucursal-select" />
+            <SucursalSelect value={sucursal} onChange={(v) => { setSucursal(v); setArticle(''); setPreview(''); if (v === sucursalDestino) setSucursalDestino(''); }} testid="mov-sucursal-select" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Sucursal destino <span className="text-muted-foreground font-normal">· opcional</span></Label>
+            <Select value={sucursalDestino || 'ninguna'} onValueChange={(v) => setSucursalDestino(v === 'ninguna' ? '' : v)}>
+              <SelectTrigger className="h-11" data-testid="mov-sucursal-destino-select">
+                <div className="flex items-center gap-2"><ArrowRight className="h-4 w-4 text-muted-foreground" /><SelectValue /></div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ninguna">Sin traslado (solo rebaja)</SelectItem>
+                {SUCURSALES.filter((s) => s !== sucursal).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label>Artículo</Label>
@@ -522,7 +541,7 @@ function MovimientosTab({ onChanged, refreshKey }) {
           </div>
           {preview && <ArticleImage article={preview} />}
           <div className="space-y-1.5">
-            <Label>Cantidad a rebajar</Label>
+            <Label>{sucursalDestino ? 'Cantidad a trasladar' : 'Cantidad a rebajar'}</Label>
             <Input type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0" className="h-11" data-testid="mov-quantity-input" />
           </div>
           <div className="space-y-1.5">
@@ -534,7 +553,7 @@ function MovimientosTab({ onChanged, refreshKey }) {
             <Input value={solicitante} onChange={(e) => setSolicitante(e.target.value)} placeholder="¿Quién lo solicita?" className="h-11" data-testid="mov-solicitante-input" />
           </div>
           <Button onClick={save} disabled={saving} className="w-full h-11 rounded-xl bg-[#dc2626] hover:bg-[#b91c1c] text-white" data-testid="mov-save-button">
-            <ArrowDownUp className="h-4 w-4 mr-1.5" /> {saving ? 'Registrando…' : 'Registrar rebaja'}
+            <ArrowDownUp className="h-4 w-4 mr-1.5" /> {saving ? 'Registrando…' : (sucursalDestino ? `Trasladar a ${sucursalDestino}` : 'Registrar rebaja')}
           </Button>
         </div>
       </motion.div>
@@ -584,16 +603,27 @@ function MovimientosTab({ onChanged, refreshKey }) {
           {shown.length === 0 && <p className="text-sm text-muted-foreground text-center py-10">Sin movimientos con estos filtros</p>}
           {shown.map((m) => {
             const isOut = m.type === 'salida';
+            const isTransfer = !!(m.transfer_id || m.sucursal_destino || m.sucursal_origen);
             return (
               <div key={m.id} className="flex items-start gap-3 rounded-xl border p-3.5" data-testid="movement-row">
                 <span className={`h-9 w-9 rounded-full grid place-items-center shrink-0 ${isOut ? 'bg-[rgba(220,38,38,0.12)] text-[#dc2626]' : 'bg-[rgba(22,163,74,0.12)] text-[#16a34a]'}`}>
-                  {isOut ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
+                  {isTransfer ? <ArrowRight className="h-4 w-4" /> : isOut ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium">{m.article}</span>
-                    <span className="text-[11px] rounded-full bg-muted px-2 py-0.5">{m.sucursal}</span>
-                    <span className={`text-[11px] rounded-full px-2 py-0.5 font-semibold ${isOut ? 'bg-[rgba(220,38,38,0.1)] text-[#dc2626]' : 'bg-[rgba(22,163,74,0.1)] text-[#16a34a]'}`}>{isOut ? 'Salida' : 'Entrada'}</span>
+                    {isTransfer ? (
+                      <span className="text-[11px] rounded-full bg-muted px-2 py-0.5 inline-flex items-center gap-1">
+                        {m.sucursal_origen || m.sucursal}
+                        <ArrowRight className="h-3 w-3" />
+                        {m.sucursal_destino || m.sucursal}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] rounded-full bg-muted px-2 py-0.5">{m.sucursal}</span>
+                    )}
+                    <span className={`text-[11px] rounded-full px-2 py-0.5 font-semibold ${isTransfer ? 'bg-[rgba(30,57,94,0.1)] text-[#1e395e] dark:text-[#3cbef6]' : isOut ? 'bg-[rgba(220,38,38,0.1)] text-[#dc2626]' : 'bg-[rgba(22,163,74,0.1)] text-[#16a34a]'}`}>
+                      {isTransfer ? (isOut ? 'Traslado (salida)' : 'Traslado (entrada)') : (isOut ? 'Salida' : 'Entrada')}
+                    </span>
                   </div>
                   {m.description && <p className="text-sm text-muted-foreground mt-1">{m.description}</p>}
                   <p className="text-xs text-muted-foreground mt-0.5">

@@ -119,7 +119,7 @@ async def intake(data: InventoryIntake, user=Depends(require_inventory_access)):
     return {'message': 'Artículo inventariado', 'article': article, 'sucursal': data.sucursal, 'stock': new_qty}
 
 
-# ---- Movement (rebaja / salida) ----
+# ---- Movement (rebaja / salida / traslado) ----
 @router.post('/movement')
 async def movement(data: InventoryMovementInput, user=Depends(require_inventory_access)):
     article = (data.article or '').strip()
@@ -132,23 +132,72 @@ async def movement(data: InventoryMovementInput, user=Depends(require_inventory_
     if not (data.description or '').strip():
         raise HTTPException(status_code=400, detail='La descripción del movimiento es obligatoria')
 
+    destino = (data.sucursal_destino or '').strip() or None
+    if destino is not None:
+        if destino not in SUCURSALES:
+            raise HTTPException(status_code=400, detail='Sucursal destino inválida')
+        if destino == data.sucursal:
+            raise HTTPException(status_code=400, detail='La sucursal destino debe ser distinta a la de origen')
+
     key = article.lower()
+    now = now_iso()
     existing = await db.inventory_stock.find_one({'article_key': key, 'sucursal': data.sucursal})
     available = existing['quantity'] if existing else 0
     if data.quantity > available:
         raise HTTPException(status_code=409, detail=f'Stock insuficiente en {data.sucursal}. Disponible: {available}')
 
+    # 1) Descuento en el origen.
     new_qty = available - data.quantity
-    await db.inventory_stock.update_one({'id': existing['id']}, {'$set': {'quantity': new_qty, 'updated_at': now_iso()}})
+    await db.inventory_stock.update_one({'id': existing['id']}, {'$set': {'quantity': new_qty, 'updated_at': now}})
 
-    await db.inventory_movements.insert_one({
+    desc = data.description.strip()
+    solicitante = (data.solicitante or '').strip()
+    transfer_id = new_id() if destino else None
+
+    salida_doc = {
         'id': new_id(), 'type': 'salida', 'article': article, 'sucursal': data.sucursal,
-        'quantity': data.quantity, 'description': data.description.strip(),
-        'solicitante': (data.solicitante or '').strip(),
+        'quantity': data.quantity, 'description': desc, 'solicitante': solicitante,
         'registered_by': user['id'], 'registered_by_name': user['name'],
-        'registered_by_avatar': user.get('avatar_url'), 'created_at': now_iso(),
-    })
-    return {'message': 'Movimiento registrado', 'article': article, 'sucursal': data.sucursal, 'stock': new_qty}
+        'registered_by_avatar': user.get('avatar_url'), 'created_at': now,
+    }
+    if destino:
+        salida_doc['sucursal_destino'] = destino
+        salida_doc['transfer_id'] = transfer_id
+    await db.inventory_movements.insert_one(salida_doc)
+
+    stock_destino = None
+    if destino:
+        # 2) Ingreso en el destino (mismo comportamiento que /intake).
+        dest_row = await db.inventory_stock.find_one({'article_key': key, 'sucursal': destino})
+        if dest_row:
+            stock_destino = dest_row['quantity'] + data.quantity
+            await db.inventory_stock.update_one(
+                {'id': dest_row['id']},
+                {'$set': {'quantity': stock_destino, 'article': article, 'updated_at': now}})
+        else:
+            stock_destino = data.quantity
+            await db.inventory_stock.insert_one({
+                'id': new_id(), 'article': article, 'article_key': key,
+                'sucursal': destino, 'quantity': data.quantity,
+                'created_at': now, 'updated_at': now,
+            })
+        await db.inventory_catalog.update_one(
+            {'name_key': key},
+            {'$setOnInsert': {'id': new_id(), 'name': article, 'name_key': key, 'created_at': now}},
+            upsert=True)
+        await db.inventory_movements.insert_one({
+            'id': new_id(), 'type': 'entrada', 'article': article, 'sucursal': destino,
+            'quantity': data.quantity, 'description': desc, 'solicitante': solicitante,
+            'sucursal_origen': data.sucursal, 'transfer_id': transfer_id,
+            'registered_by': user['id'], 'registered_by_name': user['name'],
+            'registered_by_avatar': user.get('avatar_url'), 'created_at': now,
+        })
+
+    return {
+        'message': 'Traslado registrado' if destino else 'Movimiento registrado',
+        'article': article, 'sucursal': data.sucursal, 'stock': new_qty,
+        'sucursal_destino': destino, 'stock_destino': stock_destino,
+    }
 
 
 @router.get('/movements')
