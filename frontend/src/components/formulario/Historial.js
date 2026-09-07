@@ -11,6 +11,10 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 const shiftDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 
@@ -210,6 +214,7 @@ export default function Historial({ refreshKey }) {
   const [openId, setOpenId] = useState(null);
   const [exportingId, setExportingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [confirmDel, setConfirmDel] = useState(null); // fila de la auditoría a borrar
 
   const isDirector = (user?.position || '').trim() === 'Director comercial';
   const canDelete = (r) => user?.role === 'admin' || isDirector || r.auditor_id === user?.id;
@@ -222,9 +227,9 @@ export default function Historial({ refreshKey }) {
     finally { setExportingId(null); }
   };
 
-  const removeOne = async (e, id) => {
-    e.stopPropagation();
-    if (!window.confirm('¿Eliminar esta auditoría del historial? No se puede deshacer.')) return;
+  const removeOne = async () => {
+    const id = confirmDel?.id;
+    if (!id) return;
     setDeletingId(id);
     try {
       await api.delete(`/formulario/auditorias/${id}`);
@@ -233,7 +238,7 @@ export default function Historial({ refreshKey }) {
       toast.success('Auditoría eliminada');
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'No se pudo eliminar la auditoría');
-    } finally { setDeletingId(null); }
+    } finally { setDeletingId(null); setConfirmDel(null); }
   };
 
   const load = useCallback(async () => {
@@ -310,9 +315,9 @@ export default function Historial({ refreshKey }) {
               {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             </button>
             {canDelete(r) && (
-              <button onClick={(e) => removeOne(e, r.id)} disabled={deletingId === r.id} title="Eliminar auditoría"
+              <button onClick={(e) => { e.stopPropagation(); setConfirmDel(r); }} disabled={deletingId === r.id} title="Eliminar auditoría"
                 data-testid="flos-history-delete-row"
-                className="p-2 rounded-lg hover:bg-[rgba(220,38,38,0.08)] text-muted-foreground hover:text-[#dc2626] shrink-0 disabled:opacity-50">
+                className="p-2 rounded-lg hover:bg-[rgba(220,38,38,0.08)] text-muted-foreground hover:text-[#dc2626] shrink-0 disabled:opacity-50 transition-colors">
                 {deletingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               </button>
             )}
@@ -322,6 +327,30 @@ export default function Historial({ refreshKey }) {
       </div>
 
       <DetailDialog id={openId} onClose={() => setOpenId(null)} />
+
+      <AlertDialog open={!!confirmDel} onOpenChange={(o) => { if (!o) setConfirmDel(null); }}>
+        <AlertDialogContent className="rounded-[22px]">
+          <AlertDialogHeader>
+            <div className="h-11 w-11 rounded-full grid place-items-center bg-[rgba(220,38,38,0.1)] mb-1">
+              <Trash2 className="h-5 w-5 text-[#dc2626]" />
+            </div>
+            <AlertDialogTitle>Eliminar auditoría</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará la auditoría FLOS de <span className="font-medium text-foreground">{confirmDel?.sucursal}</span>
+              {confirmDel?.linea ? <> · {confirmDel.linea}</> : null} del <span className="font-medium text-foreground">{confirmDel?.fecha}</span>,
+              registrada por <span className="font-medium text-foreground">{confirmDel?.auditor_name}</span>, junto con sus fotos.
+              Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={removeOne} data-testid="flos-history-confirm-delete"
+              className="rounded-xl bg-[#dc2626] hover:bg-[#b91c1c] text-white">
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
