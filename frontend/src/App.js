@@ -1,8 +1,10 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { AuthProvider } from '@/context/AuthContext';
+import ErrorBoundary from '@/components/ErrorBoundary';
+import { lazyWithRetry } from '@/lib/lazyWithRetry';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import AppLayout from '@/components/AppLayout';
 import Login from '@/pages/Login';
@@ -24,14 +26,14 @@ import Configuracion from '@/pages/Configuracion';
 import Notificaciones from '@/pages/Notificaciones';
 import '@/App.css';
 
-// Carga diferida: arrastra recharts, solo lo necesita quien abre este módulo.
-const ReportesCams = lazy(() => import('@/pages/ReportesCams'));
-// Carga diferida: arrastra jsPDF, solo lo necesita quien abre este módulo.
-const Formulario = lazy(() => import('@/pages/Formulario'));
-const RutinaOperativa = lazy(() => import('@/pages/RutinaOperativa'));
-const CustomFormBuilderPage = lazy(() => import('@/pages/CustomFormBuilderPage'));
-const CustomFormPage = lazy(() => import('@/pages/CustomFormPage'));
-const PromoPublishWizardPage = lazy(() => import('@/pages/PromoPublishWizardPage'));
+// Carga diferida (lazyWithRetry: si tras un deploy el chunk viejo ya no existe,
+// recarga una vez en lugar de dejar la pantalla en blanco).
+const ReportesCams = lazyWithRetry(() => import('@/pages/ReportesCams'), 'ReportesCams');
+const Formulario = lazyWithRetry(() => import('@/pages/Formulario'), 'Formulario');
+const RutinaOperativa = lazyWithRetry(() => import('@/pages/RutinaOperativa'), 'RutinaOperativa');
+const CustomFormBuilderPage = lazyWithRetry(() => import('@/pages/CustomFormBuilderPage'), 'CustomFormBuilderPage');
+const CustomFormPage = lazyWithRetry(() => import('@/pages/CustomFormPage'), 'CustomFormPage');
+const PromoPublishWizardPage = lazyWithRetry(() => import('@/pages/PromoPublishWizardPage'), 'PromoPublishWizardPage');
 
 const PageFallback = () => (
   <div className="p-10 text-center text-sm text-muted-foreground">Cargando…</div>
@@ -39,7 +41,8 @@ const PageFallback = () => (
 
 function App() {
   return (
-    <ThemeProvider>
+    <ErrorBoundary>
+     <ThemeProvider>
       <AuthProvider>
         <BrowserRouter>
           <Routes>
@@ -74,7 +77,8 @@ function App() {
           <Toaster position="top-right" richColors closeButton />
         </BrowserRouter>
       </AuthProvider>
-    </ThemeProvider>
+     </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 

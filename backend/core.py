@@ -50,9 +50,20 @@ def new_id() -> str:
     return str(uuid.uuid4())
 
 
+def _iso_utc(dt: datetime) -> str:
+    """ISO-8601 UTC con milisegundos y sufijo 'Z'.
+
+    `datetime.isoformat()` emite microsegundos (6 dígitos) y offset '+00:00';
+    Safari / iOS / WebViews viejos no parsean eso y devuelven Invalid Date (se
+    veía como "Hace NaN min" y, si algo hacía toISOString()/Intl encima, la
+    pantalla quedaba en blanco). Milisegundos + 'Z' lo parsea cualquier
+    navegador."""
+    return dt.astimezone(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+
+
 def now_iso() -> str:
     """Absolute instant in UTC ISO-8601. Use for stored `created_at` timestamps."""
-    return datetime.now(timezone.utc).isoformat()
+    return _iso_utc(datetime.now(timezone.utc))
 
 
 # ---- Company local time ----
@@ -90,7 +101,7 @@ def serialize_doc(doc):
             clean[k] = serialize_doc(v)
         return clean
     if isinstance(doc, datetime):
-        return doc.isoformat()
+        return _iso_utc(doc) if doc.tzinfo else doc.isoformat()
     return doc
 
 
