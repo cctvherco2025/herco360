@@ -147,6 +147,23 @@ async def get_audit(audit_id: str, user=Depends(require_formulario_access)):
     return serialize_doc(row)
 
 
+@router.delete('/auditorias/{audit_id}')
+async def delete_audit(audit_id: str, user=Depends(require_formulario_access)):
+    """Eliminar una auditoría del historial. Puede el admin, el Director
+    comercial, o el auditor que la registró. Las fotos quedan huérfanas en el
+    almacenamiento de objetos pero ya no son accesibles (la descarga exige que
+    la auditoría exista)."""
+    row = await db.flos_audits.find_one({'id': audit_id}, {'_id': 0, 'auditor_id': 1})
+    if not row:
+        raise HTTPException(status_code=404, detail='Auditoría no encontrada')
+    if not (user.get('role') == 'admin'
+            or (user.get('position') or '').strip() == 'Director comercial'
+            or row.get('auditor_id') == user['id']):
+        raise HTTPException(status_code=403, detail='Solo el auditor que la registró (o un admin) puede eliminarla')
+    await db.flos_audits.delete_one({'id': audit_id})
+    return {'message': 'Auditoría eliminada'}
+
+
 @router.get('/auditorias/{audit_id}/foto/{photo_id}')
 async def get_photo(audit_id: str, photo_id: str, user=Depends(require_formulario_access)):
     row = await db.flos_audits.find_one({'id': audit_id}, {'_id': 0})

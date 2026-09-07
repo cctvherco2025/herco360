@@ -146,6 +146,23 @@ async def get_evaluacion(eval_id: str, user=Depends(require_rutina_access)):
     return serialize_doc(row)
 
 
+@router.delete('/evaluaciones/{eval_id}')
+async def delete_evaluacion(eval_id: str, user=Depends(require_rutina_access)):
+    """Eliminar una evaluación del historial. Puede el admin, el Director
+    comercial, o el gerente que la registró. Las fotos quedan huérfanas en el
+    almacenamiento de objetos pero ya no son accesibles (la descarga exige que
+    la evaluación exista)."""
+    row = await db.rutina_evaluaciones.find_one({'id': eval_id}, {'_id': 0, 'gerente_id': 1})
+    if not row:
+        raise HTTPException(status_code=404, detail='Evaluación no encontrada')
+    if not (user.get('role') == 'admin'
+            or (user.get('position') or '').strip() == 'Director comercial'
+            or row.get('gerente_id') == user['id']):
+        raise HTTPException(status_code=403, detail='Solo el gerente que la registró (o un admin) puede eliminarla')
+    await db.rutina_evaluaciones.delete_one({'id': eval_id})
+    return {'message': 'Evaluación eliminada'}
+
+
 @router.get('/evaluaciones/{eval_id}/foto/{photo_id}')
 async def get_photo(eval_id: str, photo_id: str, user=Depends(require_rutina_access)):
     row = await db.rutina_evaluaciones.find_one({'id': eval_id}, {'_id': 0})

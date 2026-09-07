@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Search, Eye, Store, Calendar, User as UserIcon, ClipboardList, Download, Loader2 } from 'lucide-react';
+import { Search, Eye, Store, Calendar, User as UserIcon, ClipboardList, Download, Loader2, Trash2 } from 'lucide-react';
 import api from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import { RUTINA_SUCURSALES, RUTINA_FLAT, rutinaTone, RUTINA_TONE_COLOR, computeRutinaSummary } from '@/lib/rutinaSchema';
 import { generateRutinaPdf } from '@/lib/rutinaPdf';
 import { Input } from '@/components/ui/input';
@@ -182,6 +183,7 @@ function DetailDialog({ id, onClose }) {
 }
 
 export default function Historial({ refreshKey }) {
+  const { user } = useAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [sucursal, setSucursal] = useState('');
@@ -189,6 +191,10 @@ export default function Historial({ refreshKey }) {
   const [q, setQ] = useState('');
   const [openId, setOpenId] = useState(null);
   const [exportingId, setExportingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const isDirector = (user?.position || '').trim() === 'Director comercial';
+  const canDelete = (r) => user?.role === 'admin' || isDirector || r.gerente_id === user?.id;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -210,6 +216,20 @@ export default function Historial({ refreshKey }) {
     try { await exportEvalPdf(id, null); }
     catch (err) { toast.error('No se pudo generar el PDF'); }
     finally { setExportingId(null); }
+  };
+
+  const removeOne = async (e, id) => {
+    e.stopPropagation();
+    if (!window.confirm('¿Eliminar esta evaluación del historial? No se puede deshacer.')) return;
+    setDeletingId(id);
+    try {
+      await api.delete(`/rutina/evaluaciones/${id}`);
+      setRows((rs) => rs.filter((r) => r.id !== id));
+      if (openId === id) setOpenId(null);
+      toast.success('Evaluación eliminada');
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'No se pudo eliminar la evaluación');
+    } finally { setDeletingId(null); }
   };
 
   const filtered = rows.filter((r) => {
@@ -268,6 +288,13 @@ export default function Historial({ refreshKey }) {
               className="p-2 rounded-lg hover:bg-muted text-muted-foreground shrink-0 disabled:opacity-50">
               {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             </button>
+            {canDelete(r) && (
+              <button onClick={(e) => removeOne(e, r.id)} disabled={deletingId === r.id} title="Eliminar evaluación"
+                data-testid="rutina-history-delete-row"
+                className="p-2 rounded-lg hover:bg-[rgba(220,38,38,0.08)] text-muted-foreground hover:text-[#dc2626] shrink-0 disabled:opacity-50">
+                {deletingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              </button>
+            )}
             <Eye className="h-4 w-4 text-muted-foreground shrink-0" />
           </motion.div>
         ))}
