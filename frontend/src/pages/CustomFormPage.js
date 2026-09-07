@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ClipboardList, ArrowLeft, Trash2 } from 'lucide-react';
+import { ClipboardList, ArrowLeft, Trash2, Pencil } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -46,7 +46,7 @@ export default function CustomFormPage() {
   if (!schema) return <p className="text-sm text-muted-foreground text-center py-16">Cargando…</p>;
 
   const canSeeAll = user?.role === 'admin' || (user?.position || '').trim() === 'Director comercial' || schema.creator_id === user?.id;
-  const canDelete = user?.role === 'admin' || schema.creator_id === user?.id;
+  const canManage = user?.role === 'admin' || schema.creator_id === user?.id;
 
   return (
     <div className="max-w-[1000px] mx-auto pt-2">
@@ -57,10 +57,15 @@ export default function CustomFormPage() {
           </h1>
           {schema.descripcion && <p className="text-muted-foreground text-sm mt-0.5">{schema.descripcion}</p>}
         </div>
-        {canDelete && (
-          <Button variant="ghost" size="sm" onClick={remove} className="text-[#dc2626] hover:text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)] shrink-0" data-testid="customform-delete-button">
-            <Trash2 className="h-4 w-4 mr-1.5" /> Eliminar
-          </Button>
+        {canManage && (
+          <div className="flex items-center gap-1 shrink-0">
+            <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="customform-edit-button">
+              <Link to={`/formularios/custom/${id}/editar`}><Pencil className="h-4 w-4 mr-1.5" /> Editar</Link>
+            </Button>
+            <Button variant="ghost" size="sm" onClick={remove} className="text-[#dc2626] hover:text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)]" data-testid="customform-delete-button">
+              <Trash2 className="h-4 w-4 mr-1.5" /> Eliminar
+            </Button>
+          </div>
         )}
       </div>
 

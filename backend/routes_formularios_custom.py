@@ -265,30 +265,17 @@ async def inspect_excel(file: UploadFile = File(...), user=Depends(require_promo
 # --------------------------------------------------------------------------- #
 #  Construir / administrar formularios
 # --------------------------------------------------------------------------- #
-@router.post('')
-async def create_form(data: CustomFormInput, user=Depends(require_builder_access)):
-    kind = (data.kind or 'generic').strip()
-    if kind not in ('generic', 'promociones'):
-        raise HTTPException(status_code=400, detail='Tipo de formulario inválido')
-    if kind == 'promociones' and not can_manage_promos(user):
-        raise HTTPException(status_code=403, detail='No tienes permiso para publicar Promociones del mes')
-    status = (data.status or 'publicado').strip()
-    if status not in ('borrador', 'publicado'):
-        raise HTTPException(status_code=400, detail='Estado inválido')
-
-    titulo = data.titulo.strip()
-    if not titulo:
-        raise HTTPException(status_code=400, detail='Indica un título para el formulario')
-    aud = data.audiencia
-    if not (aud.todos or aud.areas or aud.cargos or aud.user_ids):
-        raise HTTPException(status_code=400, detail='Indica a quién va dirigido el formulario')
-    if not data.items:
+def _normalize_items(items_in: list) -> list:
+    """Valida y normaliza las preguntas que llegan del builder — compartido
+    por crear y editar. Cada item queda con su id (se conserva el que traiga
+    para no romper respuestas ya enviadas), tipo válido, opciones limpias y
+    su 'max' recalculado."""
+    if not items_in:
         raise HTTPException(status_code=400, detail='Agrega al menos una pregunta')
-    if len(data.items) > MAX_ITEMS:
+    if len(items_in) > MAX_ITEMS:
         raise HTTPException(status_code=400, detail=f'Máximo {MAX_ITEMS} preguntas por formulario')
-
     items = []
-    for it in data.items:
+    for it in items_in:
         tipo = it.tipo.strip()
         if tipo not in TIPOS_VALIDOS:
             raise HTTPException(status_code=400, detail=f'Tipo de pregunta inválido: {tipo}')
@@ -319,6 +306,28 @@ async def create_form(data: CustomFormInput, user=Depends(require_builder_access
         }
         item['max'] = _item_max(item)
         items.append(item)
+    return items
+
+
+@router.post('')
+async def create_form(data: CustomFormInput, user=Depends(require_builder_access)):
+    kind = (data.kind or 'generic').strip()
+    if kind not in ('generic', 'promociones'):
+        raise HTTPException(status_code=400, detail='Tipo de formulario inválido')
+    if kind == 'promociones' and not can_manage_promos(user):
+        raise HTTPException(status_code=403, detail='No tienes permiso para publicar Promociones del mes')
+    status = (data.status or 'publicado').strip()
+    if status not in ('borrador', 'publicado'):
+        raise HTTPException(status_code=400, detail='Estado inválido')
+
+    titulo = data.titulo.strip()
+    if not titulo:
+        raise HTTPException(status_code=400, detail='Indica un título para el formulario')
+    aud = data.audiencia
+    if not (aud.todos or aud.areas or aud.cargos or aud.user_ids):
+        raise HTTPException(status_code=400, detail='Indica a quién va dirigido el formulario')
+
+    items = _normalize_items(data.items)
 
     periodo = (data.periodo or '').strip() or None
     serie_key = (data.serie_key or '').strip() or None
@@ -383,6 +392,54 @@ async def get_form(form_id: str, user=Depends(get_current_user)):
     if not _can_fill(user, form):
         raise HTTPException(status_code=403, detail='No tienes acceso a este formulario')
     return serialize_doc(form)
+
+
+@router.put('/{form_id}')
+async def update_form(form_id: str, data: CustomFormInput, user=Depends(get_current_user)):
+    """Editar un formulario ya creado. Solo el creador (o un admin). No se
+    cambia el 'kind' ni el creador. La audiencia sólo se vuelve a resolver
+    (audiencia_resueltos) si de verdad cambió, para no mover el denominador
+    del reporte de una publicación que ya está en curso.
+
+    Nota: las respuestas ya enviadas guardan su propia foto de cada pregunta
+    (título, sección, tipo, max), así que editar el formulario no reescribe
+    el historial; sólo cambia cómo se responde de aquí en adelante."""
+    form = await _get_form_or_404(form_id)
+    if not (user.get('role') == 'admin' or form.get('creator_id') == user['id']):
+        raise HTTPException(status_code=403, detail='Solo quien lo creó (o un admin) puede editarlo')
+
+    titulo = data.titulo.strip()
+    if not titulo:
+        raise HTTPException(status_code=400, detail='Indica un título para el formulario')
+    aud = data.audiencia
+    if not (aud.todos or aud.areas or aud.cargos or aud.user_ids):
+        raise HTTPException(status_code=400, detail='Indica a quién va dirigido el formulario')
+
+    status = (data.status or form.get('status') or 'publicado').strip()
+    if status not in ('borrador', 'publicado'):
+        raise HTTPException(status_code=400, detail='Estado inválido')
+
+    items = _normalize_items(data.items)
+    total_max = sum(it['max'] for it in items)
+    audiencia_dict = data.audiencia.model_dump()
+
+    update = {
+        'titulo': titulo,
+        'descripcion': (data.descripcion or '').strip(),
+        'status': status,
+        'audiencia': audiencia_dict,
+        'items': items,
+        'has_scoring': total_max > 0,
+        'total_max': total_max,
+        'updated_at': now_iso(),
+        'updated_by': user['id'],
+    }
+    if audiencia_dict != (form.get('audiencia') or {}):
+        update['audiencia_resueltos'] = await _resolve_audience_users(audiencia_dict)
+
+    await db.custom_forms.update_one({'id': form_id}, {'$set': update})
+    fresh = await db.custom_forms.find_one({'id': form_id}, {'_id': 0})
+    return serialize_doc(fresh)
 
 
 @router.delete('/{form_id}')

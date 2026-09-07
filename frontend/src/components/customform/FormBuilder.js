@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -25,7 +25,29 @@ const newItem = () => ({
   opciones: [newOption(), newOption()],
 });
 
-export default function FormBuilder() {
+// Reconstruye el estado del builder a partir de un formulario ya guardado.
+const audienceToState = (aud) => {
+  const a = aud || {};
+  if (a.todos) return { audTipo: 'todos', audValor: '' };
+  if ((a.areas || []).length) return { audTipo: 'area', audValor: a.areas[0] };
+  if ((a.cargos || []).length) return { audTipo: 'cargo', audValor: a.cargos[0] };
+  return { audTipo: 'todos', audValor: '' };
+};
+const schemaToItems = (items) => (items || []).map((it) => ({
+  localId: `${it.id || Date.now()}-${Math.random()}`,
+  serverId: it.id,
+  seccion: it.seccion === 'General' ? '' : (it.seccion || ''),
+  titulo: it.titulo || '',
+  pregunta: it.pregunta || '',
+  tipo: it.tipo || 'opcion_unica',
+  scored: !!it.scored,
+  permite_foto: it.permite_foto !== false,
+  opciones: it.tipo === 'texto' || !(it.opciones || []).length
+    ? [newOption(), newOption()]
+    : it.opciones.map((o) => ({ localId: `${Date.now()}-${Math.random()}`, label: o.label || '', pts: o.pts ?? 0 })),
+}));
+
+export default function FormBuilder({ editId }) {
   const navigate = useNavigate();
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
@@ -33,6 +55,35 @@ export default function FormBuilder() {
   const [audValor, setAudValor] = useState('');
   const [items, setItems] = useState([newItem()]);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(!!editId);
+  const [loadError, setLoadError] = useState(null);
+  const [hasResponses, setHasResponses] = useState(false);
+
+  useEffect(() => {
+    if (!editId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await api.get(`/formularios-custom/${editId}`);
+        if (!alive) return;
+        setTitulo(data.titulo || '');
+        setDescripcion(data.descripcion || '');
+        const { audTipo: at, audValor: av } = audienceToState(data.audiencia);
+        setAudTipo(at);
+        setAudValor(av);
+        setItems(schemaToItems(data.items).length ? schemaToItems(data.items) : [newItem()]);
+        try {
+          const { data: resp } = await api.get(`/formularios-custom/${editId}/respuestas`);
+          if (alive) setHasResponses(Array.isArray(resp) && resp.length > 0);
+        } catch { /* sin permiso para verlas o no hay: se ignora */ }
+      } catch (e) {
+        if (alive) setLoadError(e?.response?.data?.detail || 'No se pudo cargar el formulario');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [editId]);
 
   const updateItem = (localId, patch) => setItems((its) => its.map((it) => (it.localId === localId ? { ...it, ...patch } : it)));
   const removeItem = (localId) => setItems((its) => its.filter((it) => it.localId !== localId));
@@ -70,6 +121,7 @@ export default function FormBuilder() {
           user_ids: [],
         },
         items: items.map((it) => ({
+          id: it.serverId || undefined,
           seccion: it.seccion.trim() || 'General', titulo: it.titulo.trim(), pregunta: it.pregunta.trim(),
           tipo: it.tipo, scored: it.tipo !== 'texto' && it.scored, permite_foto: it.permite_foto,
           opciones: it.tipo === 'texto' ? [] : it.opciones.filter((o) => o.label.trim()).map((o) => ({
@@ -77,18 +129,32 @@ export default function FormBuilder() {
           })),
         })),
       };
-      const { data } = await api.post('/formularios-custom', payload);
-      toast.success('Formulario creado');
-      navigate(`/formularios/custom/${data.id}`);
+      if (editId) {
+        const { data } = await api.put(`/formularios-custom/${editId}`, payload);
+        toast.success('Formulario actualizado');
+        navigate(`/formularios/custom/${data.id}`);
+      } else {
+        const { data } = await api.post('/formularios-custom', payload);
+        toast.success('Formulario creado');
+        navigate(`/formularios/custom/${data.id}`);
+      }
     } catch (err) {
-      toast.error(err?.response?.data?.detail || 'No se pudo crear el formulario');
+      toast.error(err?.response?.data?.detail || (editId ? 'No se pudo actualizar el formulario' : 'No se pudo crear el formulario'));
     } finally {
       setSaving(false);
     }
   };
 
+  if (loading) return <p className="text-sm text-muted-foreground text-center py-16">Cargando…</p>;
+  if (loadError) return <p className="text-sm text-muted-foreground text-center py-16">{loadError}</p>;
+
   return (
     <div className="max-w-[720px] mx-auto space-y-4">
+      {editId && hasResponses && (
+        <div className="rounded-xl border border-[#f0c36d] bg-[rgba(240,195,109,0.12)] px-4 py-3 text-sm text-[#8a6d1d]">
+          Este formulario ya tiene respuestas. Editarlo cambia cómo se responde de ahora en adelante; las respuestas ya enviadas conservan sus preguntas originales.
+        </div>
+      )}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
         className="rounded-[18px] bg-card border shadow-card p-5 sm:p-6 space-y-4">
         <div className="space-y-1.5">
@@ -200,7 +266,7 @@ export default function FormBuilder() {
       </div>
 
       <Button onClick={save} disabled={saving} className="w-full h-11 rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="builder-save-button">
-        <Save className="h-4 w-4 mr-1.5" /> {saving ? 'Guardando…' : 'Guardar formulario'}
+        <Save className="h-4 w-4 mr-1.5" /> {saving ? 'Guardando…' : (editId ? 'Guardar cambios' : 'Guardar formulario')}
       </Button>
     </div>
   );

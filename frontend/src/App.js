@@ -62,6 +62,7 @@ function App() {
               <Route path="/formulario" element={<Suspense fallback={<PageFallback />}><Formulario /></Suspense>} />
               <Route path="/rutina-operativa" element={<Suspense fallback={<PageFallback />}><RutinaOperativa /></Suspense>} />
               <Route path="/formularios/nuevo" element={<Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense>} />
+              <Route path="/formularios/custom/:id/editar" element={<Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense>} />
               <Route path="/formularios/custom/:id" element={<Suspense fallback={<PageFallback />}><CustomFormPage /></Suspense>} />
               <Route path="/usuarios" element={<Usuarios />} />
               <Route path="/organigrama" element={<Organigrama />} />
