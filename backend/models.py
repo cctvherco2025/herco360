@@ -172,6 +172,13 @@ class CamsIngestInput(BaseModel):
     timestamp: str  # ISO-8601 UTC, when the batch was sent
     entradas: int
     eventos: List[str] = []  # individual entry timestamps (ISO-8601 UTC)
+    # Identidad del origen — la manda el agente local (Proyecto CAM) para que
+    # el backend pueda separar los datos por tienda (Herco Centro / Herco Max /
+    # …). Opcionales por compatibilidad con agentes viejos: si no vienen, el
+    # backend cae al piloto (CAM_PILOT_SUCURSAL / CAM_PILOT_CAMARA).
+    sucursal: Optional[str] = None      # nombre visible ("Herco Centro")
+    sucursal_id: Optional[str] = None   # id estable / slug ("centro")
+    camara: Optional[str] = None        # rótulo de la cámara
 
 
 # ---- Formularios personalizados (form builder) ----

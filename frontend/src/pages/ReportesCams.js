@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import {
-  Video, Users, CalendarRange, Activity, Download, Wifi, WifiOff, Clock, RefreshCw,
+  Video, Users, CalendarRange, Activity, Download, Wifi, WifiOff, Clock, RefreshCw, Store,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -55,6 +55,7 @@ export default function ReportesCams() {
   const [summary, setSummary] = useState(null);
   const [hourly, setHourly] = useState(null);
   const [recent, setRecent] = useState([]);
+  const [porSucursal, setPorSucursal] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const sucParam = sucursal ? `&sucursal=${encodeURIComponent(sucursal)}` : '';
@@ -67,12 +68,14 @@ export default function ReportesCams() {
     if (!start || !end || start > end) return;
     setLoading(true);
     try {
-      const [s, r] = await Promise.all([
+      const [s, r, p] = await Promise.all([
         api.get(`/cams/summary?start=${start}&end=${end}${sucParam}`),
         api.get(`/cams/recent?limit=15${sucParam}`),
+        api.get(`/cams/por-sucursal?start=${start}&end=${end}`),
       ]);
       setSummary(s.data);
       setRecent(r.data);
+      setPorSucursal(p.data?.sucursales || []);
     } catch (e) { toast.error('No se pudieron cargar los datos'); }
     finally { setLoading(false); }
   }, [start, end, sucParam]);
@@ -88,7 +91,12 @@ export default function ReportesCams() {
 
   if (!canAccessCams(user)) return <Navigate to="/" replace />;
 
-  const agent = meta?.agents?.[0];
+  // Con varias sucursales, el estado que se muestra es el del agente de la
+  // sucursal filtrada; sin filtro, el primero (o el más recientemente visto).
+  const agents = meta?.agents || [];
+  const agent = sucursal
+    ? agents.find((a) => a.sucursal === sucursal)
+    : (agents.slice().sort((a, b) => (b.last_seen || '').localeCompare(a.last_seen || ''))[0]);
   const agentSub = agent
     ? (agent.online
         ? `En línea · reportó hace ${Math.max(0, Math.round(agent.mins_since ?? 0))} min`
@@ -129,13 +137,13 @@ export default function ReportesCams() {
           <Label className="text-xs">Hasta</Label>
           <Input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} className="h-10 w-[160px]" data-testid="cams-end" />
         </div>
-        {(meta?.sucursales?.length || 0) > 1 && (
+        {(meta?.sucursales?.length || 0) >= 1 && (
           <div className="space-y-1.5">
             <Label className="text-xs">Sucursal</Label>
             <Select value={sucursal || 'todas'} onValueChange={(v) => setSucursal(v === 'todas' ? '' : v)}>
-              <SelectTrigger className="h-10 w-[150px]" data-testid="cams-sucursal"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-10 w-[170px]" data-testid="cams-sucursal"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="todas">Todas</SelectItem>
+                <SelectItem value="todas">Todas las sucursales</SelectItem>
                 {meta.sucursales.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -143,6 +151,50 @@ export default function ReportesCams() {
         )}
         {loading && <span className="text-xs text-muted-foreground pb-2">Cargando…</span>}
       </div>
+
+      {/* Separación por sucursal — desglose del rango */}
+      {porSucursal.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
+          className="rounded-[18px] bg-card border shadow-card p-5 mb-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Store className="h-5 w-5 text-[#00a5df]" />
+            <h3 className="font-heading font-semibold">Entradas por sucursal</h3>
+            <span className="text-xs text-muted-foreground">· {start} → {end}</span>
+          </div>
+          {porSucursal.length === 1 && (
+            <p className="text-xs text-muted-foreground mb-3">
+              Por ahora solo <b>{porSucursal[0].sucursal}</b> está reportando. Cuando entren datos de otra sucursal aparecerá aquí la comparación.
+            </p>
+          )}
+          <div className="space-y-2">
+            {porSucursal.map((s) => {
+              const max = Math.max(...porSucursal.map((x) => x.total), 1);
+              const active = sucursal === s.sucursal;
+              return (
+                <button
+                  key={s.sucursal_id}
+                  onClick={() => setSucursal(active ? '' : s.sucursal)}
+                  data-testid={`cams-porsuc-${s.sucursal_id}`}
+                  className={`w-full text-left rounded-xl border px-3 py-2.5 transition-colors ${active ? 'border-[#00a5df] bg-[rgba(0,165,223,0.06)]' : 'hover:bg-muted/40'}`}
+                >
+                  <div className="flex items-center justify-between gap-3 mb-1.5">
+                    <span className="text-sm font-medium truncate">{s.sucursal}</span>
+                    <span className="text-sm tabular-nums shrink-0">
+                      <b>{s.total}</b> <span className="text-muted-foreground">en el rango · {s.today} hoy</span>
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full bg-[#00a5df]" style={{ width: `${Math.round((s.total / max) * 100)}%` }} />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {porSucursal.length > 1 && (
+            <p className="text-xs text-muted-foreground mt-3">Toca una sucursal para filtrar todo el tablero por ella.</p>
+          )}
+        </motion.div>
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
