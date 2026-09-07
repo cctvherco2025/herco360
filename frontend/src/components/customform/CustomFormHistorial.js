@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Eye, Calendar, User as UserIcon, ClipboardList, Download, Loader2, Info } from 'lucide-react';
+import { Eye, Calendar, User as UserIcon, ClipboardList, Download, Loader2, Info, Trash2 } from 'lucide-react';
 import api from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import { generateCustomFormPdf } from '@/lib/customFormPdf';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -134,11 +135,14 @@ function DetailDialog({ formId, formTitulo, hasScoring, id, onClose }) {
   );
 }
 
-export default function CustomFormHistorial({ schema, canSeeAll }) {
+export default function CustomFormHistorial({ schema, canSeeAll, canManage }) {
+  const { user } = useAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [openId, setOpenId] = useState(null);
   const [exportingId, setExportingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [clearing, setClearing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -157,11 +161,47 @@ export default function CustomFormHistorial({ schema, canSeeAll }) {
     finally { setExportingId(null); }
   };
 
+  const removeOne = async (e, id) => {
+    e.stopPropagation();
+    if (!window.confirm('¿Eliminar esta respuesta del historial? No se puede deshacer.')) return;
+    setDeletingId(id);
+    try {
+      await api.delete(`/formularios-custom/${schema.id}/respuestas/${id}`);
+      setRows((rs) => rs.filter((r) => r.id !== id));
+      toast.success('Respuesta eliminada');
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'No se pudo eliminar la respuesta');
+    } finally { setDeletingId(null); }
+  };
+
+  const clearAll = async () => {
+    if (!window.confirm(`¿Vaciar TODO el historial de "${schema.titulo}"? Se borran las ${rows.length} respuestas. El formulario queda activo. No se puede deshacer.`)) return;
+    setClearing(true);
+    try {
+      const { data } = await api.delete(`/formularios-custom/${schema.id}/respuestas`);
+      setRows([]);
+      toast.success(`Historial vaciado (${data.deleted} respuestas)`);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'No se pudo vaciar el historial');
+    } finally { setClearing(false); }
+  };
+
   return (
     <div>
       {!canSeeAll && (
         <div className="flex items-center gap-2 rounded-xl bg-muted/50 text-muted-foreground text-xs px-3 py-2 mb-4">
           <Info className="h-3.5 w-3.5 shrink-0" /> Solo ves las respuestas que tú mismo enviaste.
+        </div>
+      )}
+
+      {canManage && rows.length > 0 && (
+        <div className="flex justify-end mb-3">
+          <button onClick={clearAll} disabled={clearing}
+            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)] disabled:opacity-50"
+            data-testid="customform-historial-clear">
+            {clearing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+            {clearing ? 'Vaciando…' : 'Vaciar historial'}
+          </button>
         </div>
       )}
 
@@ -190,6 +230,13 @@ export default function CustomFormHistorial({ schema, canSeeAll }) {
               className="p-2 rounded-lg hover:bg-muted text-muted-foreground shrink-0 disabled:opacity-50">
               {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             </button>
+            {(canManage || r.respondent_id === user?.id) && (
+              <button onClick={(e) => removeOne(e, r.id)} disabled={deletingId === r.id} title="Eliminar respuesta"
+                className="p-2 rounded-lg hover:bg-[rgba(220,38,38,0.08)] text-muted-foreground hover:text-[#dc2626] shrink-0 disabled:opacity-50"
+                data-testid="customform-historial-delete-row">
+                {deletingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              </button>
+            )}
             <Eye className="h-4 w-4 text-muted-foreground shrink-0" />
           </motion.div>
         ))}

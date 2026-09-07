@@ -82,7 +82,7 @@ export default function CustomFormPage() {
           <CustomFormWizard schema={schema} onSubmitted={() => { setHistoryKey((k) => k + 1); setTab('historial'); }} />
         </TabsContent>
         <TabsContent value="historial">
-          <CustomFormHistorial key={historyKey} schema={schema} canSeeAll={canSeeAll} />
+          <CustomFormHistorial key={historyKey} schema={schema} canSeeAll={canSeeAll} canManage={canManage} />
         </TabsContent>
         {schema.kind === 'promociones' && (
           <TabsContent value="resultados">

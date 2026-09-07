@@ -546,6 +546,22 @@ async def list_responses(form_id: str, user=Depends(get_current_user)):
     return serialize_doc(rows)
 
 
+@router.delete('/{form_id}/respuestas')
+async def clear_responses(form_id: str, user=Depends(get_current_user)):
+    """Vaciar TODO el historial de un formulario: borra sus respuestas pero
+    deja el formulario en pie para seguir recibiendo respuestas nuevas. Solo
+    el admin o quien lo creó (mismo criterio que eliminar el formulario).
+
+    Las fotos quedan en el almacenamiento de objetos como huérfanas —igual que
+    al eliminar el formulario completo—, pero ya no son accesibles porque el
+    endpoint de descarga exige que la respuesta exista."""
+    form = await _get_form_or_404(form_id)
+    if not (user.get('role') == 'admin' or form.get('creator_id') == user['id']):
+        raise HTTPException(status_code=403, detail='Solo quien creó el formulario (o un admin) puede vaciar su historial')
+    res = await db.custom_form_responses.delete_many({'form_id': form_id})
+    return {'message': 'Historial vaciado', 'deleted': res.deleted_count}
+
+
 @router.get('/{form_id}/reporte')
 async def get_report(form_id: str, user=Depends(get_current_user)):
     """Panel de resultados y seguimiento — pensado para "Promociones del mes"
@@ -647,6 +663,23 @@ async def get_response(form_id: str, resp_id: str, user=Depends(get_current_user
     if not (_sees_all_responses(user, form) or row['respondent_id'] == user['id']):
         raise HTTPException(status_code=403, detail='No tienes acceso a esta respuesta')
     return serialize_doc(row)
+
+
+@router.delete('/{form_id}/respuestas/{resp_id}')
+async def delete_response(form_id: str, resp_id: str, user=Depends(get_current_user)):
+    """Eliminar una respuesta puntual del historial. Puede el admin, quien creó
+    el formulario, o el propio autor de esa respuesta."""
+    form = await _get_form_or_404(form_id)
+    row = await db.custom_form_responses.find_one(
+        {'id': resp_id, 'form_id': form_id}, {'_id': 0, 'respondent_id': 1})
+    if not row:
+        raise HTTPException(status_code=404, detail='Respuesta no encontrada')
+    if not (user.get('role') == 'admin'
+            or form.get('creator_id') == user['id']
+            or row.get('respondent_id') == user['id']):
+        raise HTTPException(status_code=403, detail='No puedes eliminar esta respuesta')
+    await db.custom_form_responses.delete_one({'id': resp_id, 'form_id': form_id})
+    return {'message': 'Respuesta eliminada'}
 
 
 @router.get('/{form_id}/respuestas/{resp_id}/foto/{photo_id}')
