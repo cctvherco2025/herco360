@@ -7,6 +7,10 @@ import { useAuth } from '@/context/AuthContext';
 import { generateCustomFormPdf } from '@/lib/customFormPdf';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
@@ -143,6 +147,9 @@ export default function CustomFormHistorial({ schema, canSeeAll, canManage }) {
   const [exportingId, setExportingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [clearing, setClearing] = useState(false);
+  // { mode: 'one', id, name, fecha } | { mode: 'all' } | null
+  const [confirmDel, setConfirmDel] = useState(null);
+  const busy = clearing || deletingId != null;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -161,9 +168,7 @@ export default function CustomFormHistorial({ schema, canSeeAll, canManage }) {
     finally { setExportingId(null); }
   };
 
-  const removeOne = async (e, id) => {
-    e.stopPropagation();
-    if (!window.confirm('¿Eliminar esta respuesta del historial? No se puede deshacer.')) return;
+  const removeOne = async (id) => {
     setDeletingId(id);
     try {
       await api.delete(`/formularios-custom/${schema.id}/respuestas/${id}`);
@@ -171,11 +176,10 @@ export default function CustomFormHistorial({ schema, canSeeAll, canManage }) {
       toast.success('Respuesta eliminada');
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'No se pudo eliminar la respuesta');
-    } finally { setDeletingId(null); }
+    } finally { setDeletingId(null); setConfirmDel(null); }
   };
 
   const clearAll = async () => {
-    if (!window.confirm(`¿Vaciar TODO el historial de "${schema.titulo}"? Se borran las ${rows.length} respuestas. El formulario queda activo. No se puede deshacer.`)) return;
     setClearing(true);
     try {
       const { data } = await api.delete(`/formularios-custom/${schema.id}/respuestas`);
@@ -183,7 +187,13 @@ export default function CustomFormHistorial({ schema, canSeeAll, canManage }) {
       toast.success(`Historial vaciado (${data.deleted} respuestas)`);
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'No se pudo vaciar el historial');
-    } finally { setClearing(false); }
+    } finally { setClearing(false); setConfirmDel(null); }
+  };
+
+  const runConfirm = () => {
+    if (!confirmDel) return;
+    if (confirmDel.mode === 'all') clearAll();
+    else removeOne(confirmDel.id);
   };
 
   return (
@@ -196,11 +206,10 @@ export default function CustomFormHistorial({ schema, canSeeAll, canManage }) {
 
       {canManage && rows.length > 0 && (
         <div className="flex justify-end mb-3">
-          <button onClick={clearAll} disabled={clearing}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)] disabled:opacity-50"
+          <button onClick={() => setConfirmDel({ mode: 'all' })} disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#dc2626]/30 px-3 py-1.5 text-xs font-medium text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)] disabled:opacity-50 transition-colors"
             data-testid="customform-historial-clear">
-            {clearing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-            {clearing ? 'Vaciando…' : 'Vaciar historial'}
+            <Trash2 className="h-3.5 w-3.5" /> Vaciar historial
           </button>
         </div>
       )}
@@ -231,8 +240,10 @@ export default function CustomFormHistorial({ schema, canSeeAll, canManage }) {
               {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             </button>
             {(canManage || r.respondent_id === user?.id) && (
-              <button onClick={(e) => removeOne(e, r.id)} disabled={deletingId === r.id} title="Eliminar respuesta"
-                className="p-2 rounded-lg hover:bg-[rgba(220,38,38,0.08)] text-muted-foreground hover:text-[#dc2626] shrink-0 disabled:opacity-50"
+              <button
+                onClick={(e) => { e.stopPropagation(); setConfirmDel({ mode: 'one', id: r.id, name: r.respondent_name, fecha: (r.created_at || '').slice(0, 10) }); }}
+                disabled={deletingId === r.id} title="Eliminar respuesta"
+                className="p-2 rounded-lg hover:bg-[rgba(220,38,38,0.08)] text-muted-foreground hover:text-[#dc2626] shrink-0 disabled:opacity-50 transition-colors"
                 data-testid="customform-historial-delete-row">
                 {deletingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               </button>
@@ -243,6 +254,34 @@ export default function CustomFormHistorial({ schema, canSeeAll, canManage }) {
       </div>
 
       <DetailDialog formId={schema.id} formTitulo={schema.titulo} hasScoring={schema.has_scoring} id={openId} onClose={() => setOpenId(null)} />
+
+      <AlertDialog open={!!confirmDel} onOpenChange={(o) => { if (!o) setConfirmDel(null); }}>
+        <AlertDialogContent className="rounded-[22px]">
+          <AlertDialogHeader>
+            <div className="h-11 w-11 rounded-full grid place-items-center bg-[rgba(220,38,38,0.1)] mb-1">
+              <Trash2 className="h-5 w-5 text-[#dc2626]" />
+            </div>
+            <AlertDialogTitle>
+              {confirmDel?.mode === 'all' ? 'Vaciar historial' : 'Eliminar respuesta'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDel?.mode === 'all' ? (
+                <>Se eliminan las <span className="font-medium text-foreground">{rows.length} {rows.length === 1 ? 'respuesta' : 'respuestas'}</span> de <span className="font-medium text-foreground">{schema.titulo}</span>. El formulario queda activo para recibir nuevas. Esta acción no se puede deshacer.</>
+              ) : (
+                <>Se eliminará la respuesta de <span className="font-medium text-foreground">{confirmDel?.name}</span>{confirmDel?.fecha ? <> del <span className="font-medium text-foreground">{confirmDel.fecha}</span></> : null}, junto con sus fotos. Esta acción no se puede deshacer.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={runConfirm}
+              className="rounded-xl bg-[#dc2626] hover:bg-[#b91c1c] text-white"
+              data-testid="customform-historial-confirm-delete">
+              {confirmDel?.mode === 'all' ? 'Vaciar historial' : 'Eliminar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
