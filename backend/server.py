@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Depends
+from fastapi import FastAPI, APIRouter, Depends, UploadFile, File, Form, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import asyncio
@@ -51,6 +51,22 @@ async def storage_health(user=Depends(require_admin)):
     except Exception as ex:
         result['detail'] = f'{type(ex).__name__}: {ex}'
     return result
+
+
+@api_router.post('/admin/storage-put')
+async def storage_put(path: str = Form(...), file: UploadFile = File(...), user=Depends(require_admin)):
+    """Sube un archivo al almacenamiento activo en una ruta exacta. Uso puntual:
+    migrar objetos que quedaron en el proveedor anterior. Solo rutas bajo
+    'herco360/'."""
+    p = (path or '').strip()
+    if not p.startswith(f'{storage.APP_NAME}/') or '..' in p:
+        raise HTTPException(status_code=400, detail='Ruta inválida')
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail='Archivo vacío')
+    ctype = file.content_type or 'application/octet-stream'
+    await storage.put_object(p, content, ctype)
+    return {'path': p, 'size': len(content), 'content_type': ctype, 'provider': storage.provider()}
 
 
 # Mount feature routers under /api
