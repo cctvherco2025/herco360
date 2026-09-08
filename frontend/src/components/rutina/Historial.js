@@ -34,15 +34,24 @@ function blobToDataUrl(blob) {
 
 function AuthedImg({ url, className, onClick }) {
   const [src, setSrc] = useState(null);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     let active = true; let objUrl;
+    setSrc(null); setFailed(false);
     api.get(url, { responseType: 'blob' }).then((res) => {
       if (!active) return;
       objUrl = URL.createObjectURL(res.data);
       setSrc(objUrl);
-    }).catch(() => {});
+    }).catch(() => { if (active) setFailed(true); });
     return () => { active = false; if (objUrl) URL.revokeObjectURL(objUrl); };
   }, [url]);
+  if (failed) {
+    return (
+      <div className={`${className} bg-muted grid place-items-center text-center text-[10px] leading-tight text-muted-foreground px-1`}>
+        No se pudo<br />cargar la imagen
+      </div>
+    );
+  }
   if (!src) return <div className={`${className} bg-muted animate-pulse`} />;
   return <img src={src} alt="Evidencia" className={className} onClick={onClick} />;
 }

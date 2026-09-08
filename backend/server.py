@@ -1,11 +1,12 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, Depends
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+import asyncio
 import os
 import logging
 from pathlib import Path
 
-from core import client
+from core import client, require_admin, new_id
 from seed import (seed_if_needed, migrate_activity_colors, seed_inventory, bootstrap_admins,
                   migrate_room_info, migrate_activity_reminders)
 import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard, routes_inventory, routes_reports, routes_public, routes_vacations, routes_push, routes_cams, routes_formulario, routes_rutina, routes_formularios_custom
@@ -24,6 +25,32 @@ api_router = APIRouter(prefix='/api')
 @api_router.get('/')
 async def root():
     return {'message': 'HERCO360 API', 'status': 'ok'}
+
+
+@api_router.get('/admin/storage-health')
+async def storage_health(user=Depends(require_admin)):
+    """Round-trip real contra el almacenamiento de objetos (subir, leer, borrar).
+    Sirve para verificar que las fotos de formularios/reportes van a funcionar.
+    Si 'provider' es 'emergent' en producción, faltan las variables R2_* en
+    Render (R2 es el backend de producción; 'emergent' es solo para el preview)."""
+    prov = storage.provider()
+    key = f'{storage.APP_NAME}/_healthcheck/{new_id()}.txt'
+    payload = b'herco360 storage healthcheck'
+    result = {'provider': prov, 'ok': False, 'detail': None}
+    try:
+        await storage.put_object(key, payload, 'text/plain')
+        data, _ctype = await storage.get_object(key)
+        result['ok'] = data == payload
+        result['detail'] = 'ok' if result['ok'] else 'lectura no coincide con lo escrito'
+        try:
+            if prov == 'r2':
+                await asyncio.to_thread(
+                    storage._get_s3().delete_object, Bucket=storage.R2_BUCKET, Key=key)
+        except Exception:
+            pass
+    except Exception as ex:
+        result['detail'] = f'{type(ex).__name__}: {ex}'
+    return result
 
 
 # Mount feature routers under /api
