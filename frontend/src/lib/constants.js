@@ -150,13 +150,16 @@ export function canFillRutina(user) {
   return cargo === 'Director comercial' || cargo === 'Gerente';
 }
 
-// Editar el esquema (preguntas/puntajes) de Rutina Operativa: mismo grupo
-// que ya gestiona accesos a módulos en Organigrama (admins + Director
-// comercial) — el backend gatea /rutina/schema (PUT) con require_access_manager.
+// Editar el esquema (preguntas/opciones/puntajes) de Rutina Operativa:
+// permiso independiente y asignable desde Organigrama — admin/Director
+// comercial siempre, cualquier otro usuario solo por override manual
+// (default false; no se infiere de canAccessRutina/canFillRutina).
 export function canEditRutinaSchema(user) {
   if (!user) return false;
   if (user.role === 'admin') return true;
-  return (user.position || '').trim() === 'Director comercial';
+  const cargo = (user.position || '').trim();
+  if (cargo === 'Director comercial') return true;
+  return !!(user.module_access || {}).rutina_schema;
 }
 
 // Quién puede crear/publicar "Promociones del mes" (mismo grupo que FLOS).

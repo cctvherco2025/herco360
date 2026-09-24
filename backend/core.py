@@ -138,6 +138,7 @@ USER_PUBLIC_FIELDS = {'_id': 0, 'password_hash': 0}
 GATED_MODULES = (
     'inventario', 'reportes', 'cams', 'formulario', 'rutina',
     'formularios_principal', 'promociones_mes', 'formularios_custom',
+    'rutina_schema',
 )
 
 
@@ -274,6 +275,27 @@ def can_access_rutina(user) -> bool:
 async def require_rutina_access(user=Depends(get_current_user)):
     if not can_access_rutina(user):
         raise HTTPException(status_code=403, detail='No tienes acceso a Rutina Operativa')
+    return user
+
+
+# Editar el esquema (preguntas/opciones/puntajes) de Rutina Operativa: permiso
+# independiente y asignable — admin/Director comercial siempre True, para
+# cualquier otro usuario solo por override manual desde Organigrama (default
+# False; no se infiere de can_access_rutina).
+def can_edit_rutina_schema(user) -> bool:
+    if not user:
+        return False
+    if user.get('role') == 'admin':
+        return True
+    cargo = (user.get('position') or '').strip()
+    if cargo == 'Director comercial':
+        return True
+    return bool(_module_override(user, 'rutina_schema'))
+
+
+async def require_rutina_schema_editor(user=Depends(get_current_user)):
+    if not can_edit_rutina_schema(user):
+        raise HTTPException(status_code=403, detail='No tienes permiso para editar el esquema de Rutina Operativa')
     return user
 
 

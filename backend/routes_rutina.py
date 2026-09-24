@@ -1,11 +1,13 @@
 """Rutina Operativa — evaluación mensual de Gerentes de tienda.
 
 El cuestionario (secciones, preguntas, opciones y sus puntos) vive en Mongo
-(db.rutina_schema, documento único 'current'), editable por admins/Director
-comercial desde /rutina-operativa (botón "Editar puntajes"). DEFAULT_SCHEMA
-de abajo es solo el valor semilla la primera vez que se pide — validado
-contra el formulario vigente en DataScope ("Rutina Operativa Gerentes de
-Tienda"), 14 preguntas puntuables que suman 100 puntos.
+(db.rutina_schema, documento único 'current'), editable desde /rutina-
+operativa (botón "Editar puntajes") por quien tenga el permiso
+'rutina_schema' — admin/Director comercial siempre, cualquier otro usuario
+solo si se le asigna desde Organigrama (require_rutina_schema_editor en
+core.py). DEFAULT_SCHEMA de abajo es solo el valor semilla la primera vez
+que se pide — validado contra el formulario vigente en DataScope ("Rutina
+Operativa Gerentes de Tienda"), 14 preguntas puntuables que suman 100 puntos.
 
 El backend solo guarda lo que el gerente respondió (igual que
 Formulario/FLOS): cada respuesta trae su propia foto de título/sección/
@@ -22,7 +24,7 @@ from typing import List
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import Response
 
-from core import db, serialize_doc, new_id, now_iso, require_rutina_access, can_fill_rutina, require_access_manager
+from core import db, serialize_doc, new_id, now_iso, require_rutina_access, can_fill_rutina, require_rutina_schema_editor
 from models import RutinaSchemaUpdate
 from notifications import log_activity
 import storage
@@ -199,7 +201,7 @@ async def get_schema(user=Depends(require_rutina_access)):
 
 
 @router.put('/schema')
-async def update_schema(data: RutinaSchemaUpdate, manager=Depends(require_access_manager)):
+async def update_schema(data: RutinaSchemaUpdate, manager=Depends(require_rutina_schema_editor)):
     if not data.secciones:
         raise HTTPException(status_code=400, detail='El esquema necesita al menos una sección')
     secciones = []
