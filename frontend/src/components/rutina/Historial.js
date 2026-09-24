@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Search, Eye, Store, Calendar, User as UserIcon, ClipboardList, Download, Loader2, Trash2 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { RUTINA_SUCURSALES, RUTINA_FLAT, rutinaTone, RUTINA_TONE_COLOR, computeRutinaSummary } from '@/lib/rutinaSchema';
+import { RUTINA_SUCURSALES, rutinaTone, RUTINA_TONE_COLOR, summaryFromEvaluacion } from '@/lib/rutinaSchema';
 import { generateRutinaPdf } from '@/lib/rutinaPdf';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -69,30 +69,16 @@ async function fetchEvalPhotosAsDataUrls(evalId, evalDoc) {
 }
 
 function buildRowsFromEval(evalDoc, photoMap) {
-  const answers = {}, notes = {}, touched = new Set();
-  const byId = {};
-  (evalDoc.entries || []).forEach((e) => {
-    touched.add(e.id);
-    notes[e.id] = e.note || '';
-    byId[e.id] = e;
-  });
-  const rows = RUTINA_FLAT.map((it) => {
-    const e = byId[it.id];
-    return {
-      ...it, touched: !!e, score: e ? e.score : 0, opcion: e ? e.opcion : '', note: e ? (e.note || '') : '',
-      photos: e ? (e.photos || []).map((p) => ({ dataUrl: photoMap[p.id] })).filter((p) => p.dataUrl) : [],
-    };
-  });
-  const summary = computeRutinaSummary({
-    answers: Object.fromEntries(RUTINA_FLAT.map((it) => {
-      const e = byId[it.id];
-      if (!e) return [it.id, undefined];
-      const idx = it.opciones.findIndex((o) => o.label === e.opcion && o.pts === e.score);
-      return [it.id, idx >= 0 ? idx : 0];
-    })),
-    touched,
-  });
-  return { rows, summary };
+  // Self-contenido: cada entrada guardada ya trae su propio titulo/seccion/
+  // score/max, así que no hace falta (ni conviene) reconstruirlo contra el
+  // esquema vigente — si alguien lo edita después, esta evaluación pasada
+  // se sigue viendo/exportando tal como se envió.
+  const rows = (evalDoc.entries || []).map((e) => ({
+    id: e.id, titulo: e.titulo, seccion: e.seccion, touched: true,
+    score: e.score, max: e.max, opcion: e.opcion, note: e.note || '',
+    photos: (e.photos || []).map((p) => ({ dataUrl: photoMap[p.id] })).filter((p) => p.dataUrl),
+  }));
+  return { rows, summary: summaryFromEvaluacion(evalDoc) };
 }
 
 async function exportEvalPdf(evalId, cached) {

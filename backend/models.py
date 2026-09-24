@@ -220,3 +220,31 @@ class CustomFormInput(BaseModel):
     audiencia: CustomFormAudience
     items: List[CustomFormItem]
 
+
+# ---- Rutina Operativa — esquema editable (secciones/preguntas/puntajes) ----
+class RutinaSchemaEvidencia(BaseModel):
+    tipo: Optional[str] = 'foto'  # 'foto' | 'texto'
+    prompt: Optional[str] = ''
+
+
+class RutinaSchemaOption(BaseModel):
+    label: str
+    pts: int = 0
+
+
+class RutinaSchemaItem(BaseModel):
+    id: Optional[str] = None  # el backend asigna uno si falta
+    titulo: str
+    pregunta: Optional[str] = ''
+    opciones: List[RutinaSchemaOption]
+    evidencia: Optional[RutinaSchemaEvidencia] = None
+
+
+class RutinaSchemaSection(BaseModel):
+    seccion: str
+    items: List[RutinaSchemaItem]
+
+
+class RutinaSchemaUpdate(BaseModel):
+    secciones: List[RutinaSchemaSection]
+

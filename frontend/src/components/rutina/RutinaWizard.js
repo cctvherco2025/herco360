@@ -9,7 +9,7 @@ import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { ymd } from '@/lib/time';
 import {
-  RUTINA_SCHEMA, RUTINA_FLAT, RUTINA_SUCURSALES, rutinaTone, RUTINA_TONE_COLOR, computeRutinaSummary,
+  RUTINA_SUCURSALES, rutinaTone, RUTINA_TONE_COLOR, computeRutinaSummary, flattenRutinaSchema,
 } from '@/lib/rutinaSchema';
 import { compressImage } from '@/lib/flosPhoto';
 import { generateRutinaPdf } from '@/lib/rutinaPdf';
@@ -22,7 +22,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 
-const STEPS = RUTINA_FLAT.length;
 const DRAFT_KEY = 'herco360_rutina_draft_v1';
 const MAX_PHOTOS_PER_ITEM = 8;
 
@@ -41,6 +40,8 @@ function loadDraft() {
 
 export default function RutinaWizard({ onSubmitted }) {
   const { user } = useAuth();
+  const [schema, setSchema] = useState(null); // secciones, cargadas de GET /rutina/schema
+  const [schemaError, setSchemaError] = useState(false);
   const [phase, setPhase] = useState('intro'); // intro | walk | resumen
   const [meta, setMeta] = useState(emptyMeta());
   const [answers, setAnswers] = useState({}); // id -> option index
@@ -55,6 +56,13 @@ export default function RutinaWizard({ onSubmitted }) {
   const camInputs = useRef({});
 
   const canFill = canFillRutina(user);
+  const flat = useMemo(() => flattenRutinaSchema(schema), [schema]);
+  const STEPS = flat.length;
+
+  useEffect(() => {
+    api.get('/rutina/schema').then(({ data }) => setSchema(data.secciones || []))
+      .catch(() => setSchemaError(true));
+  }, []);
 
   useEffect(() => {
     const d = loadDraft();
@@ -79,7 +87,7 @@ export default function RutinaWizard({ onSubmitted }) {
 
   const clearDraft = () => { try { localStorage.removeItem(DRAFT_KEY); } catch (e) {} };
 
-  const summary = useMemo(() => computeRutinaSummary({ answers, touched }), [answers, touched]);
+  const summary = useMemo(() => computeRutinaSummary(schema, { answers, touched }), [schema, answers, touched]);
 
   const selectOption = (id, idx) => {
     setAnswers((a) => ({ ...a, [id]: idx }));
@@ -124,14 +132,14 @@ export default function RutinaWizard({ onSubmitted }) {
     toast.success('Evaluación reiniciada');
   };
 
-  const buildRows = useCallback(() => RUTINA_FLAT.map((it) => {
+  const buildRows = useCallback(() => flat.map((it) => {
     const idx = answers[it.id];
     const opt = touched.has(it.id) && typeof idx === 'number' ? it.opciones[idx] : null;
     return {
       ...it, touched: touched.has(it.id), score: opt ? opt.pts : 0,
       opcion: opt ? opt.label : '', note: (notes[it.id] || '').trim(), photos: photos[it.id] || [],
     };
-  }), [answers, touched, notes, photos]);
+  }), [flat, answers, touched, notes, photos]);
 
   const exportPdf = async () => {
     try {
@@ -146,7 +154,7 @@ export default function RutinaWizard({ onSubmitted }) {
     if (summary.touchedCount === 0) { toast.error('Responde al menos una pregunta antes de enviar'); return; }
     setSubmitting(true);
     try {
-      const entries = RUTINA_FLAT.filter((it) => touched.has(it.id)).map((it) => {
+      const entries = flat.filter((it) => touched.has(it.id)).map((it) => {
         const idx = answers[it.id];
         const opt = it.opciones[idx];
         return {
@@ -179,6 +187,18 @@ export default function RutinaWizard({ onSubmitted }) {
     );
   }
 
+  if (schemaError) {
+    return (
+      <div className="rounded-[18px] bg-card border shadow-card p-8 text-center">
+        <Info className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+        <p className="text-sm text-muted-foreground">No se pudo cargar el formulario de Rutina Operativa. Intenta de nuevo más tarde.</p>
+      </div>
+    );
+  }
+  if (!schema) {
+    return <p className="text-sm text-muted-foreground text-center py-16">Cargando…</p>;
+  }
+
   if (phase === 'intro') {
     return (
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
@@ -188,7 +208,7 @@ export default function RutinaWizard({ onSubmitted }) {
           <div><p className="text-sm font-medium text-foreground">{user?.name}</p><p className="text-xs text-muted-foreground">Gerente</p></div>
         </div>
         <h2 className="font-heading text-xl font-semibold mt-4">Rutina Operativa del mes</h2>
-        <p className="text-sm text-muted-foreground mt-1 mb-5">{RUTINA_SCHEMA.reduce((n, s) => n + s.items.length, 0)} preguntas en 3 secciones — ventas, inventario y operación.</p>
+        <p className="text-sm text-muted-foreground mt-1 mb-5">{STEPS} preguntas en {schema.length} secciones — ventas, inventario y operación.</p>
 
         {hasDraft && (
           <div className="flex items-center gap-2 rounded-xl bg-[rgba(0,165,223,0.1)] text-[#1e395e] dark:text-[#3cbef6] text-xs px-3 py-2 mb-4">
@@ -240,12 +260,12 @@ export default function RutinaWizard({ onSubmitted }) {
 
       {phase === 'walk' && (
         <WalkCard
-          cursor={cursor} steps={STEPS} answers={answers} notes={notes} photos={photos} uploading={uploading}
+          flat={flat} cursor={cursor} steps={STEPS} answers={answers} notes={notes} photos={photos} uploading={uploading}
           onSelect={selectOption} onNote={setNote} onFiles={handleFiles} onRemovePhoto={removePhoto}
           onPrev={prev} onNext={next} onGoto={goto} onZoom={setZoomSrc} camInputs={camInputs}
         />
       )}
-      {phase === 'resumen' && <Resumen summary={summary} onExport={exportPdf} onSubmit={submit} submitting={submitting} />}
+      {phase === 'resumen' && <Resumen summary={summary} totalSteps={STEPS} onExport={exportPdf} onSubmit={submit} submitting={submitting} />}
 
       <ZoomDialog src={zoomSrc} onClose={() => setZoomSrc(null)} />
     </div>
@@ -253,8 +273,8 @@ export default function RutinaWizard({ onSubmitted }) {
 }
 
 /* ───────────────────── Recorrido (paso a paso) ─────────── */
-function WalkCard({ cursor, steps, answers, notes, photos, uploading, onSelect, onNote, onFiles, onRemovePhoto, onPrev, onNext, onGoto, onZoom, camInputs }) {
-  const it = RUTINA_FLAT[cursor];
+function WalkCard({ flat, cursor, steps, answers, notes, photos, uploading, onSelect, onNote, onFiles, onRemovePhoto, onPrev, onNext, onGoto, onZoom, camInputs }) {
+  const it = flat[cursor];
   const idx = answers[it.id];
   const pics = photos[it.id] || [];
   const busy = uploading === it.id;
@@ -270,7 +290,7 @@ function WalkCard({ cursor, steps, answers, notes, photos, uploading, onSelect, 
           <div className="h-full rounded-full bg-[#00a5df] transition-all" style={{ width: `${((cursor + 1) / steps) * 100}%` }} />
         </div>
         <div className="flex flex-wrap gap-1.5 mt-3">
-          {RUTINA_FLAT.map((f, i) => (
+          {flat.map((f, i) => (
             <button key={f.id} onClick={() => onGoto(i)} title={f.titulo}
               className="h-2 w-2 rounded-full transition-all"
               style={{ background: i === cursor ? '#00a5df' : (typeof answers[f.id] === 'number') ? '#1e395e' : 'var(--border)', transform: i === cursor ? 'scale(1.6)' : 'scale(1)' }} />
@@ -366,14 +386,14 @@ function Tile({ icon: IconEl, label, value, sub, color, tint }) {
   );
 }
 
-function Resumen({ summary, onExport, onSubmit, submitting }) {
+function Resumen({ summary, totalSteps, onExport, onSubmit, submitting }) {
   const tone = rutinaTone(summary.pct);
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
       <div className="rounded-[18px] bg-card border shadow-card p-6 text-center mb-4">
         <p className="font-heading text-5xl font-bold" style={{ color: RUTINA_TONE_COLOR[tone] }}>{summary.pct}%</p>
         <p className="text-sm font-medium mt-1" style={{ color: RUTINA_TONE_COLOR[tone] }}>{summary.statusLabel}</p>
-        <p className="text-xs text-muted-foreground mt-1">{summary.totalAct} / {summary.totalMax} pts · {summary.touchedCount} de {RUTINA_FLAT.length} preguntas respondidas</p>
+        <p className="text-xs text-muted-foreground mt-1">{summary.totalAct} / {summary.totalMax} pts · {summary.touchedCount} de {totalSteps} preguntas respondidas</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 mb-4">
