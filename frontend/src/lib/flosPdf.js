@@ -3,7 +3,7 @@
 // dimensión y por criterio, y un plan de acción con prioridades — todo en la
 // paleta institucional de HERCO.
 import { jsPDF } from 'jspdf';
-import { FLOS_TOTAL_MAX, flosTone } from '@/lib/flosSchema';
+import { flosTone } from '@/lib/flosSchema';
 
 const NAVY = '#1e395e';
 const CYAN = '#00a5df';
@@ -119,7 +119,7 @@ export async function generateFlosPdf({ meta, rows, generalComment, generalPhoto
   doc.setFont('helvetica', 'bold'); doc.setFontSize(23); doc.setTextColor(...hexToRgb(TONE_HEX[tone]));
   doc.text(`${summary.pct}%`, gcx, gcy + 8, { align: 'center' });
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(120, 128, 140);
-  doc.text(`${summary.totalAct}/${FLOS_TOTAL_MAX} pts`, gcx, gcy + 22, { align: 'center' });
+  doc.text(`${summary.totalAct}/${summary.totalMax} pts`, gcx, gcy + 22, { align: 'center' });
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(60, 66, 76);
   doc.text(summary.statusLabel, gcx, gcy + 76, { align: 'center' });
 

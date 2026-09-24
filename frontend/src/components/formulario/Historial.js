@@ -5,7 +5,7 @@ import { Search, Eye, Store, Calendar, User as UserIcon, ClipboardList, Download
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { ymd, fullDateEs, capitalize } from '@/lib/time';
-import { FLOS_SUCURSALES, FLOS_FLAT, flosTone, FLOS_TONE_COLOR, computeFlosSummary } from '@/lib/flosSchema';
+import { FLOS_SUCURSALES, flosTone, FLOS_TONE_COLOR, summaryFromAudit } from '@/lib/flosSchema';
 import { generateFlosPdf } from '@/lib/flosPdf';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -44,31 +44,18 @@ async function fetchAuditPhotosAsDataUrls(auditId, audit) {
   return map;
 }
 
-// Reconstruye las filas del recorrido (con el esquema completo, aunque el
-// servidor solo guardó los criterios calificados) para reutilizar el mismo
-// generador de PDF que usa el asistente en vivo.
+// Self-contenido: cada entrada guardada ya trae su propio name/dim/score/
+// max/action, así que no hace falta (ni conviene) reconstruirlo contra el
+// esquema vigente — si alguien lo edita después, esta auditoría pasada se
+// sigue viendo/exportando (Plan de acción incluido) tal como se envió.
 function buildRowsFromAudit(audit, photoMap) {
-  const scores = {}, comments = {}, touched = new Set();
-  const byId = {};
-  (audit.entries || []).forEach((e) => {
-    scores[e.id] = e.score;
-    comments[e.id] = e.comment || '';
-    touched.add(e.id);
-    byId[e.id] = e;
-  });
-  const rows = FLOS_FLAT.map((v) => {
-    const e = byId[v.id];
-    return {
-      ...v,
-      score: e ? e.score : 0,
-      touched: !!e,
-      comment: e ? (e.comment || '') : '',
-      photos: e ? (e.photos || []).map((p) => ({ dataUrl: photoMap[p.id] })).filter((p) => p.dataUrl) : [],
-    };
-  });
+  const rows = (audit.entries || []).map((e) => ({
+    id: e.id, name: e.name, dim: e.dim, max: e.max, action: e.action || '', touched: true,
+    score: e.score, comment: e.comment || '',
+    photos: (e.photos || []).map((p) => ({ dataUrl: photoMap[p.id] })).filter((p) => p.dataUrl),
+  }));
   const generalPhotos = (audit.general_photos || []).map((p) => ({ dataUrl: photoMap[p.id] })).filter((p) => p.dataUrl);
-  const summary = computeFlosSummary({ scores, comments, touched });
-  return { rows, generalPhotos, summary };
+  return { rows, generalPhotos, summary: summaryFromAudit(audit) };
 }
 
 async function exportAuditPdf(auditId, cachedAudit) {

@@ -162,6 +162,7 @@ function AccessManager() {
     { key: 'promociones_mes', label: 'Promociones del mes', color: C.green },
     { key: 'formularios_custom', label: 'Crear form personalizado', color: C.cyan },
     { key: 'rutina_schema', label: 'Editar puntajes Rutina', color: C.purple },
+    { key: 'formulario_schema', label: 'Editar puntajes FLOS', color: C.navy },
   ];
 
   return (
@@ -173,7 +174,7 @@ function AccessManager() {
             <h2 className="font-heading text-lg font-semibold text-foreground flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4" style={{ color: C.orange }} /> Gestión de accesos a módulos
             </h2>
-            <p className="text-[12px] text-muted-foreground">Da o quita acceso a Inventario, Reportes, Reportes CAMS, cada permiso del módulo Formularios (principal, Evaluación FLOS, Rutina Operativa, Promociones del mes, Crear personalizado) y quién puede editar los puntajes de Rutina Operativa, por usuario.</p>
+            <p className="text-[12px] text-muted-foreground">Da o quita acceso a Inventario, Reportes, Reportes CAMS, cada permiso del módulo Formularios (principal, Evaluación FLOS, Rutina Operativa, Promociones del mes, Crear personalizado) y quién puede editar los puntajes de Rutina Operativa y de la auditoría FLOS, por usuario.</p>
           </div>
         </div>
         <div className="relative w-full sm:w-72">

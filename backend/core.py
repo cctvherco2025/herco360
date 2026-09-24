@@ -138,7 +138,7 @@ USER_PUBLIC_FIELDS = {'_id': 0, 'password_hash': 0}
 GATED_MODULES = (
     'inventario', 'reportes', 'cams', 'formulario', 'rutina',
     'formularios_principal', 'promociones_mes', 'formularios_custom',
-    'rutina_schema',
+    'rutina_schema', 'formulario_schema',
 )
 
 
@@ -246,6 +246,27 @@ def can_access_formulario(user) -> bool:
 async def require_formulario_access(user=Depends(get_current_user)):
     if not can_access_formulario(user):
         raise HTTPException(status_code=403, detail='No tienes acceso al módulo Formulario')
+    return user
+
+
+# Editar el esquema (criterios/puntajes/acciones) de la auditoría FLOS:
+# permiso independiente y asignable — admin/Director comercial siempre True,
+# cualquier otro usuario solo por override manual desde Organigrama (default
+# False; no se infiere de can_access_formulario).
+def can_edit_flos_schema(user) -> bool:
+    if not user:
+        return False
+    if user.get('role') == 'admin':
+        return True
+    cargo = (user.get('position') or '').strip()
+    if cargo == 'Director comercial':
+        return True
+    return bool(_module_override(user, 'formulario_schema'))
+
+
+async def require_flos_schema_editor(user=Depends(get_current_user)):
+    if not can_edit_flos_schema(user):
+        raise HTTPException(status_code=403, detail='No tienes permiso para editar el esquema de la auditoría FLOS')
     return user
 
 

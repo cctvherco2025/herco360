@@ -10,8 +10,8 @@ import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { ymd } from '@/lib/time';
 import {
-  FLOS_SCHEMA, FLOS_FLAT, FLOS_SUCURSALES, FLOS_REF_CAPTION, FLOS_REF_PHOTO,
-  flosTone, FLOS_TONE_COLOR, computeFlosSummary,
+  FLOS_SUCURSALES, FLOS_REF_CAPTION, FLOS_REF_PHOTO,
+  flosTone, FLOS_TONE_COLOR, computeFlosSummary, flattenFlosSchema,
 } from '@/lib/flosSchema';
 import { compressImage } from '@/lib/flosPhoto';
 import { generateFlosPdf } from '@/lib/flosPdf';
@@ -24,8 +24,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const DIM_ICON = { FRENTEO: AlignStartVertical, LIMPIEZA: Sparkles, ORDEN: LayoutGrid, SURTIDO: PackageSearch };
-const CLOSER = FLOS_FLAT.length;
-const STEPS = FLOS_FLAT.length + 1;
 const DRAFT_KEY = 'herco360_flos_draft_v1';
 const MAX_PHOTOS_PER_ITEM = 8;
 
@@ -40,6 +38,8 @@ function loadDraft() {
 
 export default function AuditWizard({ onSubmitted }) {
   const { user } = useAuth();
+  const [schema, setSchema] = useState(null); // dimensiones, cargadas de GET /formulario/schema
+  const [schemaError, setSchemaError] = useState(false);
   const [phase, setPhase] = useState('intro'); // intro | walk | verdict | plan
   const [meta, setMeta] = useState(() => emptyMeta(user));
   const [scores, setScores] = useState({});
@@ -54,6 +54,15 @@ export default function AuditWizard({ onSubmitted }) {
   const [zoomSrc, setZoomSrc] = useState(null);
   const [hasDraft, setHasDraft] = useState(false);
   const camInputs = useRef({});
+
+  const flat = useMemo(() => flattenFlosSchema(schema), [schema]);
+  const CLOSER = flat.length;
+  const STEPS = flat.length + 1;
+
+  useEffect(() => {
+    api.get('/formulario/schema').then(({ data }) => setSchema(data.dimensiones || []))
+      .catch(() => setSchemaError(true));
+  }, []);
 
   // ── Draft: solo campos livianos (los archivos de foto no se guardan). ──
   useEffect(() => {
@@ -85,7 +94,7 @@ export default function AuditWizard({ onSubmitted }) {
   const clearDraft = () => { try { localStorage.removeItem(DRAFT_KEY); } catch (e) {} };
 
   // ── Resumen calculado ────────────────────────────────────────
-  const summary = useMemo(() => computeFlosSummary({ scores, comments, touched }), [scores, comments, touched]);
+  const summary = useMemo(() => computeFlosSummary(schema, { scores, comments, touched }), [schema, scores, comments, touched]);
 
   const setScore = (id, n) => {
     setScores((s) => ({ ...s, [id]: n }));
@@ -144,7 +153,7 @@ export default function AuditWizard({ onSubmitted }) {
   };
 
   // ── Filas con todo lo capturado, para el PDF y el envío ─────
-  const buildRows = () => FLOS_FLAT.map((v) => ({
+  const buildRows = () => flat.map((v) => ({
     ...v,
     score: scores[v.id] ?? 0,
     touched: touched.has(v.id),
@@ -170,8 +179,8 @@ export default function AuditWizard({ onSubmitted }) {
     if (summary.touchedCount === 0) { toast.error('Califica al menos un criterio antes de enviar'); return; }
     setSubmitting(true);
     try {
-      const entries = FLOS_FLAT.filter((v) => touched.has(v.id)).map((v) => ({
-        id: v.id, name: v.name, dim: v.dim, max: v.max,
+      const entries = flat.filter((v) => touched.has(v.id)).map((v) => ({
+        id: v.id, name: v.name, dim: v.dim, max: v.max, action: v.action || '',
         score: scores[v.id] ?? 0, comment: (comments[v.id] || '').trim(),
       }));
       const fd = new FormData();
@@ -195,10 +204,22 @@ export default function AuditWizard({ onSubmitted }) {
     }
   };
 
+  if (schemaError) {
+    return (
+      <div className="rounded-[18px] bg-card border shadow-card p-8 text-center">
+        <Info className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+        <p className="text-sm text-muted-foreground">No se pudo cargar el formulario de auditoría FLOS. Intenta de nuevo más tarde.</p>
+      </div>
+    );
+  }
+  if (!schema) {
+    return <p className="text-sm text-muted-foreground text-center py-16">Cargando…</p>;
+  }
+
   if (phase === 'intro') {
     return (
       <IntroForm meta={meta} setMeta={setMeta} onBegin={beginWalk} hasDraft={hasDraft}
-        onViewSummary={() => setPhase('verdict')} user={user} />
+        onViewSummary={() => setPhase('verdict')} user={user} criteriaCount={flat.length} />
     );
   }
 
@@ -208,7 +229,7 @@ export default function AuditWizard({ onSubmitted }) {
 
       {phase === 'walk' && (
         <WalkCard
-          cursor={cursor} steps={STEPS} closer={CLOSER}
+          flat={flat} cursor={cursor} steps={STEPS} closer={CLOSER}
           scores={scores} comments={comments} photos={photos} uploading={uploading} touched={touched}
           onScore={setScore} onComment={setComment} onFiles={handleFiles} onRemovePhoto={removePhoto}
           generalComment={generalComment} setGeneralComment={setGeneralComment}
@@ -216,17 +237,17 @@ export default function AuditWizard({ onSubmitted }) {
           onOpenRef={setRefId} onZoom={setZoomSrc} camInputs={camInputs}
         />
       )}
-      {phase === 'verdict' && <Verdict summary={summary} onExport={exportPdf} onSubmit={submit} submitting={submitting} />}
+      {phase === 'verdict' && <Verdict summary={summary} totalCriteria={flat.length} onExport={exportPdf} onSubmit={submit} submitting={submitting} />}
       {phase === 'plan' && <PlanView summary={summary} onExport={exportPdf} onSubmit={submit} submitting={submitting} />}
 
-      <RefDialog id={refId} onClose={() => setRefId(null)} />
+      <RefDialog flat={flat} id={refId} onClose={() => setRefId(null)} />
       <ZoomDialog src={zoomSrc} onClose={() => setZoomSrc(null)} />
     </div>
   );
 }
 
 /* ───────────────────────── Intro ───────────────────────── */
-function IntroForm({ meta, setMeta, onBegin, hasDraft, onViewSummary, user }) {
+function IntroForm({ meta, setMeta, onBegin, hasDraft, onViewSummary, user, criteriaCount }) {
   const set = (k) => (e) => setMeta((m) => ({ ...m, [k]: e.target.value }));
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
@@ -239,7 +260,7 @@ function IntroForm({ meta, setMeta, onBegin, hasDraft, onViewSummary, user }) {
         </div>
       </div>
       <h2 className="font-heading text-xl font-semibold mt-4">Nueva auditoría FLOS</h2>
-      <p className="text-sm text-muted-foreground mt-1 mb-5">Frenteo · Limpieza · Orden · Surtido — 16 criterios, ~15 min de recorrido.</p>
+      <p className="text-sm text-muted-foreground mt-1 mb-5">Frenteo · Limpieza · Orden · Surtido — {criteriaCount} criterios, ~15 min de recorrido.</p>
 
       {hasDraft && (
         <div className="flex items-center gap-2 rounded-xl bg-[rgba(0,165,223,0.1)] text-[#1e395e] dark:text-[#3cbef6] text-xs px-3 py-2 mb-4">
@@ -301,12 +322,12 @@ function PhaseNav({ phase, setPhase, onReset }) {
 
 /* ───────────────────── Recorrido (paso a paso) ─────────── */
 function WalkCard({
-  cursor, steps, closer, scores, comments, photos, uploading, touched,
+  flat, cursor, steps, closer, scores, comments, photos, uploading, touched,
   onScore, onComment, onFiles, onRemovePhoto,
   generalComment, setGeneralComment, onPrev, onNext, onGoto, onOpenRef, onZoom, camInputs,
 }) {
   const isCloser = cursor === closer;
-  const v = isCloser ? null : FLOS_FLAT[cursor];
+  const v = isCloser ? null : flat[cursor];
   const id = isCloser ? '__general__' : v.id;
   const Icon = isCloser ? ClipboardList : (DIM_ICON[v.dim] || AlignStartVertical);
   const val = isCloser ? null : (scores[v.id] ?? 0);
@@ -326,7 +347,7 @@ function WalkCard({
         </div>
         {/* puntitos por dimensión */}
         <div className="flex flex-wrap gap-1.5 mt-3">
-          {FLOS_FLAT.map((f, i) => (
+          {flat.map((f, i) => (
             <button key={f.id} onClick={() => onGoto(i)} title={f.name}
               className="h-2 w-2 rounded-full transition-all"
               style={{ background: i === cursor ? '#00a5df' : touched.has(f.id) ? '#1e395e' : 'var(--border)', transform: i === cursor ? 'scale(1.6)' : 'scale(1)' }} />
@@ -452,14 +473,14 @@ function ActionBar({ onExport, onSubmit, submitting }) {
   );
 }
 
-function Verdict({ summary, onExport, onSubmit, submitting }) {
+function Verdict({ summary, totalCriteria, onExport, onSubmit, submitting }) {
   const tone = flosTone(summary.pct);
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
       <div className="rounded-[18px] bg-card border shadow-card p-6 text-center mb-4">
         <p className="font-heading text-5xl font-bold" style={{ color: FLOS_TONE_COLOR[tone] }}>{summary.pct}%</p>
         <p className="text-sm font-medium mt-1" style={{ color: FLOS_TONE_COLOR[tone] }}>{summary.statusLabel}</p>
-        <p className="text-xs text-muted-foreground mt-1">{summary.totalAct} / {summary.totalMax} pts · {summary.touchedCount} de {FLOS_FLAT.length} criterios evaluados</p>
+        <p className="text-xs text-muted-foreground mt-1">{summary.totalAct} / {summary.totalMax} pts · {summary.touchedCount} de {totalCriteria} criterios evaluados</p>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
@@ -534,8 +555,8 @@ function PlanView({ summary, onExport, onSubmit, submitting }) {
 }
 
 /* ─────────────────── Diálogos: referencia / zoom ───────── */
-function RefDialog({ id, onClose }) {
-  const v = id ? FLOS_FLAT.find((f) => f.id === id) : null;
+function RefDialog({ flat, id, onClose }) {
+  const v = id ? flat.find((f) => f.id === id) : null;
   return (
     <Dialog open={!!id} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-[480px] rounded-[22px]">

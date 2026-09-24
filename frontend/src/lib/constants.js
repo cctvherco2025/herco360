@@ -162,6 +162,17 @@ export function canEditRutinaSchema(user) {
   return !!(user.module_access || {}).rutina_schema;
 }
 
+// Editar el esquema (criterios/puntajes/acciones) de la auditoría FLOS:
+// mismo patrón que canEditRutinaSchema — permiso independiente y asignable
+// desde Organigrama, no se infiere de canAccessFlos.
+export function canEditFlosSchema(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const cargo = (user.position || '').trim();
+  if (cargo === 'Director comercial') return true;
+  return !!(user.module_access || {}).formulario_schema;
+}
+
 // Quién puede crear/publicar "Promociones del mes" (mismo grupo que FLOS).
 export function canManagePromos(user) {
   return canAccessFlos(user);

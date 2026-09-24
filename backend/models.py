@@ -248,3 +248,21 @@ class RutinaSchemaSection(BaseModel):
 class RutinaSchemaUpdate(BaseModel):
     secciones: List[RutinaSchemaSection]
 
+
+# ---- Formulario (auditoría FLOS) — esquema editable (dimensiones/criterios) ----
+class FlosSchemaVariable(BaseModel):
+    id: Optional[str] = None  # el backend asigna uno si falta
+    name: str
+    desc: Optional[str] = ''
+    action: Optional[str] = ''  # texto de la acción correctiva (Plan de acción)
+    max: int = 0  # puntaje máximo del criterio (0..max, entero, sin opciones)
+
+
+class FlosSchemaDimension(BaseModel):
+    dimension: str
+    variables: List[FlosSchemaVariable]
+
+
+class FlosSchemaUpdate(BaseModel):
+    dimensiones: List[FlosSchemaDimension]
+
