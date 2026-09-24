@@ -1,13 +1,10 @@
-// Esquema de "Rutina Operativa — Gerentes", portado de
-// "Esquema de calificación rutina operativa gerentes.xlsx" (hoja única).
-// Cada pregunta puntuable trae sus opciones con el puntaje exacto de cada una
-// (columna "Desgloce" de la hoja); el máximo del ítem es el mayor puntaje de
-// sus propias opciones — no la columna "Peso" (que en la hoja tiene un error
-// de captura en "Reunión 1:1": dice 11 pero sus opciones llegan a 16. Usando
-// el máximo real de las opciones, el total de los 13 ítems da exactamente
-// 100 puntos, así que las opciones son la fuente de verdad, no "Peso").
+// Esquema de "Rutina Operativa — Gerentes", validado contra el formulario
+// vigente en DataScope ("Rutina Operativa Gerentes de Tienda"). Cada pregunta
+// puntuable trae sus opciones con el puntaje exacto de cada una; el máximo
+// del ítem es el mayor puntaje de sus propias opciones. Los 14 ítems
+// puntuables suman exactamente 100 puntos.
 // Algunas preguntas llevan además un sub-ítem de evidencia (foto y/o nota),
-// sin puntaje propio — igual que el desglose de la hoja original.
+// sin puntaje propio — igual que en DataScope.
 
 export const RUTINA_SUCURSALES = ['Panamericana', 'Centro', 'San Lorenzo', 'Juticalpa', 'Champagnat'];
 
@@ -32,6 +29,13 @@ export const RUTINA_SCHEMA = [
         pregunta: '¿Ejecutó la Evaluación FLOS?',
         opciones: [{ label: 'Sí', pts: 7 }, { label: 'No', pts: 0 }],
         evidencia: { tipo: 'foto', prompt: 'Adjunte captura de Chat de FLOS' },
+      },
+      {
+        id: 'recorrido_categorias',
+        titulo: 'Recorrido de Categorías',
+        pregunta: 'Seleccione su respuesta',
+        opciones: [{ label: 'Sí', pts: 5 }, { label: 'No', pts: 0 }],
+        evidencia: { tipo: 'foto', prompt: 'Adjunte evidencia del recorrido por categorías (opcional)' },
       },
     ],
   },
@@ -106,8 +110,8 @@ export const RUTINA_SCHEMA = [
         titulo: 'Tiempos de Bodega',
         pregunta: 'Retroalimente el porcentaje de Tiempos de sacado',
         opciones: [
-          { label: 'Mayor que 98%', pts: 10 },
-          { label: 'Entre 95% y 98%', pts: 5 },
+          { label: 'Mayor que 98%', pts: 5 },
+          { label: 'Entre 95% y 98%', pts: 2 },
           { label: 'Menor que 95%', pts: 0 },
         ],
         evidencia: { tipo: 'foto', prompt: 'Adjunte evidencia (opcional)' },
@@ -144,8 +148,12 @@ export const RUTINA_SCHEMA = [
       {
         id: 'limpieza_general',
         titulo: 'Limpieza general de Tienda',
-        pregunta: '¿Se revisaron todas las áreas de la tienda durante el mes?',
-        opciones: [{ label: 'Sí', pts: 5 }, { label: 'No', pts: 0 }],
+        pregunta: 'Seleccione las áreas revisadas durante el mes',
+        opciones: [
+          { label: 'Se ejecutó en su totalidad', pts: 10 },
+          { label: 'La limpieza es parcial', pts: 6 },
+          { label: 'No hubo limpieza', pts: 0 },
+        ],
         evidencia: { tipo: 'foto', prompt: 'Adjunte evidencia (opcional)' },
       },
     ],
