@@ -64,7 +64,11 @@ async function exportResponsePdf(formId, formTitulo, hasScoring, respId, cached)
     ...e, scored: e.max > 0, photos: (e.photos || []).map((p) => ({ dataUrl: photoMap[p.id] })).filter((p) => p.dataUrl),
   }));
   await generateCustomFormPdf({
-    formTitulo, meta: { respondent: respDoc.respondent_name, fecha: (respDoc.created_at || '').slice(0, 10) },
+    formTitulo,
+    meta: {
+      respondent: respDoc.respondent_name, fecha: (respDoc.created_at || '').slice(0, 10),
+      sucursal: respDoc.sucursal, socializo: respDoc.socializo,
+    },
     rows, hasScoring, totalScore: respDoc.total_score, totalMax: respDoc.total_max,
   });
 }
@@ -111,6 +115,22 @@ function DetailDialog({ formId, formTitulo, hasScoring, id, onClose }) {
             </div>
             {hasScoring && resp.total_max > 0 && (
               <p className="text-sm font-semibold">{resp.total_score}/{resp.total_max} pts ({resp.percent}%)</p>
+            )}
+            {resp.sucursal && (
+              <div className="rounded-xl border p-3 space-y-1.5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Datos Generales</p>
+                <p className="text-sm">Sucursal: <span className="font-medium">{resp.sucursal}</span></p>
+                <p className="text-sm">Socializó las promociones: <span className="font-medium">{resp.socializo ? 'Sí' : 'No'}</span></p>
+                {resp.general_photos?.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-1.5">
+                    {resp.general_photos.map((p) => (
+                      <AuthedImg key={p.id} url={`/formularios-custom/${formId}/respuestas/${resp.id}/foto/${p.id}`}
+                        className="h-16 w-16 rounded-lg object-cover border cursor-pointer"
+                        onClick={() => setZoom(`/formularios-custom/${formId}/respuestas/${resp.id}/foto/${p.id}`)} />
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             <div className="space-y-2">
               {resp.entries.map((e) => (

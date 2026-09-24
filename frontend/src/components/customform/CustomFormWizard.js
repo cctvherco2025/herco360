@@ -10,10 +10,14 @@ import { compressImage } from '@/lib/flosPhoto';
 import { generateCustomFormPdf } from '@/lib/customFormPdf';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 
 const MAX_PHOTOS_PER_ITEM = 8;
+const GENERAL_PHOTO_OWNER = '_general';
 
 function tone(pct) { return pct >= 90 ? 'g' : pct >= 75 ? 'a' : 'r'; }
 const TONE_COLOR = { g: '#16a34a', a: '#ec9032', r: '#dc2626' };
@@ -27,6 +31,7 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
   const { user } = useAuth();
   const items = schema.items;
   const STEPS = items.length;
+  const isPromo = schema.kind === 'promociones';
 
   const [phase, setPhase] = useState('intro'); // intro | walk | resumen
   const [choice, setChoice] = useState({}); // id -> idx (opcion_unica) | idx[] (checklist)
@@ -39,6 +44,31 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
   const [zoomSrc, setZoomSrc] = useState(null);
   const [hasDraft, setHasDraft] = useState(false);
   const camInputs = useRef({});
+
+  // "Datos Generales" — solo Promociones del mes: sucursal que se reporta,
+  // si se socializó con el equipo, y una foto general de evidencia.
+  const [promoSucursales, setPromoSucursales] = useState([]);
+  const [sucursal, setSucursal] = useState('');
+  const [socializo, setSocializo] = useState(false);
+  const [generalPhoto, setGeneralPhoto] = useState(null);
+  const [generalUploading, setGeneralUploading] = useState(false);
+  const generalPhotoInput = useRef(null);
+
+  useEffect(() => {
+    if (!isPromo) return;
+    api.get('/formularios-custom/promociones/meta').then(({ data }) => setPromoSucursales(data.sucursales || [])).catch(() => {});
+  }, [isPromo]);
+
+  const pickGeneralPhoto = async (fileList) => {
+    const file = fileList?.[0];
+    if (!file) return;
+    setGeneralUploading(true);
+    try {
+      const { blob, dataUrl } = await compressImage(file);
+      setGeneralPhoto({ localId: `${Date.now()}-${Math.random()}`, blob, dataUrl, name: file.name });
+    } catch (e) { toast.error('No se pudo procesar la foto'); }
+    finally { setGeneralUploading(false); }
+  };
 
   useEffect(() => {
     const d = loadDraft(schema.id);
@@ -134,7 +164,11 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
   const exportPdf = async () => {
     try {
       await generateCustomFormPdf({
-        formTitulo: schema.titulo, meta: { respondent: user?.name, fecha: new Date().toLocaleDateString('es-HN') },
+        formTitulo: schema.titulo,
+        meta: {
+          respondent: user?.name, fecha: new Date().toLocaleDateString('es-HN'),
+          ...(isPromo ? { sucursal, socializo } : {}),
+        },
         rows: buildRows(), hasScoring: schema.has_scoring, totalScore: summary.totalAct, totalMax: summary.totalMax,
       });
     } catch (e) { toast.error('No se pudo generar el PDF'); }
@@ -150,18 +184,28 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
         score: itemScore(it), note: (notes[it.id] || '').trim(),
       }));
       const fd = new FormData();
-      fd.append('data', JSON.stringify({ entries }));
+      fd.append('data', JSON.stringify({ entries, ...(isPromo ? { sucursal, socializo } : {}) }));
       Object.entries(photos).forEach(([id, list]) => {
         list.forEach((p) => { fd.append('photos', p.blob, p.name || `${id}.jpg`); fd.append('photo_owner', id); });
       });
+      if (isPromo && generalPhoto) {
+        fd.append('photos', generalPhoto.blob, generalPhoto.name || 'general.jpg');
+        fd.append('photo_owner', GENERAL_PHOTO_OWNER);
+      }
       await api.post(`/formularios-custom/${schema.id}/respuestas`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Respuesta enviada correctamente');
       clearDraft();
       setChoice({}); setNotes({}); setTouched(new Set()); setPhotos({}); setCursor(0); setPhase('intro'); setHasDraft(false);
+      setSucursal(''); setSocializo(false); setGeneralPhoto(null);
       onSubmitted?.();
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'No se pudo enviar la respuesta');
     } finally { setSubmitting(false); }
+  };
+
+  const beginWalk = () => {
+    if (isPromo && !sucursal) { toast.error('Selecciona la sucursal que estás reportando'); return; }
+    setPhase('walk');
   };
 
   if (STEPS === 0) return <p className="text-sm text-muted-foreground text-center py-10">Este formulario no tiene preguntas.</p>;
@@ -184,7 +228,43 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
           </div>
         )}
 
-        <Button onClick={() => setPhase('walk')} className="w-full h-11 rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="customform-begin-button">
+        {isPromo && (
+          <div className="space-y-4 mb-5 pb-5 border-b">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Datos Generales</p>
+            <div className="space-y-1.5">
+              <Label>Sucursal</Label>
+              <Select value={sucursal} onValueChange={setSucursal}>
+                <SelectTrigger className="h-11" data-testid="promo-resp-sucursal-select"><SelectValue placeholder="Selecciona…" /></SelectTrigger>
+                <SelectContent>{promoSucursales.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center justify-between rounded-xl border px-3.5 py-2.5">
+              <span className="text-sm">¿Socializó las promociones?</span>
+              <Switch checked={socializo} onCheckedChange={setSocializo} data-testid="promo-resp-socializo-switch" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Fotografía (opcional)</Label>
+              <input ref={generalPhotoInput} type="file" accept="image/*" className="hidden"
+                onChange={(e) => { pickGeneralPhoto(e.target.files); e.target.value = ''; }} />
+              {generalPhoto ? (
+                <div className="relative h-20 w-20 rounded-lg overflow-hidden border">
+                  <img src={generalPhoto.dataUrl} alt="Evidencia" className="h-full w-full object-cover" />
+                  <button onClick={() => setGeneralPhoto(null)} aria-label="Quitar foto"
+                    className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/65 text-white grid place-items-center text-xs">
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : (
+                <Button type="button" variant="outline" size="sm" className="rounded-xl" disabled={generalUploading}
+                  onClick={() => generalPhotoInput.current?.click()} data-testid="promo-resp-general-photo-button">
+                  <Upload className="h-4 w-4 mr-1.5" /> {generalUploading ? 'Procesando…' : 'Subir foto'}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        <Button onClick={beginWalk} className="w-full h-11 rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="customform-begin-button">
           {hasDraft ? 'Continuar' : 'Comenzar'} <ChevronRight className="h-4 w-4 ml-1" />
         </Button>
       </motion.div>

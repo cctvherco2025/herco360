@@ -150,13 +150,54 @@ export function canFillRutina(user) {
   return cargo === 'Director comercial' || cargo === 'Gerente';
 }
 
-// "Haz tu form personalizado": puede crear formularios propios cualquiera que
-// ya tenga acceso a alguna evaluación del módulo (FLOS o Rutina Operativa).
-export function canUseFormularioModule(user) {
-  return canAccessFlos(user) || canAccessRutina(user);
-}
-
 // Quién puede crear/publicar "Promociones del mes" (mismo grupo que FLOS).
 export function canManagePromos(user) {
   return canAccessFlos(user);
+}
+
+// ---- Formularios: permisos independientes del menú padre "Formulario" ----
+// formularios.principal: pantalla /formularios (Hub) y su listado de
+// formularios personalizados. formularios.promocionesMes: tarjeta/pantalla
+// "Promociones del mes". formularios.crearPersonalizado: botón "Haz tu form
+// personalizado". Los tres tienen override manual con prioridad absoluta
+// sobre cualquier default de rol (se consulta primero; si existe, ni se
+// evalúa el default) — un cambio de rol futuro nunca revive ni apaga un
+// permiso ya tocado a mano desde Organigrama.
+//
+// formularios.principal es el único con default "heredado": si nunca se ha
+// tocado el override, arranca habilitado para quien por rol ya tiene FLOS o
+// Rutina Operativa (para que un Gerente nuevo no dependa de que un admin le
+// active el Hub a mano). formularios.crearPersonalizado NO hereda de nada —
+// es una capacidad extra que un admin debe habilitar expresamente.
+export function canAccessFormulariosPrincipal(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const cargo = (user.position || '').trim();
+  if (cargo === 'Director comercial') return true;
+  const ov = (user.module_access || {}).formularios_principal;
+  if (ov !== undefined && ov !== null) return !!ov;
+  return canAccessFlos(user) || canAccessRutina(user);
+}
+
+// formularios.promocionesMes: tarjeta y pantalla "Promociones del mes".
+// Este sí mantiene su default histórico (visible para cualquier usuario
+// logueado) porque nunca dependió de FLOS/Rutina — no hay riesgo de
+// derivación cruzada al mantenerlo así.
+export function canAccessPromocionesMes(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const cargo = (user.position || '').trim();
+  if (cargo === 'Director comercial') return true;
+  const ov = (user.module_access || {}).promociones_mes;
+  if (ov !== undefined && ov !== null) return !!ov;
+  return true; // históricamente visible para cualquier usuario logueado
+}
+
+// formularios.crearPersonalizado: botón "Haz tu form personalizado".
+export function canCreateCustomFormulario(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const cargo = (user.position || '').trim();
+  if (cargo === 'Director comercial') return true;
+  return !!(user.module_access || {}).formularios_custom;
 }

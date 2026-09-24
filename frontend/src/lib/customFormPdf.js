@@ -86,15 +86,18 @@ export async function generateCustomFormPdf({ formTitulo, meta, rows, hasScoring
 
   const fieldW = (PAGE_W - MARGIN * 2 - 16) / 2;
   const fields = [['Respondido por', meta.respondent], ['Fecha', meta.fecha]];
+  if (meta.sucursal) fields.push(['Sucursal', meta.sucursal]);
+  if (meta.socializo !== undefined && meta.socializo !== null) fields.push(['Socializó promociones', meta.socializo ? 'Sí' : 'No']);
   fields.forEach(([label, value], i) => {
-    const x = MARGIN + i * (fieldW + 16);
-    doc.setFillColor(246, 248, 251); doc.roundedRect(x, y, fieldW, 42, 8, 8, 'F');
+    const col = i % 2, row = Math.floor(i / 2);
+    const x = MARGIN + col * (fieldW + 16), rowY = y + row * 50;
+    doc.setFillColor(246, 248, 251); doc.roundedRect(x, rowY, fieldW, 42, 8, 8, 'F');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(140, 148, 160);
-    doc.text(label.toUpperCase(), x + 10, y + 16);
+    doc.text(label.toUpperCase(), x + 10, rowY + 16);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(...hexToRgb(NAVY));
-    doc.text(String(value || '—'), x + 10, y + 32, { maxWidth: fieldW - 16 });
+    doc.text(String(value || '—'), x + 10, rowY + 32, { maxWidth: fieldW - 16 });
   });
-  y += 60;
+  y += Math.ceil(fields.length / 2) * 50 + 10;
 
   if (hasScoring) {
     const pct = totalMax ? Math.round((totalScore / totalMax) * 100) : 0;

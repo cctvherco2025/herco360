@@ -28,7 +28,9 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 
 from fastapi.responses import Response, StreamingResponse
 
-from core import db, get_current_user, serialize_doc, new_id, now_iso, can_use_formulario_module, can_manage_promos, require_promo_access
+from core import (db, get_current_user, serialize_doc, new_id, now_iso, can_manage_promos,
+                  require_promo_access, can_create_custom_formulario, require_formularios_principal_access,
+                  require_promociones_mes_access)
 from models import CustomFormInput
 import storage
 
@@ -40,12 +42,17 @@ MAX_PHOTO_SIZE = 8 * 1024 * 1024  # 8 MB por foto
 MAX_ITEMS = 60
 MAX_EXCEL_ROWS = 500
 
+# Sucursales para el paso "Datos Generales" de Promociones del mes (propia del
+# módulo — no confundir con las de Inventario/Reportes ni las de FLOS/Rutina).
+PROMO_SUCURSALES = ['Herco Max', 'Herco Centro', 'Herco SL', 'Herco JT']
+GENERAL_PHOTO_OWNER = '_general'  # sentinel: la foto no pertenece a un ítem sino al paso "Datos Generales"
+
 _MAIN_COL_KEYWORDS = ('promocion', 'promoción', 'producto', 'articulo', 'artículo', 'descripcion', 'descripción', 'nombre')
 
 
 async def require_builder_access(user=Depends(get_current_user)):
-    if not can_use_formulario_module(user):
-        raise HTTPException(status_code=403, detail='No tienes acceso al módulo Formulario')
+    if not can_create_custom_formulario(user):
+        raise HTTPException(status_code=403, detail='No tienes permiso para crear formularios personalizados')
     return user
 
 
@@ -144,6 +151,13 @@ def _guess_main_column(headers: list, rows: list) -> Optional[str]:
         if non_empty and text_like / non_empty > 0.7:
             return h
     return headers[0] if headers else None
+
+
+@router.get('/promociones/meta')
+async def promo_meta(user=Depends(require_promociones_mes_access)):
+    """Config del paso "Datos Generales" al responder una publicación de
+    Promociones del mes (sucursal a reportar)."""
+    return {'sucursales': PROMO_SUCURSALES}
 
 
 # --------------------------------------------------------------------------- #
@@ -358,9 +372,14 @@ async def create_form(data: CustomFormInput, user=Depends(require_builder_access
 async def list_available(kind: Optional[str] = None, user=Depends(get_current_user)):
     """Formularios que el usuario puede responder (audiencia) o que él mismo creó.
 
-    Por defecto solo trae los 'generic' (form builder libre) — los 'promociones'
-    tienen su propia tarjeta fija en el Hub, no la lista de "Formularios
-    personalizados". Pasa kind=promociones para pedir justo esos."""
+    Por defecto solo trae los 'generic' (form builder libre), listado que vive
+    dentro de /formularios (formularios.principal) — los 'promociones' tienen
+    su propia tarjeta fija en el Hub y su propio permiso
+    (formularios.promocionesMes). Pasa kind=promociones para pedir justo esos."""
+    if kind == 'promociones':
+        await require_promociones_mes_access(user)
+    else:
+        await require_formularios_principal_access(user)
     forms = await db.custom_forms.find({}, {'_id': 0}).sort('created_at', -1).to_list(500)
     out = []
     for f in forms:
@@ -475,6 +494,19 @@ async def submit_response(
     if not entries_in:
         raise HTTPException(status_code=400, detail='La respuesta no tiene preguntas contestadas')
 
+    # "Datos Generales" — solo aplica a Promociones del mes (sucursal que se
+    # está reportando + si se socializó con el equipo). No es la sucursal del
+    # perfil del usuario: quien responde la elige, porque puede reportar por
+    # una tienda distinta a la suya.
+    is_promo = (form.get('kind') or 'generic') == 'promociones'
+    sucursal_reportada = (payload.get('sucursal') or '').strip()
+    socializo = payload.get('socializo')
+    if is_promo:
+        if sucursal_reportada not in PROMO_SUCURSALES:
+            raise HTTPException(status_code=400, detail='Selecciona la sucursal que estás reportando')
+        if not isinstance(socializo, bool):
+            raise HTTPException(status_code=400, detail='Indica si se socializaron las promociones')
+
     items_by_id = {it['id']: it for it in form['items']}
     clean_entries = []
     total_score, total_max = 0, 0
@@ -500,6 +532,7 @@ async def submit_response(
 
     resp_id = new_id()
     entries_by_id = {e['id']: e for e in clean_entries}
+    general_photos = []
     for f, owner in zip(photos, photo_owner):
         content = await f.read()
         if not content:
@@ -516,8 +549,11 @@ async def submit_response(
         except Exception as ex:
             logger.error(f'photo upload failed: {ex}')
             raise HTTPException(status_code=502, detail='No se pudo subir una de las fotos')
-        if owner in entries_by_id:
-            entries_by_id[owner]['photos'].append({'id': photo_id, 'path': path, 'content_type': ctype})
+        photo_doc = {'id': photo_id, 'path': path, 'content_type': ctype}
+        if owner == GENERAL_PHOTO_OWNER:
+            general_photos.append(photo_doc)
+        elif owner in entries_by_id:
+            entries_by_id[owner]['photos'].append(photo_doc)
 
     pct = round(total_score / total_max * 100) if total_max else None
     doc = {
@@ -525,6 +561,9 @@ async def submit_response(
         'form_kind': form.get('kind') or 'generic', 'periodo': form.get('periodo'),
         'respondent_id': user['id'], 'respondent_name': user['name'], 'respondent_avatar': user.get('avatar_url'),
         'respondent_sucursal': user.get('sucursal') or '', 'respondent_position': user.get('position') or '',
+        'sucursal': sucursal_reportada if is_promo else None,
+        'socializo': socializo if is_promo else None,
+        'general_photos': general_photos,
         'entries': clean_entries,
         'total_score': total_score, 'total_max': total_max, 'percent': pct,
         'created_at': now_iso(),
@@ -691,10 +730,14 @@ async def get_response_photo(form_id: str, resp_id: str, photo_id: str, user=Dep
     if not (_sees_all_responses(user, form) or row['respondent_id'] == user['id']):
         raise HTTPException(status_code=403, detail='No tienes acceso a esta respuesta')
     photo = None
-    for e in row.get('entries', []):
-        for p in e.get('photos', []):
-            if p['id'] == photo_id:
-                photo = p
+    for p in row.get('general_photos', []):
+        if p['id'] == photo_id:
+            photo = p
+    if not photo:
+        for e in row.get('entries', []):
+            for p in e.get('photos', []):
+                if p['id'] == photo_id:
+                    photo = p
     if not photo:
         raise HTTPException(status_code=404, detail='Foto no encontrada')
     try:

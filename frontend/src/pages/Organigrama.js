@@ -156,8 +156,11 @@ function AccessManager() {
     { key: 'inventario', label: 'Inventario', color: C.navy },
     { key: 'reportes', label: 'Reportes', color: C.cyan },
     { key: 'cams', label: 'Reportes CAMS', color: C.green },
-    { key: 'formulario', label: 'Formulario', color: C.purple },
+    { key: 'formularios_principal', label: 'Formularios (principal)', color: C.navy },
+    { key: 'formulario', label: 'Evaluación FLOS', color: C.purple },
     { key: 'rutina', label: 'Rutina Operativa', color: C.orange },
+    { key: 'promociones_mes', label: 'Promociones del mes', color: C.green },
+    { key: 'formularios_custom', label: 'Crear form personalizado', color: C.cyan },
   ];
 
   return (
@@ -169,7 +172,7 @@ function AccessManager() {
             <h2 className="font-heading text-lg font-semibold text-foreground flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4" style={{ color: C.orange }} /> Gestión de accesos a módulos
             </h2>
-            <p className="text-[12px] text-muted-foreground">Da o quita acceso a Inventario, Reportes, Reportes CAMS, Formulario y Rutina Operativa por usuario.</p>
+            <p className="text-[12px] text-muted-foreground">Da o quita acceso a Inventario, Reportes, Reportes CAMS y a cada permiso del módulo Formularios (principal, Evaluación FLOS, Rutina Operativa, Promociones del mes, Crear personalizado) por usuario.</p>
           </div>
         </div>
         <div className="relative w-full sm:w-72">

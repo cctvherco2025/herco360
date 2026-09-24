@@ -2,13 +2,13 @@ import React from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { ClipboardEdit } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { canUseFormularioModule } from '@/lib/constants';
+import { canCreateCustomFormulario } from '@/lib/constants';
 import FormBuilder from '@/components/customform/FormBuilder';
 
 export default function CustomFormBuilderPage() {
   const { user } = useAuth();
   const { id } = useParams();
-  if (!canUseFormularioModule(user)) return <Navigate to="/formularios" replace />;
+  if (!canCreateCustomFormulario(user)) return <Navigate to="/formularios" replace />;
 
   return (
     <div className="max-w-[1000px] mx-auto pt-2">

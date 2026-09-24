@@ -3,7 +3,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from core import (db, get_current_user, require_admin, serialize_doc, now_iso,
                   hash_password, new_id, require_access_manager, GATED_MODULES,
                   can_access_inventory, can_access_reports, can_access_cams, can_access_formulario,
-                  can_access_rutina)
+                  can_access_rutina, can_access_formularios_principal, can_access_promociones_mes,
+                  can_create_custom_formulario)
 from models import ProfileUpdate, RoleUpdate, AdminUserCreate, AdminUserUpdate, ModuleAccessUpdate
 from notifications import create_notification, log_activity
 
@@ -35,6 +36,9 @@ def _effective_access(u):
         'inventario': can_access_inventory(u), 'reportes': can_access_reports(u),
         'cams': can_access_cams(u), 'formulario': can_access_formulario(u),
         'rutina': can_access_rutina(u),
+        'formularios_principal': can_access_formularios_principal(u),
+        'promociones_mes': can_access_promociones_mes(u),
+        'formularios_custom': can_create_custom_formulario(u),
     }
 
 

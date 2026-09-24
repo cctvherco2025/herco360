@@ -1,22 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { ClipboardCheck, ClipboardList, FileText, ChevronRight, Plus, Users, Building2, User as UserIcon, Percent } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { canAccessFlos, canAccessRutina, canUseFormularioModule } from '@/lib/constants';
+import { canAccessFlos, canAccessRutina, canAccessFormulariosPrincipal, canAccessPromocionesMes, canCreateCustomFormulario } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 
 // Evaluaciones fijas del sistema. Cuando se sume otra igual de "oficial" se
 // agrega aquí; los formularios que arma cada usuario ("Haz tu form
 // personalizado") no están hardcodeados — se cargan desde el backend.
-// Promociones del mes siempre se muestra: a quién le toca responder o ver
-// resultados lo decide la audiencia de cada publicación, no un cargo fijo.
+// Cada tarjeta valida su propio permiso independiente (formularios.*):
+// tener acceso al Hub no implica ver todas las evaluaciones.
 const BUILT_IN = [
   { to: '/formulario', label: 'Evaluación FLOS', desc: 'Frenteo · Limpieza · Orden · Surtido', icon: ClipboardCheck, color: '#00a5df', access: canAccessFlos },
   { to: '/rutina-operativa', label: 'Rutina Operativa', desc: 'Evaluación mensual de gestión — Gerentes', icon: ClipboardList, color: '#ec9032', access: canAccessRutina },
-  { to: '/formularios/promociones', label: 'Promociones del mes', desc: 'Seguimiento a la disponibilidad y correcta exhibición de promociones en tienda', icon: Percent, color: '#16a34a', access: () => true },
+  { to: '/formularios/promociones', label: 'Promociones del mes', desc: 'Seguimiento a la disponibilidad y correcta exhibición de promociones en tienda', icon: Percent, color: '#16a34a', access: canAccessPromocionesMes },
 ];
 
 // Audiencia por listas: puede combinar todos/áreas/cargos/usuarios a la vez;
@@ -43,16 +43,21 @@ export default function FormulariosHub() {
   const [customForms, setCustomForms] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const hasAccess = canAccessFormulariosPrincipal(user);
+
   const load = useCallback(async () => {
+    if (!hasAccess) return;
     setLoading(true);
     try { const { data } = await api.get('/formularios-custom/disponibles'); setCustomForms(data); }
     catch (e) { toast.error('No se pudieron cargar los formularios personalizados'); }
     finally { setLoading(false); }
-  }, []);
+  }, [hasAccess]);
   useEffect(() => { load(); }, [load]);
 
+  if (!hasAccess) return <Navigate to="/" replace />;
+
   const builtIn = BUILT_IN.filter((e) => e.access(user));
-  const canBuild = canUseFormularioModule(user);
+  const canBuild = canCreateCustomFormulario(user);
 
   return (
     <div className="max-w-[1000px] mx-auto pt-2">

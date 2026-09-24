@@ -2,12 +2,12 @@ import React from 'react';
 import { Navigate, Link } from 'react-router-dom';
 import { Percent, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { canManagePromos } from '@/lib/constants';
+import { canManagePromos, canAccessPromocionesMes } from '@/lib/constants';
 import PromoPublishWizard from '@/components/promociones/PromoPublishWizard';
 
 export default function PromoPublishWizardPage() {
   const { user } = useAuth();
-  if (!canManagePromos(user)) return <Navigate to="/formularios/promociones" replace />;
+  if (!canAccessPromocionesMes(user) || !canManagePromos(user)) return <Navigate to="/formularios/promociones" replace />;
 
   return (
     <div className="max-w-[1000px] mx-auto pt-2">

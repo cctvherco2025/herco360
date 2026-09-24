@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { Percent, ArrowLeft, Plus, ChevronRight, Calendar, Users as UsersIcon } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { canManagePromos } from '@/lib/constants';
+import { canManagePromos, canAccessPromocionesMes } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -25,16 +25,20 @@ export default function PromocionesHome() {
   const { user } = useAuth();
   const [forms, setForms] = useState([]);
   const [loading, setLoading] = useState(true);
+  const hasAccess = canAccessPromocionesMes(user);
 
   const load = useCallback(async () => {
+    if (!hasAccess) return;
     setLoading(true);
     try {
       const { data } = await api.get('/formularios-custom/disponibles?kind=promociones');
       setForms(data);
     } catch (e) { toast.error('No se pudieron cargar las Promociones del mes'); }
     finally { setLoading(false); }
-  }, []);
+  }, [hasAccess]);
   useEffect(() => { load(); }, [load]);
+
+  if (!hasAccess) return <Navigate to="/" replace />;
 
   const canCreate = canManagePromos(user);
 

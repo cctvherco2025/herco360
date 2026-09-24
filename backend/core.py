@@ -135,7 +135,10 @@ USER_PUBLIC_FIELDS = {'_id': 0, 'password_hash': 0}
 # ---- Inventory module access control ----
 # Allowed: Tienda staff, store managers, Jefe ECCP, Operación manager, Director comercial, admins.
 # Per-user overrides (user['module_access']) can grant/revoke access manually.
-GATED_MODULES = ('inventario', 'reportes', 'cams', 'formulario', 'rutina')
+GATED_MODULES = (
+    'inventario', 'reportes', 'cams', 'formulario', 'rutina',
+    'formularios_principal', 'promociones_mes', 'formularios_custom',
+)
 
 
 def _module_override(user, module):
@@ -280,16 +283,78 @@ def can_manage_promos(user) -> bool:
     return can_access_formulario(user)
 
 
+# ---- Formularios: permisos independientes del menú padre "Formulario" ----
+# formularios.principal -> pantalla /formularios (Hub) y su listado de
+# formularios personalizados. formularios.promocionesMes -> tarjeta/pantalla
+# "Promociones del mes". formularios.crearPersonalizado -> botón "Haz tu form
+# personalizado". Los tres tienen override manual con prioridad absoluta sobre
+# cualquier default de rol (se consulta primero; si existe, ni se evalúa el
+# default) — así un admin puede otorgar o revocar cada uno sin que un cambio
+# de rol futuro lo reactive/desactive solo.
+#
+# formularios.principal es el único con default "heredado": si nunca se ha
+# tocado el override, arranca habilitado para quien por rol ya tiene FLOS o
+# Rutina Operativa (para que un Gerente nuevo no dependa de que un admin le
+# active el Hub a mano). formularios.crearPersonalizado NO hereda de nada —
+# es una capacidad extra que un admin debe habilitar expresamente.
+def can_access_formularios_principal(user) -> bool:
+    if not user:
+        return False
+    if user.get('role') == 'admin':
+        return True
+    cargo = (user.get('position') or '').strip()
+    if cargo == 'Director comercial':
+        return True
+    ov = _module_override(user, 'formularios_principal')
+    if ov is not None:
+        return bool(ov)
+    return can_access_formulario(user) or can_access_rutina(user)
+
+
+async def require_formularios_principal_access(user=Depends(get_current_user)):
+    if not can_access_formularios_principal(user):
+        raise HTTPException(status_code=403, detail='No tienes acceso al módulo Formularios')
+    return user
+
+
+def can_access_promociones_mes(user) -> bool:
+    if not user:
+        return False
+    if user.get('role') == 'admin':
+        return True
+    cargo = (user.get('position') or '').strip()
+    if cargo == 'Director comercial':
+        return True
+    ov = _module_override(user, 'promociones_mes')
+    if ov is not None:
+        return bool(ov)
+    return True  # históricamente visible para cualquier usuario logueado
+
+
+async def require_promociones_mes_access(user=Depends(get_current_user)):
+    if not can_access_promociones_mes(user):
+        raise HTTPException(status_code=403, detail='No tienes acceso a Promociones del mes')
+    return user
+
+
 async def require_promo_access(user=Depends(get_current_user)):
-    if not can_manage_promos(user):
+    if not (can_access_promociones_mes(user) and can_manage_promos(user)):
         raise HTTPException(status_code=403, detail='No tienes permiso para administrar Promociones del mes')
     return user
 
 
-def can_use_formulario_module(user) -> bool:
-    """Puede crear formularios personalizados: cualquiera que ya tenga acceso
-    a alguna evaluación del módulo Formulario (FLOS o Rutina Operativa)."""
-    return can_access_formulario(user) or can_access_rutina(user)
+def can_create_custom_formulario(user) -> bool:
+    """formularios.crearPersonalizado — botón "Haz tu form personalizado".
+    Permiso independiente: no se infiere de FLOS/Rutina, solo override
+    manual (admin/Director comercial exceptuados)."""
+    if not user:
+        return False
+    if user.get('role') == 'admin':
+        return True
+    cargo = (user.get('position') or '').strip()
+    if cargo == 'Director comercial':
+        return True
+    return bool(_module_override(user, 'formularios_custom'))
 
 
 def can_fill_rutina(user) -> bool:
