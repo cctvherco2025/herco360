@@ -1,11 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import {
   UploadCloud, FileSpreadsheet, X, ChevronLeft, ChevronRight, ListChecks,
   Trash2, Plus, ArrowUp, ArrowDown, Check, Users as UsersIcon, Building2,
-  Briefcase, Rocket, Loader2, FileDown,
+  Briefcase, Rocket, Loader2, FileDown, Layers,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { AREAS, CARGOS } from '@/lib/constants';
@@ -18,12 +18,107 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { periodoLabel } from '@/pages/PromocionesHome';
 
-const STEP_LABELS = ['Cargar Excel', 'Detectar columnas', 'Generar preguntas', 'Configurar', 'Publicar'];
+const STEP_LABELS = ['Cargar Excel', 'Detectar columnas', 'Categorizar', 'Configurar', 'Publicar'];
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const OPCIONES_BASE = [{ label: 'Sí' }, { label: 'No' }, { label: 'No aplica' }];
 const newItemId = () => `${Date.now()}-${Math.random()}`;
+
+// Respaldo si /promociones/meta no responde; la lista oficial vive en el backend.
+const CATEGORIAS_DEFAULT = ['Herramientas', 'Hogar', 'Ferretería', 'Iluminación', 'Pinturas', 'Revestimiento'];
+const SIN_CATEGORIA = '__none';
+// De dónde salió la categoría de cada línea (se muestra junto a la línea para
+// saber cuáles conviene revisar: las "sugeridas" nunca las confirmó nadie).
+const ORIGEN_LABEL = { excel: 'del Excel', memoria: 'recordada', sugerida: 'sugerida — revisar' };
+
+// minúsculas, sin tildes, sin espacios dobles — para buscar y comparar
+const normTxt = (v) => (v ?? '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+// Sugerencia de categoría por palabras clave del nombre de la línea. Solo es
+// un punto de partida: el administrador revisa y corrige cada línea antes de
+// publicar. El orden importa (p. ej. "Electrodomésticos Black & Decker" es
+// Hogar aunque "black & decker" también sea marca de herramientas).
+const CATEGORIA_REGLAS = [
+  ['Pinturas', /pintura|tapagotera|barniz|corex|impermeabiliz/],
+  ['Hogar', /electrodomestico|decoracion|espejo|esoejo|bicicleta|gimnasio|televisor|aire acondicionado|lavatrastos|macetera|sankey|klipxtreme|xtech|nexxt|tapo/],
+  ['Revestimiento', /ceramica|porcelanato|laticrete|quindeca|fraguador|moldura|tablilla|cielo|panel|wpc|nomastyl|incesa|unicesa|hispacensa|duela/],
+  ['Ferreteria', /ferreteria/],
+  ['Iluminacion', /ilumin|bombillo|lampara|linterna|equinox|kasalight|luzmas|ventilador|electricidad|steren|avtek/],
+  ['Herramientas', /herramienta|dewalt|stanley|sbd|truper|bombeo|bomba|generador|combustion|hidrolavadora|karcher|electrodo|workpro|sweiss|geotul|dica|urrea|escalera|abrasivo|accessmatic|macrovic|yoohak|automotriz|anauger|chevron|castrol|proteccion|elite|ingco/],
+  ['Ferreteria', /cerraj|herraje|kwikset|fanal|brown|bisman|dap|adhesivo|alambre|malla|valvula|coflex|canal|puerta|ventana|plywood|madera|riego|manguera|rotoplas|griferia|pfister|dyllu/],
+];
+
+// "DYLLU - ESCALERAS" -> { marca: 'DYLLU', sub: 'ESCALERAS' }. Solo reconoce
+// el formato "MARCA - línea" del consolidado; sin guion no hay marca.
+function partirMarca(titulo) {
+  const m = /^(.+?)\s+[-–]\s+(.+)$/.exec((titulo || '').trim());
+  return m ? { marca: m[1].trim(), sub: m[2].trim() } : null;
+}
+
+// Convierte las líneas incluidas en las preguntas que se publican. Con
+// `agrupar`, las líneas de la misma marca Y la misma categoría (2 o más) se
+// vuelven UNA pregunta de casillas: "DYLLU" con Escaleras, Herramientas
+// manuales, etc. como opciones — se marcan las que están rotuladas. Una línea
+// suelta, sin marca o sola en su categoría sigue siendo Sí / No / No aplica.
+//
+// Grupos manuales: `it.grupo` = nombre que el administrador le puso a un grupo
+// (manda sobre la marca automática y funciona aunque el interruptor esté
+// apagado); `it.grupo === SOLO` = línea separada a mano, nunca se agrupa. Un
+// grupo manual con el mismo nombre que una marca se une a esa marca.
+const SOLO = '__solo';
+function armarPreguntas(lineas, agrupar) {
+  const grupos = new Map();
+  lineas.forEach((it) => {
+    const manual = it.grupo && it.grupo !== SOLO ? it.grupo.trim() : '';
+    const p = partirMarca(it.titulo);
+    let nombre = '';
+    if (manual) nombre = manual;
+    else if (agrupar && it.grupo !== SOLO && p) nombre = p.marca;
+    // dentro del grupo, la línea se nombra sin el prefijo de la marca si lo trae
+    const sub = nombre && p && normTxt(p.marca) === normTxt(nombre) ? p.sub : it.titulo.trim();
+    const key = nombre ? `${it.categoria}|${normTxt(nombre)}` : `solo|${it.localId}`;
+    // el grupo conserva el nombre de su primera línea ("DYLLU" aunque se escriba "dyllu")
+    if (!grupos.has(key)) grupos.set(key, { nombre, miembros: [] });
+    grupos.get(key).miembros.push({ it, sub });
+  });
+  return [...grupos.values()].map(({ nombre, miembros: g }) => {
+    if (g.length === 1) {
+      const { it } = g[0];
+      return {
+        seccion: it.categoria, titulo: it.titulo.trim(),
+        pregunta: it.pregunta || '¿La promoción está visible en tienda?',
+        tipo: 'opcion_unica', scored: false, permite_foto: true,
+        opciones: it.opciones, lineas_origen: [it.nombreOriginal || it.titulo.trim()],
+        localIds: [it.localId],
+      };
+    }
+    const vistos = new Set();
+    const opciones = g.map(({ it, sub }) => {
+      let label = it.descuento ? `${sub} — ${it.descuento}` : sub;
+      for (let n = 2; vistos.has(label); n += 1) label = `${sub} (${n})`;
+      vistos.add(label);
+      return { label };
+    });
+    const vences = [...new Set(g.map(({ it }) => it.vence).filter(Boolean))];
+    return {
+      localIds: g.map(({ it }) => it.localId),
+      seccion: g[0].it.categoria, titulo: nombre,
+      pregunta: `Marca las líneas que están rotuladas en tienda (${g.length} líneas)${vences.length === 1 ? ` · Vence: ${vences[0]}` : ''}`,
+      tipo: 'checklist', scored: false, permite_foto: true,
+      opciones, lineas_origen: g.map(({ it }) => it.nombreOriginal || it.titulo.trim()),
+    };
+  });
+}
+
+function sugerirCategoria(texto, categorias) {
+  const t = normTxt(texto);
+  for (const [cat, re] of CATEGORIA_REGLAS) {
+    if (re.test(t)) return categorias.find((c) => normTxt(c) === normTxt(cat)) || '';
+  }
+  return '';
+}
 
 function fmtSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -179,6 +274,17 @@ export default function PromoPublishWizard() {
 
   // Paso 3
   const [items, setItems] = useState([]);
+  const [categorias, setCategorias] = useState(CATEGORIAS_DEFAULT);
+  const [busqueda, setBusqueda] = useState('');
+  const [catFiltro, setCatFiltro] = useState(''); // '' = todas | SIN_CATEGORIA | categoría
+  const [seleccion, setSeleccion] = useState(new Set());
+  const [agruparMarca, setAgruparMarca] = useState(true);
+
+  useEffect(() => {
+    api.get('/formularios-custom/promociones/meta')
+      .then(({ data }) => { if (data.categorias?.length) setCategorias(data.categorias); })
+      .catch(() => {});
+  }, []);
 
   // Paso 4
   const [titulo, setTitulo] = useState('Promociones del mes');
@@ -223,18 +329,43 @@ export default function PromoPublishWizard() {
     } finally { setInspecting(false); }
   };
 
-  const generateQuestions = () => {
+  const generateQuestions = async () => {
     if (!mainColumn) { toast.error('Selecciona la columna principal'); return; }
     const cols = refColumns.filter((c) => c !== mainColumn);
-    const generated = excelData.rows.map((row) => {
-      const nombre = (row[mainColumn] ?? '').toString().trim() || 'Promoción sin nombre';
+    const catCol = excelData.headers.find((h) => normTxt(h) === 'categoria');
+    const descCol = excelData.headers.find((h) => normTxt(h) === 'descuento');
+    const venceCol = excelData.headers.find((h) => normTxt(h) === 'vencimiento');
+    const nombres = excelData.rows.map((row) => (row[mainColumn] ?? '').toString().trim() || 'Promoción sin nombre');
+
+    // Categorías que el administrador ya asignó en publicaciones anteriores.
+    let aprendidas = [];
+    try {
+      const { data } = await api.post('/formularios-custom/promociones/categorias-aprendidas', { titulos: nombres });
+      aprendidas = data.categorias || [];
+    } catch (e) { /* sin memoria: se cae a la sugerencia por palabras clave */ }
+
+    const generated = excelData.rows.map((row, i) => {
+      const nombre = nombres[i];
       const hint = cols.map((c) => (row[c] ?? '') !== '' ? `${c}: ${row[c]}` : null).filter(Boolean).join(' · ');
+      // Prioridad: la columna Categoría del Excel (si es una de las oficiales),
+      // luego lo que se asignó en meses anteriores, luego palabras clave.
+      const catExcel = catCol ? categorias.find((c) => normTxt(c) === normTxt(row[catCol])) : null;
+      const catMemoria = categorias.includes(aprendidas[i]) ? aprendidas[i] : null;
+      const catSugerida = sugerirCategoria(nombre, categorias);
+      const [categoria, origen] = catExcel ? [catExcel, 'excel']
+        : catMemoria ? [catMemoria, 'memoria']
+        : catSugerida ? [catSugerida, 'sugerida'] : ['', ''];
       return {
-        localId: newItemId(), titulo: nombre, pregunta: hint, incluida: true,
+        localId: newItemId(), titulo: nombre, pregunta: hint, incluida: true, categoria, origen,
+        nombreOriginal: nombre,
+        descuento: descCol ? (row[descCol] ?? '') : '', vence: venceCol ? (row[venceCol] ?? '') : '',
         opciones: OPCIONES_BASE.map((o) => ({ ...o })),
       };
     });
+    const recordadas = generated.filter((it) => it.origen === 'memoria').length;
+    if (recordadas) toast.success(`${recordadas} línea(s) tomaron la categoría de meses anteriores`);
     setItems(generated);
+    setBusqueda(''); setCatFiltro(''); setSeleccion(new Set());
     setStep(2);
   };
 
@@ -248,16 +379,100 @@ export default function PromoPublishWizard() {
     [copy[idx], copy[j]] = [copy[j], copy[idx]];
     return copy;
   });
-  const addManualItem = () => setItems((its) => [...its, {
-    localId: newItemId(), titulo: '', pregunta: '', incluida: true, opciones: OPCIONES_BASE.map((o) => ({ ...o })),
-  }]);
+  // Línea creada a mano: entra ARRIBA de la lista (con 150 líneas, al final no
+  // se vería) y con la categoría del filtro activo si hay uno.
+  const listaRef = useRef(null);
+  const addManualItem = () => {
+    const categoria = catFiltro && catFiltro !== SIN_CATEGORIA ? catFiltro : '';
+    setItems((its) => [{
+      localId: newItemId(), titulo: '', pregunta: '', incluida: true, manual: true,
+      categoria, origen: categoria ? 'manual' : '', descuento: '', vence: '',
+      opciones: OPCIONES_BASE.map((o) => ({ ...o })),
+    }, ...its]);
+    setBusqueda('');
+    if (catFiltro === SIN_CATEGORIA) setCatFiltro('');
+    setTimeout(() => {
+      listaRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      listaRef.current?.querySelector('[data-testid="promo-item-titulo"]')?.focus();
+    }, 50);
+  };
+
+  // --- Agrupar a mano ---
+  const [grupoDialog, setGrupoDialog] = useState(null); // { nombre } | null
+  const abrirAgrupar = () => {
+    const sel = items.filter((it) => seleccion.has(it.localId));
+    if (sel.length < 2) { toast.error('Selecciona al menos 2 líneas para agruparlas'); return; }
+    const cats = new Set(sel.map((it) => it.categoria));
+    if (cats.size > 1 || !sel[0].categoria) {
+      toast.error('Las líneas a agrupar deben tener la misma categoría — asígnales primero la misma');
+      return;
+    }
+    // nombre sugerido: la marca en común, o el grupo que ya tenga alguna
+    const marcas = new Set(sel.map((it) => normTxt(partirMarca(it.titulo)?.marca || '')));
+    const existente = sel.find((it) => it.grupo && it.grupo !== SOLO)?.grupo;
+    const sugerido = existente || (marcas.size === 1 && partirMarca(sel[0].titulo)?.marca) || '';
+    setGrupoDialog({ nombre: sugerido });
+  };
+  const confirmarAgrupar = () => {
+    const nombre = (grupoDialog?.nombre || '').trim();
+    if (!nombre) { toast.error('Ponle un nombre al grupo'); return; }
+    setItems((its) => its.map((it) => (seleccion.has(it.localId) ? { ...it, grupo: nombre } : it)));
+    toast.success(`${seleccion.size} líneas agrupadas en "${nombre}"`);
+    setSeleccion(new Set());
+    setGrupoDialog(null);
+  };
 
   const includedItems = items.filter((it) => it.incluida);
+  const sinCategoria = includedItems.filter((it) => !it.categoria).length;
+
+  const conteoCategorias = {};
+  includedItems.forEach((it) => { const k = it.categoria || SIN_CATEGORIA; conteoCategorias[k] = (conteoCategorias[k] || 0) + 1; });
+
+  // Preguntas finales (con o sin agrupar por marca) — lo que se publica.
+  const preguntas = useMemo(() => armarPreguntas(includedItems.filter((it) => it.categoria), agruparMarca),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, agruparMarca]);
+  const gruposMarca = preguntas.filter((q) => q.tipo === 'checklist');
+  const grupoDeLinea = {}; // localId -> { nombre, n } del grupo en que terminó
+  gruposMarca.forEach((q) => q.localIds.forEach((id) => { grupoDeLinea[id] = { nombre: q.titulo, n: q.localIds.length }; }));
+  const preguntasPorCategoria = {};
+  preguntas.forEach((q) => { preguntasPorCategoria[q.seccion] = (preguntasPorCategoria[q.seccion] || 0) + 1; });
+
+  const itemsFiltrados = useMemo(() => {
+    const q = normTxt(busqueda);
+    return items.filter((it) => {
+      if (catFiltro === SIN_CATEGORIA ? it.categoria : (catFiltro && it.categoria !== catFiltro)) return false;
+      return !q || normTxt(`${it.titulo} ${it.pregunta}`).includes(q);
+    });
+  }, [items, busqueda, catFiltro]);
+
+  const toggleSel = (id) => setSeleccion((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const todosFiltradosSel = itemsFiltrados.length > 0 && itemsFiltrados.every((it) => seleccion.has(it.localId));
+  const toggleSelFiltrados = () => setSeleccion((s) => {
+    const n = new Set(s);
+    itemsFiltrados.forEach((it) => (todosFiltradosSel ? n.delete(it.localId) : n.add(it.localId)));
+    return n;
+  });
+  const asignarSeleccion = (cat) => {
+    setItems((its) => its.map((it) => (seleccion.has(it.localId) ? { ...it, categoria: cat, origen: 'manual' } : it)));
+    toast.success(`${seleccion.size} línea(s) asignadas a ${cat}`);
+    setSeleccion(new Set());
+  };
+
+  const irAConfigurar = () => {
+    if (sinCategoria > 0) {
+      toast.error(`Faltan ${sinCategoria} línea(s) por asignar a una categoría`);
+      setCatFiltro(SIN_CATEGORIA);
+      return;
+    }
+    setStep(3);
+  };
 
   const publish = async () => {
     if (!titulo.trim()) { toast.error('Ponle un título al formulario'); return; }
     if (includedItems.length === 0) { toast.error('Agrega al menos una promoción'); return; }
     if (includedItems.some((it) => !it.titulo.trim())) { toast.error('Cada promoción necesita un nombre'); return; }
+    if (sinCategoria > 0) { toast.error('Hay líneas sin categoría'); setStep(2); return; }
     if (!(todos || areas.length || cargos.length || userIds.length)) {
       toast.error('Indica a quién va dirigido el formulario'); return;
     }
@@ -267,12 +482,7 @@ export default function PromoPublishWizard() {
         titulo: titulo.trim(), descripcion: descripcion.trim(),
         kind: 'promociones', periodo, serie_key: 'promociones-mes', status: 'publicado',
         audiencia: { todos, areas: todos ? [] : areas, cargos: todos ? [] : cargos, user_ids: todos ? [] : userIds },
-        items: includedItems.map((it) => ({
-          seccion: 'Promociones', titulo: it.titulo.trim(),
-          pregunta: it.pregunta || '¿La promoción está visible en tienda?',
-          tipo: 'opcion_unica', scored: false, permite_foto: true,
-          opciones: it.opciones,
-        })),
+        items: preguntas.map(({ localIds, ...q }) => q),
       };
       const { data } = await api.post('/formularios-custom', payload);
       toast.success('Formulario publicado correctamente');
@@ -377,27 +587,138 @@ export default function PromoPublishWizard() {
           {/* Paso 3: Generar / revisar preguntas */}
           {step === 2 && (
             <div>
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
                 <h2 className="font-heading text-lg font-semibold flex items-center gap-2">
-                  <ListChecks className="h-5 w-5 text-[#16a34a]" /> Preguntas generadas ({includedItems.length})
+                  <ListChecks className="h-5 w-5 text-[#16a34a]" /> Categorizar líneas ({includedItems.length})
                 </h2>
+                {sinCategoria > 0 ? (
+                  <span className="text-xs font-semibold rounded-full px-2.5 py-1 bg-[rgba(220,38,38,0.1)] text-[#dc2626]" data-testid="promo-sin-categoria">
+                    {sinCategoria} sin categoría
+                  </span>
+                ) : (
+                  <span className="text-xs font-semibold rounded-full px-2.5 py-1 bg-[rgba(22,163,74,0.12)] text-[#16a34a]">Todas categorizadas</span>
+                )}
               </div>
-              <div className="space-y-2.5 max-h-[440px] overflow-y-auto pr-1 mb-4">
-                {items.map((it, idx) => (
-                  <div key={it.localId} className={`rounded-[14px] border bg-card p-3.5 ${!it.incluida ? 'opacity-50' : ''}`} data-testid="promo-item-row">
+              <p className="text-sm text-muted-foreground mb-3">
+                Verifica a qué categoría va cada línea. Quien llene el formulario elige su categoría y solo ve esas líneas. La categoría viene sugerida — corrígela donde haga falta.
+              </p>
+
+              {/* Agrupar por marca: DYLLU - Escaleras + DYLLU - Herramientas… = 1 pregunta */}
+              <div className="rounded-[14px] border bg-muted/30 p-3.5 mb-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">Agrupar líneas de la misma marca en una sola pregunta</p>
+                    <p className="text-xs text-muted-foreground">
+                      Solo si comparten marca («MARCA - línea») y categoría.{' '}
+                      <span className="font-medium text-foreground">{includedItems.length} líneas → {preguntas.length} preguntas</span>
+                      {sinCategoria > 0 && ' (sin contar las que faltan por categorizar)'}
+                    </p>
+                  </div>
+                  <Switch checked={agruparMarca} onCheckedChange={setAgruparMarca} data-testid="promo-agrupar-marca" />
+                </div>
+                {agruparMarca && gruposMarca.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2.5">
+                    {gruposMarca.map((g) => (
+                      <span key={`${g.seccion}|${g.titulo}`} title={g.opciones.map((o) => o.label).join('\n')}
+                        className="text-[11px] rounded-full border bg-card px-2 py-0.5">
+                        <span className="font-semibold">{g.titulo}</span> · {g.opciones.length} líneas · {g.seccion}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Filtro por categoría con conteos */}
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {[['', 'Todas', includedItems.length], ...categorias.map((c) => [c, c, conteoCategorias[c] || 0]), [SIN_CATEGORIA, 'Sin categoría', conteoCategorias[SIN_CATEGORIA] || 0]].map(([val, label, n]) => (
+                  <button key={label} type="button" onClick={() => setCatFiltro(val)}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${catFiltro === val ? 'bg-[#1e395e] border-[#1e395e] text-white' : 'hover:bg-muted'} ${val === SIN_CATEGORIA && n > 0 && catFiltro !== val ? 'border-[#dc2626] text-[#dc2626]' : ''}`}
+                    data-testid={`promo-cat-filter-${label}`}>
+                    {label} <span className="opacity-70">{n}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Buscar + asignación masiva */}
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0 cursor-pointer">
+                  <Checkbox checked={todosFiltradosSel} onCheckedChange={toggleSelFiltrados} data-testid="promo-select-filtered" />
+                  Seleccionar {itemsFiltrados.length}
+                </label>
+                <Input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar (ignora mayúsculas y tildes)…"
+                  className="h-9 flex-1 min-w-[180px]" data-testid="promo-item-search" />
+                <Select value="" onValueChange={asignarSeleccion} disabled={seleccion.size === 0}>
+                  <SelectTrigger className="h-9 w-[210px]" data-testid="promo-bulk-categoria">
+                    <SelectValue placeholder={seleccion.size ? `Asignar ${seleccion.size} a…` : 'Asignar seleccionadas a…'} />
+                  </SelectTrigger>
+                  <SelectContent>{categorias.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                </Select>
+                <Button type="button" variant="outline" size="sm" className="h-9 rounded-xl" onClick={abrirAgrupar}
+                  disabled={seleccion.size < 2} data-testid="promo-agrupar-seleccion">
+                  <Layers className="h-4 w-4 mr-1.5" /> Agrupar {seleccion.size >= 2 ? seleccion.size : ''}
+                </Button>
+                <Button type="button" variant="outline" size="sm" className="h-9 rounded-xl" onClick={addManualItem} data-testid="promo-add-item-top">
+                  <Plus className="h-4 w-4 mr-1.5" /> Crear línea
+                </Button>
+              </div>
+
+              <div ref={listaRef} className="space-y-2.5 max-h-[480px] overflow-y-auto pr-1 mb-4">
+                {itemsFiltrados.map((it) => {
+                  const idx = items.indexOf(it);
+                  return (
+                  <div key={it.localId} className={`rounded-[14px] border bg-card p-3.5 ${!it.incluida ? 'opacity-50' : ''} ${it.incluida && !it.categoria ? 'border-[#dc2626]/60' : ''}`} data-testid="promo-item-row">
                     <div className="flex items-start gap-2.5">
+                      <div className="pt-2 shrink-0">
+                        <Checkbox checked={seleccion.has(it.localId)} onCheckedChange={() => toggleSel(it.localId)} />
+                      </div>
                       <div className="flex flex-col gap-1 pt-1 shrink-0">
                         <button onClick={() => moveItem(it.localId, -1)} disabled={idx === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button>
                         <button onClick={() => moveItem(it.localId, 1)} disabled={idx === items.length - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button>
                       </div>
                       <div className="flex-1 min-w-0 space-y-1.5">
-                        <Input value={it.titulo} onChange={(e) => updateItem(it.localId, { titulo: e.target.value })}
-                          placeholder="Nombre de la promoción" className="h-9" data-testid="promo-item-titulo" />
-                        {it.pregunta !== undefined && (
+                        <div className="flex flex-col sm:flex-row gap-1.5">
+                          <Input value={it.titulo} onChange={(e) => updateItem(it.localId, { titulo: e.target.value })}
+                            placeholder="Nombre de la promoción" className="h-9 flex-1" data-testid="promo-item-titulo" />
+                          <Select value={it.categoria || ''} onValueChange={(v) => updateItem(it.localId, { categoria: v, origen: 'manual' })}>
+                            <SelectTrigger className={`h-9 sm:w-[160px] ${!it.categoria ? 'text-[#dc2626]' : ''}`} data-testid="promo-item-categoria">
+                              <SelectValue placeholder="Categoría…" />
+                            </SelectTrigger>
+                            <SelectContent>{categorias.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                          </Select>
+                        </div>
+                        {it.manual ? (
+                          <div className="flex gap-1.5">
+                            <Input value={it.descuento || ''} onChange={(e) => updateItem(it.localId, { descuento: e.target.value, pregunta: e.target.value ? `Descuento: ${e.target.value}` : '' })}
+                              placeholder="Descuento (ej. 15%)" className="h-8 text-xs w-[150px]" data-testid="promo-item-descuento" />
+                            <Input value={it.vence || ''} onChange={(e) => updateItem(it.localId, { vence: e.target.value })}
+                              placeholder="Vence (ej. 30/09/2026)" className="h-8 text-xs flex-1" />
+                          </div>
+                        ) : it.pregunta !== undefined && (
                           <Input value={it.pregunta} onChange={(e) => updateItem(it.localId, { pregunta: e.target.value })}
                             placeholder="Referencia (opcional)" className="h-8 text-xs text-muted-foreground" />
                         )}
-                        <p className="text-[11px] text-muted-foreground">Sí / No / No aplica + Observaciones</p>
+                        <p className="text-[11px] text-muted-foreground flex flex-wrap items-center gap-y-1">
+                          {grupoDeLinea[it.localId] ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(30,57,94,0.1)] text-[#1e395e] dark:text-[#3cbef6] px-2 py-0.5 font-medium" data-testid="promo-item-grupo">
+                              <Layers className="h-3 w-3" /> {grupoDeLinea[it.localId].nombre} · {grupoDeLinea[it.localId].n} líneas
+                              {it.grupo && it.grupo !== SOLO ? (
+                                <button type="button" onClick={() => updateItem(it.localId, { grupo: '' })} className="ml-1 underline hover:no-underline">quitar</button>
+                              ) : (
+                                <button type="button" onClick={() => updateItem(it.localId, { grupo: SOLO })} className="ml-1 underline hover:no-underline">separar</button>
+                              )}
+                            </span>
+                          ) : it.grupo === SOLO ? (
+                            <span>
+                              Sí / No / No aplica · separada de su marca{' '}
+                              <button type="button" onClick={() => updateItem(it.localId, { grupo: '' })} className="underline hover:no-underline">reagrupar</button>
+                            </span>
+                          ) : 'Sí / No / No aplica + Observaciones'}
+                          {it.categoria && ORIGEN_LABEL[it.origen] && (
+                            <span className={`ml-2 rounded-full px-1.5 py-0.5 ${it.origen === 'sugerida' ? 'bg-[rgba(236,144,50,0.14)] text-[#ec9032]' : 'bg-muted'}`}>
+                              {ORIGEN_LABEL[it.origen]}
+                            </span>
+                          )}
+                        </p>
                       </div>
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
                         <Switch checked={it.incluida} onCheckedChange={(v) => updateItem(it.localId, { incluida: v })} data-testid="promo-item-toggle" />
@@ -407,16 +728,47 @@ export default function PromoPublishWizard() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
                 {items.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No hay preguntas todavía.</p>}
+                {items.length > 0 && itemsFiltrados.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">Ninguna línea con este filtro.</p>}
               </div>
               <Button type="button" variant="outline" onClick={addManualItem} className="w-full rounded-xl mb-6" data-testid="promo-add-item">
-                <Plus className="h-4 w-4 mr-1.5" /> Agregar pregunta
+                <Plus className="h-4 w-4 mr-1.5" /> Crear línea manual
               </Button>
+
+              <Dialog open={!!grupoDialog} onOpenChange={(o) => !o && setGrupoDialog(null)}>
+                <DialogContent className="sm:max-w-[420px] rounded-[22px]">
+                  <DialogHeader><DialogTitle className="font-heading">Agrupar {seleccion.size} líneas</DialogTitle></DialogHeader>
+                  <p className="text-sm text-muted-foreground -mt-1">
+                    Se preguntarán juntas en una sola pregunta de casillas. Si usas el nombre de una marca que ya se agrupa (ej. DYLLU), se suman a ese grupo.
+                  </p>
+                  <div className="space-y-1.5">
+                    <Label>Nombre del grupo</Label>
+                    <Input autoFocus value={grupoDialog?.nombre || ''} placeholder="Ej. Iluminación decorativa"
+                      onChange={(e) => setGrupoDialog({ nombre: e.target.value })}
+                      onKeyDown={(e) => { if (e.key === 'Enter') confirmarAgrupar(); }} className="h-11" data-testid="promo-grupo-nombre" />
+                    {gruposMarca.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {[...new Set(gruposMarca.map((g) => g.titulo))].map((n) => (
+                          <button key={n} type="button" onClick={() => setGrupoDialog({ nombre: n })}
+                            className="text-[11px] rounded-full border px-2 py-0.5 hover:bg-muted">{n}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" className="rounded-xl" onClick={() => setGrupoDialog(null)}>Cancelar</Button>
+                    <Button className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" onClick={confirmarAgrupar} data-testid="promo-grupo-confirmar">
+                      <Layers className="h-4 w-4 mr-1.5" /> Agrupar
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
 
               <div className="flex justify-between">
                 <Button variant="outline" onClick={() => setStep(1)} className="rounded-xl"><ChevronLeft className="h-4 w-4 mr-1" /> Anterior</Button>
-                <Button onClick={() => setStep(3)} disabled={includedItems.length === 0} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="promo-step3-next">
+                <Button onClick={irAConfigurar} disabled={includedItems.length === 0} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="promo-step3-next">
                   Siguiente <ChevronRight className="h-4 w-4 ml-1" />
                 </Button>
               </div>
@@ -497,7 +849,18 @@ export default function PromoPublishWizard() {
               <div className="space-y-2.5 text-sm mb-6">
                 <div className="flex justify-between border-b pb-2"><span className="text-muted-foreground">Título</span><span className="font-medium text-right">{titulo}</span></div>
                 <div className="flex justify-between border-b pb-2"><span className="text-muted-foreground">Período</span><span className="font-medium">{periodoLabel(periodo)}</span></div>
-                <div className="flex justify-between border-b pb-2"><span className="text-muted-foreground">Promociones</span><span className="font-medium">{includedItems.length}</span></div>
+                <div className="flex justify-between border-b pb-2"><span className="text-muted-foreground">Promociones</span><span className="font-medium">{includedItems.length} líneas → {preguntas.length} preguntas</span></div>
+                <div className="border-b pb-2">
+                  <span className="text-muted-foreground">Preguntas por categoría</span>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {categorias.filter((c) => preguntasPorCategoria[c]).map((c) => (
+                      <span key={c} className="text-xs rounded-full bg-muted px-2.5 py-1">
+                        {c} <span className="font-semibold">{preguntasPorCategoria[c]}</span>
+                        {preguntasPorCategoria[c] !== conteoCategorias[c] && <span className="text-muted-foreground"> ({conteoCategorias[c]} líneas)</span>}
+                      </span>
+                    ))}
+                  </div>
+                </div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Audiencia</span>
                   <span className="font-medium text-right">
                     {todos ? 'Todos en la empresa' : [

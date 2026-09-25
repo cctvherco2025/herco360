@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Eye, Calendar, User as UserIcon, ClipboardList, Download, Loader2, Info, Trash2 } from 'lucide-react';
+import { Eye, Calendar, User as UserIcon, ClipboardList, Download, Loader2, Info, Trash2, Store, Tag } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { generateCustomFormPdf } from '@/lib/customFormPdf';
@@ -67,7 +67,7 @@ async function exportResponsePdf(formId, formTitulo, hasScoring, respId, cached)
     formTitulo,
     meta: {
       respondent: respDoc.respondent_name, fecha: (respDoc.created_at || '').slice(0, 10),
-      sucursal: respDoc.sucursal, socializo: respDoc.socializo,
+      sucursal: respDoc.sucursal, socializo: respDoc.socializo, categoria: respDoc.categoria,
     },
     rows, hasScoring, totalScore: respDoc.total_score, totalMax: respDoc.total_max,
   });
@@ -120,6 +120,7 @@ function DetailDialog({ formId, formTitulo, hasScoring, id, onClose }) {
               <div className="rounded-xl border p-3 space-y-1.5">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Datos Generales</p>
                 <p className="text-sm">Sucursal: <span className="font-medium">{resp.sucursal}</span></p>
+                {resp.categoria && <p className="text-sm">Categoría: <span className="font-medium">{resp.categoria}</span></p>}
                 <p className="text-sm">Socializó las promociones: <span className="font-medium">{resp.socializo ? 'Sí' : 'No'}</span></p>
                 {resp.general_photos?.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-1.5">
@@ -140,7 +141,20 @@ function DetailDialog({ formId, formTitulo, hasScoring, id, onClose }) {
                     {e.max > 0 && <span className="text-xs font-bold shrink-0">{e.score}/{e.max}</span>}
                   </div>
                   <p className="text-xs text-muted-foreground">{e.seccion}</p>
-                  {Array.isArray(e.respuesta) ? (
+                  {Array.isArray(e.respuesta) && e.opciones_total?.length ? (
+                    // Pregunta agrupada por marca: cada línea con ✓ (rotulada) o ✗ (no rotulada)
+                    <ul className="mt-1.5 space-y-0.5">
+                      {e.opciones_total.map((op) => {
+                        const ok = e.respuesta.includes(op);
+                        return (
+                          <li key={op} className="text-sm flex items-start gap-1.5">
+                            <span className={`font-bold ${ok ? 'text-[#16a34a]' : 'text-[#dc2626]'}`}>{ok ? '✓' : '✗'}</span>
+                            <span className={ok ? '' : 'text-muted-foreground'}>{op}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : Array.isArray(e.respuesta) ? (
                     e.respuesta.length > 0 && <p className="text-sm mt-1">{e.respuesta.join(', ')}</p>
                   ) : (e.respuesta && <p className="text-sm mt-1">{e.respuesta}</p>)}
                   {e.note && <p className="text-xs text-muted-foreground italic mt-1">"{e.note}"</p>}
@@ -259,7 +273,18 @@ export default function CustomFormHistorial({ schema, canSeeAll, canManage }) {
             <Avatar className="h-8 w-8"><AvatarImage src={r.respondent_avatar} /><AvatarFallback>{r.respondent_name?.[0]}</AvatarFallback></Avatar>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium flex items-center gap-1.5"><UserIcon className="h-3.5 w-3.5 text-muted-foreground" />{r.respondent_name}</p>
-              <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1"><Calendar className="h-3 w-3" />{(r.created_at || '').slice(0, 10)}</p>
+              <p className="text-xs text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" />{(r.created_at || '').slice(0, 10)}</span>
+                {/* Tienda: la sucursal que eligió al responder (Promociones) o, si no hay, la de su perfil */}
+                {(r.sucursal || r.respondent_sucursal) && (
+                  <span className="inline-flex items-center gap-1" data-testid="customform-historial-tienda"><Store className="h-3 w-3" />{r.sucursal || r.respondent_sucursal}</span>
+                )}
+                {r.categoria && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(22,163,74,0.12)] text-[#16a34a] px-2 py-0.5 font-medium" data-testid="customform-historial-categoria">
+                    <Tag className="h-3 w-3" />{r.categoria}
+                  </span>
+                )}
+              </p>
             </div>
             {schema.has_scoring && r.total_max > 0 && (
               <span className="text-sm font-semibold shrink-0">{r.percent}%</span>

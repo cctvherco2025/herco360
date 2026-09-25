@@ -19,9 +19,11 @@ Visibilidad de un formulario ya creado:
   - Ver todas las respuestas: admin, Director comercial o el creador.
     Cualquier otra persona solo ve las respuestas que ella misma envió.
 """
+import datetime
 import io
 import json
 import logging
+import unicodedata
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
@@ -40,11 +42,16 @@ logger = logging.getLogger('formularios_custom')
 TIPOS_VALIDOS = {'opcion_unica', 'checklist', 'texto'}
 MAX_PHOTO_SIZE = 8 * 1024 * 1024  # 8 MB por foto
 MAX_ITEMS = 60
+MAX_PROMO_ITEMS = 500  # el consolidado mensual de Mercadeo trae ~150 líneas
 MAX_EXCEL_ROWS = 500
 
 # Sucursales para el paso "Datos Generales" de Promociones del mes (propia del
 # módulo — no confundir con las de Inventario/Reportes ni las de FLOS/Rutina).
 PROMO_SUCURSALES = ['Herco Max', 'Herco Centro', 'Herco SL', 'Herco JT']
+# Categorías de Promociones del mes: cada línea del consolidado se asigna a una
+# (se guarda en el 'seccion' de la pregunta) y quien responde elige la suya para
+# ver solo esas líneas.
+PROMO_CATEGORIAS = ['Herramientas', 'Hogar', 'Ferretería', 'Iluminación', 'Pinturas', 'Revestimiento']
 GENERAL_PHOTO_OWNER = '_general'  # sentinel: la foto no pertenece a un ítem sino al paso "Datos Generales"
 
 _MAIN_COL_KEYWORDS = ('promocion', 'promoción', 'producto', 'articulo', 'artículo', 'descripcion', 'descripción', 'nombre')
@@ -156,8 +163,8 @@ def _guess_main_column(headers: list, rows: list) -> Optional[str]:
 @router.get('/promociones/meta')
 async def promo_meta(user=Depends(require_promociones_mes_access)):
     """Config del paso "Datos Generales" al responder una publicación de
-    Promociones del mes (sucursal a reportar)."""
-    return {'sucursales': PROMO_SUCURSALES}
+    Promociones del mes (sucursal a reportar) y categorías del wizard."""
+    return {'sucursales': PROMO_SUCURSALES, 'categorias': PROMO_CATEGORIAS}
 
 
 # --------------------------------------------------------------------------- #
@@ -215,8 +222,114 @@ async def promo_template(user=Depends(require_promo_access)):
 #  columnas"). No guarda nada: el front arma las preguntas con esta data y
 #  las manda ya armadas al crear el formulario (create_form de abajo).
 # --------------------------------------------------------------------------- #
+# Encabezados equivalentes que trae el consolidado de Mercadeo según la hoja
+# ("LINEA" en Descuento, "Descripción" en Combos/Precio, etc.) — se unifican
+# para que todas las hojas caigan en las mismas columnas. Clave normalizada
+# (minúsculas, sin tildes, sin espacios dobles).
+_HEADER_SYNONYMS = {
+    'linea': 'Promoción', 'descripcion': 'Promoción', 'producto': 'Promoción',
+    'promocion': 'Promoción', 'articulo': 'Promoción',
+    'codigo': 'Código', 'cod': 'Código', 'sku': 'Código',
+    'descuento': 'Descuento', '% descuento': 'Descuento', 'porcentaje': 'Descuento',
+    'vencimiento': 'Vencimiento', 'vigencia': 'Vencimiento', 'fecha fin': 'Vencimiento',
+    'precio lista': 'Precio lista', 'precio regular': 'Precio lista', 'precio': 'Precio lista',
+    'promo': 'Precio promo', 'precio promo': 'Precio promo', 'precio oferta': 'Precio promo',
+    'precio promocion': 'Precio promo',
+    'precio del combo': 'Precio combo', 'precio combo': 'Precio combo',
+    'observacion': 'Observación', 'observaciones': 'Observación',
+    'categoria': 'Categoría',
+}
+_PRICE_HEADERS = {'Precio lista', 'Precio promo', 'Precio combo'}
+
+
+def _norm_key(v) -> str:
+    t = unicodedata.normalize('NFD', str(v)).encode('ascii', 'ignore').decode('ascii')
+    return ' '.join(t.lower().split())
+
+
+def _is_header_row(row) -> bool:
+    vals = [c for c in row if c is not None and str(c).strip()]
+    return len(vals) >= 2 and all(isinstance(c, str) for c in vals)
+
+
+def _fmt_cell(header: str, v):
+    """Deja cada valor listo para mostrarse como referencia: fechas dd/mm/aaaa,
+    descuentos 0.15 -> '15%', precios 'L 1,299.00', texto sin espacios de más."""
+    if v is None:
+        return None
+    if isinstance(v, (datetime.datetime, datetime.date)):
+        return v.strftime('%d/%m/%Y')
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        if header == 'Descuento':
+            pct = v * 100 if v <= 1 else v
+            return f'{round(pct, 2):g}%'
+        if header in _PRICE_HEADERS:
+            return f'L {v:,.2f}'
+        return int(v) if float(v).is_integer() else v
+    t = ' '.join(str(v).split())
+    return t or None
+
+
+# --------------------------------------------------------------------------- #
+#  Promociones del mes — memoria de categorías. Cada vez que se publica (o se
+#  edita) una publicación, se guarda "línea -> categoría" con la clave
+#  normalizada del nombre. El mes siguiente, el wizard consulta esta memoria
+#  antes de sugerir por palabras clave, así lo que el administrador corrigió
+#  una vez ya no hay que volver a corregirlo.
+# --------------------------------------------------------------------------- #
+async def _recordar_categorias(items: list, user: dict):
+    ts = now_iso()
+    for it in items:
+        cat = it.get('seccion')
+        if cat not in PROMO_CATEGORIAS:
+            continue
+        # una pregunta agrupada por marca recuerda cada línea original por separado
+        for nombre in (it.get('lineas_origen') or [it.get('titulo') or '']):
+            key = _norm_key(nombre)
+            if not key:
+                continue
+            await db.promo_categoria_memoria.update_one(
+                {'key': key},
+                {'$set': {'key': key, 'titulo': nombre, 'categoria': cat,
+                          'updated_at': ts, 'updated_by': user['id']}},
+                upsert=True)
+
+
+def _promo_counts(entry: dict, item: Optional[dict]):
+    """(visibles, no_visibles, no_aplica) que aporta una respuesta. Pregunta
+    normal: Sí / No / No aplica. Pregunta agrupada por marca (checklist): cada
+    línea marcada es visible y cada línea sin marcar es no visible."""
+    v = entry.get('respuesta')
+    if entry.get('tipo') == 'checklist' or isinstance(v, list):
+        total = len((item or {}).get('opciones') or entry.get('opciones_total') or [])
+        marcadas = len(v) if isinstance(v, list) else 0
+        return marcadas, max(0, total - marcadas), 0
+    return int(v == 'Sí'), int(v == 'No'), int(v == 'No aplica')
+
+
+@router.post('/promociones/categorias-aprendidas')
+async def learned_categories(payload: dict, user=Depends(require_promo_access)):
+    """Recibe {"titulos": [...]} y devuelve {"categorias": [...]} en el mismo
+    orden: la categoría recordada de cada línea, o null si nunca se publicó."""
+    titulos = payload.get('titulos') or []
+    if not isinstance(titulos, list):
+        raise HTTPException(status_code=400, detail='titulos debe ser una lista')
+    titulos = titulos[:MAX_EXCEL_ROWS]
+    keys = [_norm_key(t or '') for t in titulos]
+    docs = await db.promo_categoria_memoria.find(
+        {'key': {'$in': [k for k in keys if k]}}, {'_id': 0, 'key': 1, 'categoria': 1}
+    ).to_list(MAX_EXCEL_ROWS)
+    by_key = {d['key']: d['categoria'] for d in docs if d.get('categoria') in PROMO_CATEGORIAS}
+    return {'categorias': [by_key.get(k) for k in keys]}
+
+
 @router.post('/inspeccionar-excel')
 async def inspect_excel(file: UploadFile = File(...), user=Depends(require_promo_access)):
+    """Lee TODAS las hojas visibles del libro (el consolidado de Mercadeo trae
+    una hoja por estrategia: Descuento, Combos, Precio). En cada hoja busca la
+    fila de encabezados (no siempre es la primera), salta filas vacías y los
+    encabezados repetidos a media hoja, y unifica nombres de columna
+    equivalentes. Si hay más de una hoja, agrega la columna "Hoja"."""
     fn = (file.filename or '').lower()
     if fn.endswith('.xls') and not fn.endswith('.xlsx'):
         raise HTTPException(status_code=400,
@@ -231,38 +344,66 @@ async def inspect_excel(file: UploadFile = File(...), user=Depends(require_promo
     from openpyxl import load_workbook
     try:
         wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-        ws = wb.active
-        rows_raw = list(ws.iter_rows(values_only=True))
+        sheets = []
+        for ws in wb.worksheets:
+            if getattr(ws, 'sheet_state', 'visible') != 'visible':
+                continue
+            sheets.append((ws.title, list(ws.iter_rows(values_only=True))))
     except Exception:
         raise HTTPException(status_code=400, detail='No se pudo leer el archivo Excel')
-    if not rows_raw:
-        raise HTTPException(status_code=400, detail='El archivo no tiene datos')
 
-    header_row = rows_raw[0]
-    headers, seen = [], set()
-    for i, c in enumerate(header_row):
-        name = str(c).strip() if (c is not None and str(c).strip()) else f'Columna {i + 1}'
-        base, n = name, 2
-        while name in seen:  # encabezados duplicados o vacíos repetidos
-            name = f'{base} ({n})'; n += 1
-        seen.add(name)
-        headers.append(name)
-
-    rows_out = []
+    headers = []  # orden de aparición entre todas las hojas
+    parsed = []   # (hoja, [dict por fila])
     truncated = False
-    for row in rows_raw[1:]:
-        if row is None or all((c is None or str(c).strip() == '') for c in row):
+    total = 0
+    for title, rows_raw in sheets:
+        rows_raw = [r for r in rows_raw if r is not None]
+        non_empty = [i for i, r in enumerate(rows_raw) if any(c is not None and str(c).strip() for c in r)]
+        if not non_empty:
             continue
-        if len(rows_out) >= MAX_EXCEL_ROWS:
-            truncated = True
-            break
-        item = {}
-        for i, h in enumerate(headers):
-            v = row[i] if i < len(row) else None
-            if v is not None and not isinstance(v, (int, float)):
-                v = str(v).strip()
-            item[h] = v
-        rows_out.append(item)
+        hdr_idx = next((i for i in non_empty[:15] if _is_header_row(rows_raw[i])), non_empty[0])
+        header_row = rows_raw[hdr_idx]
+        cols, seen = [], set()  # (índice de columna, nombre unificado)
+        for i, c in enumerate(header_row):
+            if c is None or not str(c).strip():
+                continue  # columnas sin encabezado (notas sueltas al margen) no se leen
+            raw = ' '.join(str(c).split())
+            name = _HEADER_SYNONYMS.get(_norm_key(raw), raw)
+            base, n = name, 2
+            while name in seen:
+                name = f'{base} ({n})'; n += 1
+            seen.add(name)
+            cols.append((i, name))
+            if name not in headers:
+                headers.append(name)
+        header_key = [_norm_key(c) for c in header_row if c is not None and str(c).strip()]
+
+        out = []
+        for row in rows_raw[hdr_idx + 1:]:
+            if all((c is None or str(c).strip() == '') for c in row):
+                continue
+            if [_norm_key(c) for c in row if c is not None and str(c).strip()] == header_key:
+                continue  # encabezado repetido a media hoja
+            item = {name: _fmt_cell(name, row[i] if i < len(row) else None) for i, name in cols}
+            if all(v in (None, '') for v in item.values()):
+                continue
+            if total >= MAX_EXCEL_ROWS:
+                truncated = True
+                break
+            out.append(item)
+            total += 1
+        if out:
+            parsed.append((title, out))
+
+    multi = len(parsed) > 1
+    rows_out = []
+    for title, out in parsed:
+        for item in out:
+            full = {'Hoja': title} if multi else {}
+            full.update({h: item.get(h) for h in headers})
+            rows_out.append(full)
+    if multi:
+        headers = ['Hoja'] + headers
 
     if not rows_out:
         raise HTTPException(status_code=400, detail='No se encontraron filas con datos debajo del encabezado')
@@ -272,6 +413,7 @@ async def inspect_excel(file: UploadFile = File(...), user=Depends(require_promo
         'suggested_main_column': _guess_main_column(headers, rows_out),
         'total_rows': len(rows_out),
         'truncated': truncated,
+        'sheets': [t for t, _ in parsed],
         'rows': rows_out,
     }
 
@@ -279,15 +421,15 @@ async def inspect_excel(file: UploadFile = File(...), user=Depends(require_promo
 # --------------------------------------------------------------------------- #
 #  Construir / administrar formularios
 # --------------------------------------------------------------------------- #
-def _normalize_items(items_in: list) -> list:
+def _normalize_items(items_in: list, max_items: int = MAX_ITEMS) -> list:
     """Valida y normaliza las preguntas que llegan del builder — compartido
     por crear y editar. Cada item queda con su id (se conserva el que traiga
     para no romper respuestas ya enviadas), tipo válido, opciones limpias y
     su 'max' recalculado."""
     if not items_in:
         raise HTTPException(status_code=400, detail='Agrega al menos una pregunta')
-    if len(items_in) > MAX_ITEMS:
-        raise HTTPException(status_code=400, detail=f'Máximo {MAX_ITEMS} preguntas por formulario')
+    if len(items_in) > max_items:
+        raise HTTPException(status_code=400, detail=f'Máximo {max_items} preguntas por formulario')
     items = []
     for it in items_in:
         tipo = it.tipo.strip()
@@ -318,6 +460,9 @@ def _normalize_items(items_in: list) -> list:
             'opciones': opciones,
             'permite_foto': bool(it.permite_foto),
         }
+        lineas = [' '.join(str(l).split()) for l in (it.lineas_origen or []) if str(l).strip()]
+        if lineas:
+            item['lineas_origen'] = lineas
         item['max'] = _item_max(item)
         items.append(item)
     return items
@@ -341,7 +486,7 @@ async def create_form(data: CustomFormInput, user=Depends(require_builder_access
     if not (aud.todos or aud.areas or aud.cargos or aud.user_ids):
         raise HTTPException(status_code=400, detail='Indica a quién va dirigido el formulario')
 
-    items = _normalize_items(data.items)
+    items = _normalize_items(data.items, MAX_PROMO_ITEMS if kind == 'promociones' else MAX_ITEMS)
 
     periodo = (data.periodo or '').strip() or None
     serie_key = (data.serie_key or '').strip() or None
@@ -365,6 +510,8 @@ async def create_form(data: CustomFormInput, user=Depends(require_builder_access
     }
     await db.custom_forms.insert_one(doc)
     doc.pop('_id', None)
+    if kind == 'promociones':
+        await _recordar_categorias(items, user)
     return serialize_doc(doc)
 
 
@@ -438,7 +585,8 @@ async def update_form(form_id: str, data: CustomFormInput, user=Depends(get_curr
     if status not in ('borrador', 'publicado'):
         raise HTTPException(status_code=400, detail='Estado inválido')
 
-    items = _normalize_items(data.items)
+    is_promo_form = (form.get('kind') or 'generic') == 'promociones'
+    items = _normalize_items(data.items, MAX_PROMO_ITEMS if is_promo_form else MAX_ITEMS)
     total_max = sum(it['max'] for it in items)
     audiencia_dict = data.audiencia.model_dump()
 
@@ -457,6 +605,8 @@ async def update_form(form_id: str, data: CustomFormInput, user=Depends(get_curr
         update['audiencia_resueltos'] = await _resolve_audience_users(audiencia_dict)
 
     await db.custom_forms.update_one({'id': form_id}, {'$set': update})
+    if is_promo_form:
+        await _recordar_categorias(items, user)
     fresh = await db.custom_forms.find_one({'id': form_id}, {'_id': 0})
     return serialize_doc(fresh)
 
@@ -507,7 +657,20 @@ async def submit_response(
         if not isinstance(socializo, bool):
             raise HTTPException(status_code=400, detail='Indica si se socializaron las promociones')
 
-    items_by_id = {it['id']: it for it in form['items']}
+    # Categoría: si la publicación tiene líneas de varias categorías, quien
+    # responde elige la suya y solo se guardan las preguntas de esa categoría.
+    categoria = None
+    if is_promo:
+        form_categorias = sorted({it.get('seccion') or 'General' for it in form['items']})
+        categoria = (payload.get('categoria') or '').strip() or None
+        if len(form_categorias) > 1:
+            if categoria not in form_categorias:
+                raise HTTPException(status_code=400, detail='Selecciona la categoría que estás reportando')
+        else:
+            categoria = form_categorias[0] if form_categorias else None
+
+    items_by_id = {it['id']: it for it in form['items']
+                   if not categoria or (it.get('seccion') or 'General') == categoria}
     clean_entries = []
     total_score, total_max = 0, 0
     for e in entries_in:
@@ -525,6 +688,10 @@ async def submit_response(
             'respuesta': e.get('respuesta') or e.get('opcion') or [],
             'score': score, 'max': item['max'], 'note': (e.get('note') or '').strip(),
             'photos': [],
+            # pregunta agrupada por marca: foto de todas sus líneas, para mostrar
+            # en el historial también las que quedaron sin marcar
+            **({'opciones_total': [o['label'] for o in item['opciones']]}
+               if is_promo and item['tipo'] == 'checklist' else {}),
         })
 
     if len(photos) != len(photo_owner):
@@ -563,6 +730,7 @@ async def submit_response(
         'respondent_sucursal': user.get('sucursal') or '', 'respondent_position': user.get('position') or '',
         'sucursal': sucursal_reportada if is_promo else None,
         'socializo': socializo if is_promo else None,
+        'categoria': categoria,
         'general_photos': general_photos,
         'entries': clean_entries,
         'total_score': total_score, 'total_max': total_max, 'percent': pct,
@@ -634,19 +802,15 @@ async def get_report(form_id: str, user=Depends(get_current_user)):
         if uid in responded_ids:
             entry['respondieron'].add(uid)
 
+    items_by_id = {it['id']: it for it in form.get('items', [])}
     por_sucursal = []
     for suc, info in stores.items():
         suc_resp = [r for r in responses if r['respondent_id'] in info['respondieron']]
         yes = no = na = 0
         for r in suc_resp:
             for e in r.get('entries', []):
-                v = e.get('respuesta')
-                if v == 'Sí':
-                    yes += 1
-                elif v == 'No':
-                    no += 1
-                elif v == 'No aplica':
-                    na += 1
+                y, n, a = _promo_counts(e, items_by_id.get(e['id']))
+                yes += y; no += n; na += a
         evaluated = yes + no
         n_asig, n_resp = len(info['asignados']), len(info['respondieron'])
         estado = 'Completo' if n_resp and n_resp >= n_asig else ('Parcial' if n_resp else 'Pendiente')
@@ -657,26 +821,23 @@ async def get_report(form_id: str, user=Depends(get_current_user)):
         })
     por_sucursal.sort(key=lambda x: x['sucursal'])
 
-    por_promo = {it['id']: {'id': it['id'], 'titulo': it['titulo'], 'visibles': 0, 'no_visibles': 0, 'no_aplica': 0}
+    por_promo = {it['id']: {'id': it['id'], 'titulo': it['titulo'], 'categoria': it.get('seccion') or 'General',
+                            'lineas': len(it.get('opciones') or []) if it.get('tipo') == 'checklist' else 1,
+                            'visibles': 0, 'no_visibles': 0, 'no_aplica': 0}
                  for it in form.get('items', [])}
     for r in responses:
         for e in r.get('entries', []):
             row = por_promo.get(e['id'])
             if not row:
                 continue
-            v = e.get('respuesta')
-            if v == 'Sí':
-                row['visibles'] += 1
-            elif v == 'No':
-                row['no_visibles'] += 1
-            elif v == 'No aplica':
-                row['no_aplica'] += 1
+            y, n, a = _promo_counts(e, items_by_id.get(e['id']))
+            row['visibles'] += y; row['no_visibles'] += n; row['no_aplica'] += a
     por_promocion = []
     for row in por_promo.values():
         evaluated = row['visibles'] + row['no_visibles']
         row['cumplimiento'] = round(row['visibles'] / evaluated * 100) if evaluated else None
         por_promocion.append(row)
-    por_promocion.sort(key=lambda r: r['titulo'])
+    por_promocion.sort(key=lambda r: (r['categoria'], r['titulo']))
 
     total_yes = sum(r['visibles'] for r in por_promocion)
     total_no = sum(r['no_visibles'] for r in por_promocion)

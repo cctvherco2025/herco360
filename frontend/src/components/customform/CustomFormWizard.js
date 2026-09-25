@@ -29,9 +29,25 @@ function loadDraft(formId) {
 
 export default function CustomFormWizard({ schema, onSubmitted }) {
   const { user } = useAuth();
-  const items = schema.items;
-  const STEPS = items.length;
   const isPromo = schema.kind === 'promociones';
+
+  // Categoría (solo Promociones del mes): cada línea trae su categoría en
+  // 'seccion'. Si la publicación tiene varias, quien responde elige la suya y
+  // solo recorre esas líneas; si tiene una sola, se toma automáticamente.
+  const promoCategorias = useMemo(() => (
+    isPromo ? [...new Set(schema.items.map((it) => it.seccion || 'General'))] : []
+  ), [isPromo, schema.items]);
+  const eligeCategoria = promoCategorias.length > 1;
+  const [categoria, setCategoria] = useState('');
+  const items = useMemo(() => (
+    eligeCategoria ? schema.items.filter((it) => (it.seccion || 'General') === categoria) : schema.items
+  ), [eligeCategoria, schema.items, categoria]);
+  const STEPS = items.length;
+  const conteoPorCategoria = useMemo(() => {
+    const c = {};
+    schema.items.forEach((it) => { const k = it.seccion || 'General'; c[k] = (c[k] || 0) + 1; });
+    return c;
+  }, [schema.items]);
 
   const [phase, setPhase] = useState('intro'); // intro | walk | resumen
   const [choice, setChoice] = useState({}); // id -> idx (opcion_unica) | idx[] (checklist)
@@ -74,6 +90,7 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
     const d = loadDraft(schema.id);
     if (d && (d.touched || []).length) {
       setChoice(d.choice || {}); setNotes(d.notes || {}); setTouched(new Set(d.touched || [])); setCursor(d.cursor || 0);
+      if (d.categoria) setCategoria(d.categoria);
       setHasDraft(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -82,12 +99,12 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
   useEffect(() => {
     if (phase === 'intro') return;
     const t = setTimeout(() => {
-      try { localStorage.setItem(draftKey(schema.id), JSON.stringify({ choice, notes, touched: [...touched], cursor })); }
+      try { localStorage.setItem(draftKey(schema.id), JSON.stringify({ choice, notes, touched: [...touched], cursor, categoria })); }
       catch (e) { /* localStorage lleno: se pierde el borrador, no rompe la app */ }
     }, 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, choice, notes, touched, cursor]);
+  }, [phase, choice, notes, touched, cursor, categoria]);
 
   const clearDraft = () => { try { localStorage.removeItem(draftKey(schema.id)); } catch (e) {} };
 
@@ -103,7 +120,7 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
     let totalAct = 0, totalMax = 0;
     items.forEach((it) => { if (it.scored) { totalMax += it.max; if (touched.has(it.id)) totalAct += itemScore(it); } });
     const pct = totalMax ? Math.round((totalAct / totalMax) * 100) : 0;
-    return { totalAct, totalMax, pct, touchedCount: touched.size };
+    return { totalAct, totalMax, pct, touchedCount: items.filter((it) => touched.has(it.id)).length, total: items.length };
   }, [items, touched, itemScore]);
 
   const selectSingle = (id, idx) => { setChoice((c) => ({ ...c, [id]: idx })); setTouched((t) => new Set(t).add(id)); };
@@ -114,6 +131,14 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
       return { ...c, [id]: next };
     });
     setTouched((t) => new Set(t).add(id));
+  };
+  // "Seleccionar todo" en preguntas de casillas (líneas agrupadas): marca todas
+  // o, si ya están todas marcadas, las desmarca.
+  const toggleAll = (it) => {
+    const cur = Array.isArray(choice[it.id]) ? choice[it.id] : [];
+    const all = cur.length === it.opciones.length;
+    setChoice((c) => ({ ...c, [it.id]: all ? [] : it.opciones.map((_, i) => i) }));
+    setTouched((t) => new Set(t).add(it.id));
   };
   const setText = (id, text) => { setNotes((n) => ({ ...n, [id]: text })); setTouched((t) => new Set(t).add(id)); };
   const setNote = (id, text) => setNotes((n) => ({ ...n, [id]: text }));
@@ -138,13 +163,20 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
   const removePhoto = (id, localId) => setPhotos((p) => ({ ...p, [id]: (p[id] || []).filter((ph) => ph.localId !== localId) }));
 
   const goto = (i) => setCursor(Math.max(0, Math.min(STEPS - 1, i)));
-  const next = () => (cursor < STEPS - 1 ? goto(cursor + 1) : setPhase('resumen'));
+  const next = () => {
+    // Pregunta agrupada por marca (casillas): pasar de ella sin marcar nada
+    // también es una respuesta — "ninguna línea rotulada" — y debe enviarse.
+    const it = items[cursor];
+    if (isPromo && it?.tipo === 'checklist') setTouched((t) => new Set(t).add(it.id));
+    if (cursor < STEPS - 1) goto(cursor + 1); else setPhase('resumen');
+  };
   const prev = () => goto(cursor - 1);
 
   const resetAll = () => {
     if (!window.confirm('¿Reiniciar? Se perderán las respuestas y fotos.')) return;
     clearDraft();
     setChoice({}); setNotes({}); setTouched(new Set()); setPhotos({}); setCursor(0); setPhase('intro'); setHasDraft(false);
+    setCategoria('');
     toast.success('Reiniciado');
   };
 
@@ -167,7 +199,7 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
         formTitulo: schema.titulo,
         meta: {
           respondent: user?.name, fecha: new Date().toLocaleDateString('es-HN'),
-          ...(isPromo ? { sucursal, socializo } : {}),
+          ...(isPromo ? { sucursal, socializo, categoria: eligeCategoria ? categoria : promoCategorias[0] } : {}),
         },
         rows: buildRows(), hasScoring: schema.has_scoring, totalScore: summary.totalAct, totalMax: summary.totalMax,
       });
@@ -175,7 +207,7 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
   };
 
   const submit = async () => {
-    if (touched.size === 0) { toast.error('Responde al menos una pregunta antes de enviar'); return; }
+    if (!items.some((it) => touched.has(it.id))) { toast.error('Responde al menos una pregunta antes de enviar'); return; }
     setSubmitting(true);
     try {
       const entries = items.filter((it) => touched.has(it.id)).map((it) => ({
@@ -184,8 +216,9 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
         score: itemScore(it), note: (notes[it.id] || '').trim(),
       }));
       const fd = new FormData();
-      fd.append('data', JSON.stringify({ entries, ...(isPromo ? { sucursal, socializo } : {}) }));
-      Object.entries(photos).forEach(([id, list]) => {
+      fd.append('data', JSON.stringify({ entries, ...(isPromo ? { sucursal, socializo, categoria } : {}) }));
+      const idsActuales = new Set(items.map((it) => it.id));
+      Object.entries(photos).filter(([id]) => idsActuales.has(id)).forEach(([id, list]) => {
         list.forEach((p) => { fd.append('photos', p.blob, p.name || `${id}.jpg`); fd.append('photo_owner', id); });
       });
       if (isPromo && generalPhoto) {
@@ -196,7 +229,7 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
       toast.success('Respuesta enviada correctamente');
       clearDraft();
       setChoice({}); setNotes({}); setTouched(new Set()); setPhotos({}); setCursor(0); setPhase('intro'); setHasDraft(false);
-      setSucursal(''); setSocializo(false); setGeneralPhoto(null);
+      setSucursal(''); setSocializo(false); setGeneralPhoto(null); setCategoria('');
       onSubmitted?.();
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'No se pudo enviar la respuesta');
@@ -205,10 +238,11 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
 
   const beginWalk = () => {
     if (isPromo && !sucursal) { toast.error('Selecciona la sucursal que estás reportando'); return; }
+    if (eligeCategoria && !categoria) { toast.error('Selecciona tu categoría'); return; }
     setPhase('walk');
   };
 
-  if (STEPS === 0) return <p className="text-sm text-muted-foreground text-center py-10">Este formulario no tiene preguntas.</p>;
+  if (schema.items.length === 0) return <p className="text-sm text-muted-foreground text-center py-10">Este formulario no tiene preguntas.</p>;
 
   if (phase === 'intro') {
     return (
@@ -220,7 +254,12 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
         </div>
         <h2 className="font-heading text-xl font-semibold mt-4">{schema.titulo}</h2>
         {schema.descripcion && <p className="text-sm text-muted-foreground mt-1 mb-2">{schema.descripcion}</p>}
-        <p className="text-xs text-muted-foreground mb-5">{STEPS} pregunta{STEPS === 1 ? '' : 's'}{schema.has_scoring ? ' · con puntaje' : ''}</p>
+        <p className="text-xs text-muted-foreground mb-5">
+          {eligeCategoria && !categoria
+            ? `${schema.items.length} promociones en ${promoCategorias.length} categorías`
+            : `${STEPS} pregunta${STEPS === 1 ? '' : 's'}${eligeCategoria ? ` de ${categoria}` : ''}`}
+          {schema.has_scoring ? ' · con puntaje' : ''}
+        </p>
 
         {hasDraft && (
           <div className="flex items-center gap-2 rounded-xl bg-[rgba(0,165,223,0.1)] text-[#1e395e] dark:text-[#3cbef6] text-xs px-3 py-2 mb-4">
@@ -238,6 +277,20 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
                 <SelectContent>{promoSucursales.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
               </Select>
             </div>
+            {eligeCategoria && (
+              <div className="space-y-1.5">
+                <Label>Categoría</Label>
+                <Select value={categoria} onValueChange={(v) => { setCategoria(v); setCursor(0); }}>
+                  <SelectTrigger className="h-11" data-testid="promo-resp-categoria-select"><SelectValue placeholder="Selecciona tu categoría…" /></SelectTrigger>
+                  <SelectContent>
+                    {promoCategorias.map((c) => (
+                      <SelectItem key={c} value={c}>{c} ({conteoPorCategoria[c]})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Solo verás las promociones de la categoría que elijas.</p>
+              </div>
+            )}
             <div className="flex items-center justify-between rounded-xl border px-3.5 py-2.5">
               <span className="text-sm">¿Socializó las promociones?</span>
               <Switch checked={socializo} onCheckedChange={setSocializo} data-testid="promo-resp-socializo-switch" />
@@ -286,13 +339,13 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
       {phase === 'walk' && (
         <WalkCard
           it={items[cursor]} cursor={cursor} steps={STEPS} items={items} choice={choice} notes={notes} photos={photos} uploading={uploading}
-          onSelectSingle={selectSingle} onToggleMulti={toggleMulti} onSetText={setText} onSetNote={setNote}
+          onSelectSingle={selectSingle} onToggleMulti={toggleMulti} onToggleAll={toggleAll} onSetText={setText} onSetNote={setNote}
           onFiles={handleFiles} onRemovePhoto={removePhoto} onPrev={prev} onNext={next} onGoto={goto}
           onZoom={setZoomSrc} camInputs={camInputs} touched={touched}
         />
       )}
       {phase === 'resumen' && (
-        <Resumen schema={schema} summary={summary} onExport={exportPdf} onSubmit={submit} submitting={submitting} />
+        <Resumen schema={schema} summary={summary} categoria={eligeCategoria ? categoria : ''} onExport={exportPdf} onSubmit={submit} submitting={submitting} />
       )}
 
       <Dialog open={!!zoomSrc} onOpenChange={(o) => !o && setZoomSrc(null)}>
@@ -304,7 +357,7 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
   );
 }
 
-function WalkCard({ it, cursor, steps, items, choice, notes, photos, uploading, onSelectSingle, onToggleMulti, onSetText, onSetNote, onFiles, onRemovePhoto, onPrev, onNext, onGoto, onZoom, camInputs, touched }) {
+function WalkCard({ it, cursor, steps, items, choice, notes, photos, uploading, onSelectSingle, onToggleMulti, onToggleAll, onSetText, onSetNote, onFiles, onRemovePhoto, onPrev, onNext, onGoto, onZoom, camInputs, touched }) {
   const pics = photos[it.id] || [];
   const busy = uploading === it.id;
   const single = choice[it.id];
@@ -356,6 +409,14 @@ function WalkCard({ it, cursor, steps, items, choice, notes, photos, uploading, 
 
           {it.tipo === 'checklist' && (
             <div className="mt-5 space-y-2">
+              {it.opciones.length > 1 && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">{multi.length} de {it.opciones.length} marcadas</span>
+                  <Button type="button" variant="outline" size="sm" className="rounded-xl h-8" onClick={() => onToggleAll(it)} data-testid="customform-select-all">
+                    {multi.length === it.opciones.length ? 'Quitar todo' : 'Seleccionar todo'}
+                  </Button>
+                </div>
+              )}
               {it.opciones.map((o, n) => {
                 const active = multi.includes(n);
                 return (
@@ -436,7 +497,7 @@ function WalkCard({ it, cursor, steps, items, choice, notes, photos, uploading, 
   );
 }
 
-function Resumen({ schema, summary, onExport, onSubmit, submitting }) {
+function Resumen({ schema, summary, categoria, onExport, onSubmit, submitting }) {
   const t = tone(summary.pct);
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
@@ -450,7 +511,7 @@ function Resumen({ schema, summary, onExport, onSubmit, submitting }) {
           <p className="text-sm text-muted-foreground">Este formulario no lleva puntaje — solo recopila respuestas.</p>
         </div>
       )}
-      <p className="text-sm text-muted-foreground text-center mb-4">{summary.touchedCount} de {schema.items.length} preguntas respondidas</p>
+      <p className="text-sm text-muted-foreground text-center mb-4">{summary.touchedCount} de {summary.total} preguntas respondidas{categoria ? ` · ${categoria}` : ''}</p>
 
       <div className="flex flex-wrap gap-2 mt-5">
         <Button variant="outline" className="rounded-xl" onClick={onExport} data-testid="customform-export-pdf">

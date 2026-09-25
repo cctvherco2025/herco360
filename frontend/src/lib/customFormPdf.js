@@ -87,6 +87,7 @@ export async function generateCustomFormPdf({ formTitulo, meta, rows, hasScoring
   const fieldW = (PAGE_W - MARGIN * 2 - 16) / 2;
   const fields = [['Respondido por', meta.respondent], ['Fecha', meta.fecha]];
   if (meta.sucursal) fields.push(['Sucursal', meta.sucursal]);
+  if (meta.categoria) fields.push(['Categoría', meta.categoria]);
   if (meta.socializo !== undefined && meta.socializo !== null) fields.push(['Socializó promociones', meta.socializo ? 'Sí' : 'No']);
   fields.forEach(([label, value], i) => {
     const col = i % 2, row = Math.floor(i / 2);

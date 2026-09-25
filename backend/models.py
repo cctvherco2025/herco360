@@ -199,6 +199,9 @@ class CustomFormItem(BaseModel):
     scored: bool = False
     opciones: List[CustomFormOption] = []
     permite_foto: bool = True
+    # Promociones del mes: nombres originales del Excel que cubre esta pregunta
+    # (varias si se agruparon líneas de la misma marca). Alimenta la memoria de categorías.
+    lineas_origen: List[str] = []
 
 
 class CustomFormAudience(BaseModel):

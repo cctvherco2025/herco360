@@ -31,6 +31,7 @@ export default function PromoResultados({ formId }) {
   const [loading, setLoading] = useState(true);
   const [sucFilter, setSucFilter] = useState('');
   const [estadoFilter, setEstadoFilter] = useState('');
+  const [catFilter, setCatFilter] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setForbidden(false);
@@ -48,6 +49,13 @@ export default function PromoResultados({ formId }) {
       (!sucFilter || s.sucursal === sucFilter) && (!estadoFilter || s.estado === estadoFilter));
   }, [report, sucFilter, estadoFilter]);
 
+  const categorias = useMemo(() => (
+    report ? [...new Set(report.por_promocion.map((p) => p.categoria).filter(Boolean))] : []
+  ), [report]);
+  const porPromocionFiltrado = useMemo(() => (
+    report ? report.por_promocion.filter((p) => !catFilter || p.categoria === catFilter) : []
+  ), [report, catFilter]);
+
   if (loading) return <p className="text-sm text-muted-foreground text-center py-10">Cargando…</p>;
 
   if (forbidden) {
@@ -60,7 +68,7 @@ export default function PromoResultados({ formId }) {
   }
   if (!report) return null;
 
-  const { kpis, por_promocion, por_sucursal } = report;
+  const { kpis, por_sucursal } = report;
 
   return (
     <div className="space-y-4">
@@ -73,22 +81,37 @@ export default function PromoResultados({ formId }) {
       </div>
 
       <div className="rounded-[18px] bg-card border shadow-card p-5">
-        <h3 className="font-heading font-semibold mb-3">Reporte por promoción</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h3 className="font-heading font-semibold">Reporte por promoción</h3>
+          {categorias.length > 1 && (
+            <Select value={catFilter || '__all'} onValueChange={(v) => setCatFilter(v === '__all' ? '' : v)}>
+              <SelectTrigger className="h-9 w-[170px]" data-testid="promo-report-categoria-filter"><SelectValue placeholder="Categoría" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all">Todas las categorías</SelectItem>
+                {categorias.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
         <div className="overflow-x-auto">
-          <div className="min-w-[520px]">
-            <div className="grid grid-cols-[1fr_90px_90px_90px_100px] gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide px-2 pb-2 border-b">
-              <span>Promoción</span><span className="text-right">Visibles</span><span className="text-right">No visibles</span><span className="text-right">No aplica</span><span className="text-right">Cumplimiento</span>
+          <div className="min-w-[620px]">
+            <div className="grid grid-cols-[1fr_110px_80px_90px_80px_100px] gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide px-2 pb-2 border-b">
+              <span>Promoción</span><span>Categoría</span><span className="text-right">Visibles</span><span className="text-right">No visibles</span><span className="text-right">No aplica</span><span className="text-right">Cumplimiento</span>
             </div>
-            {por_promocion.map((p) => (
-              <div key={p.id} className="grid grid-cols-[1fr_90px_90px_90px_100px] gap-2 text-sm px-2 py-2.5 border-b last:border-0 items-center">
-                <span className="truncate">{p.titulo}</span>
+            {porPromocionFiltrado.map((p) => (
+              <div key={p.id} className="grid grid-cols-[1fr_110px_80px_90px_80px_100px] gap-2 text-sm px-2 py-2.5 border-b last:border-0 items-center">
+                <span className="truncate" title={p.titulo}>
+                  {p.titulo}
+                  {p.lineas > 1 && <span className="ml-1.5 text-xs text-muted-foreground">({p.lineas} líneas)</span>}
+                </span>
+                <span className="truncate text-xs text-muted-foreground">{p.categoria}</span>
                 <span className="text-right text-[#16a34a] font-medium">{p.visibles}</span>
                 <span className="text-right text-[#dc2626] font-medium">{p.no_visibles}</span>
                 <span className="text-right text-muted-foreground">{p.no_aplica}</span>
                 <span className="text-right"><ComplianceBadge pct={p.cumplimiento} /></span>
               </div>
             ))}
-            {por_promocion.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">Sin promociones</p>}
+            {porPromocionFiltrado.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">Sin promociones</p>}
           </div>
         </div>
       </div>
