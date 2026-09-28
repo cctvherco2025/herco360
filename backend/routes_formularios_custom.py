@@ -52,6 +52,7 @@ PROMO_SUCURSALES = ['Herco Max', 'Herco Centro', 'Herco SL', 'Herco JT']
 # (se guarda en el 'seccion' de la pregunta) y quien responde elige la suya para
 # ver solo esas líneas.
 PROMO_CATEGORIAS = ['Herramientas', 'Hogar', 'Ferretería', 'Iluminación', 'Pinturas', 'Revestimiento']
+ESTRATEGIAS_PROMO = {'descuento', 'precio', 'combo', 'mixta'}
 GENERAL_PHOTO_OWNER = '_general'  # sentinel: la foto no pertenece a un ítem sino al paso "Datos Generales"
 
 _MAIN_COL_KEYWORDS = ('promocion', 'promoción', 'producto', 'articulo', 'artículo', 'descripcion', 'descripción', 'nombre')
@@ -463,6 +464,9 @@ def _normalize_items(items_in: list, max_items: int = MAX_ITEMS) -> list:
         lineas = [' '.join(str(l).split()) for l in (it.lineas_origen or []) if str(l).strip()]
         if lineas:
             item['lineas_origen'] = lineas
+        if (it.estrategia or '') in ESTRATEGIAS_PROMO:
+            item['estrategia'] = it.estrategia
+            item['etiqueta'] = ' '.join((it.etiqueta or '').split())[:60]
         item['max'] = _item_max(item)
         items.append(item)
     return items
@@ -692,6 +696,8 @@ async def submit_response(
             # en el historial también las que quedaron sin marcar
             **({'opciones_total': [o['label'] for o in item['opciones']]}
                if is_promo and item['tipo'] == 'checklist' else {}),
+            **({'estrategia': item['estrategia'], 'etiqueta': item.get('etiqueta') or ''}
+               if item.get('estrategia') else {}),
         })
 
     if len(photos) != len(photo_owner):
@@ -823,6 +829,7 @@ async def get_report(form_id: str, user=Depends(get_current_user)):
 
     por_promo = {it['id']: {'id': it['id'], 'titulo': it['titulo'], 'categoria': it.get('seccion') or 'General',
                             'lineas': len(it.get('opciones') or []) if it.get('tipo') == 'checklist' else 1,
+                            'estrategia': it.get('estrategia'), 'etiqueta': it.get('etiqueta'),
                             'visibles': 0, 'no_visibles': 0, 'no_aplica': 0}
                  for it in form.get('items', [])}
     for r in responses:

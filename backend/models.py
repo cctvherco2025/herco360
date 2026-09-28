@@ -202,6 +202,10 @@ class CustomFormItem(BaseModel):
     # Promociones del mes: nombres originales del Excel que cubre esta pregunta
     # (varias si se agruparon líneas de la misma marca). Alimenta la memoria de categorías.
     lineas_origen: List[str] = []
+    # Promociones del mes: estrategia de la promoción y su chip ("COMBO 2+1",
+    # "DESCUENTO 15%", "PRECIO ESPECIAL") para que se sepa qué debe decir el rótulo.
+    estrategia: Optional[str] = None  # 'descuento' | 'precio' | 'combo' | 'mixta'
+    etiqueta: Optional[str] = None
 
 
 class CustomFormAudience(BaseModel):

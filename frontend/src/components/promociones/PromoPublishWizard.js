@@ -20,6 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { periodoLabel } from '@/pages/PromocionesHome';
+import { detectarEstrategia, etiquetaDeGrupo, ESTRATEGIA_LABEL, ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
 
 const STEP_LABELS = ['Cargar Excel', 'Detectar columnas', 'Categorizar', 'Configurar', 'Publicar'];
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -78,7 +79,11 @@ function armarPreguntas(lineas, agrupar) {
     else if (agrupar && it.grupo !== SOLO && p) nombre = p.marca;
     // dentro del grupo, la línea se nombra sin el prefijo de la marca si lo trae
     const sub = nombre && p && normTxt(p.marca) === normTxt(nombre) ? p.sub : it.titulo.trim();
-    const key = nombre ? `${it.categoria}|${normTxt(nombre)}` : `solo|${it.localId}`;
+    // la agrupación AUTOMÁTICA por marca no mezcla estrategias (los combos de
+    // una marca no se juntan con sus descuentos); un grupo manual sí puede.
+    const key = !nombre ? `solo|${it.localId}`
+      : manual ? `${it.categoria}|${normTxt(nombre)}`
+      : `${it.categoria}|${normTxt(nombre)}|${it.estrategia || ''}`;
     // el grupo conserva el nombre de su primera línea ("DYLLU" aunque se escriba "dyllu")
     if (!grupos.has(key)) grupos.set(key, { nombre, miembros: [] });
     grupos.get(key).miembros.push({ it, sub });
@@ -91,12 +96,18 @@ function armarPreguntas(lineas, agrupar) {
         pregunta: it.pregunta || '¿La promoción está visible en tienda?',
         tipo: 'opcion_unica', scored: false, permite_foto: true,
         opciones: it.opciones, lineas_origen: [it.nombreOriginal || it.titulo.trim()],
+        estrategia: it.estrategia || '', etiqueta: it.etiqueta || '',
         localIds: [it.localId],
       };
     }
+    const { estrategia, etiqueta } = etiquetaDeGrupo(g.map(({ it }) => it));
     const vistos = new Set();
     const opciones = g.map(({ it, sub }) => {
-      let label = it.descuento ? `${sub} — ${it.descuento}` : sub;
+      // cada opción dice su oferta: "— 15%", "— 2+1 · L 370.00", "— L 5,300.00 → L 4,260.00";
+      // si el grupo mezcla estrategias, también el tipo ("— Combo 2+1 · L 370.00")
+      const oferta = it.oferta || it.descuento || '';
+      const detalle = estrategia === 'mixta' && it.estrategia ? `${ESTRATEGIA_LABEL[it.estrategia]} ${oferta}`.trim() : oferta;
+      let label = detalle ? `${sub} — ${detalle}` : sub;
       for (let n = 2; vistos.has(label); n += 1) label = `${sub} (${n})`;
       vistos.add(label);
       return { label };
@@ -108,6 +119,7 @@ function armarPreguntas(lineas, agrupar) {
       pregunta: `Marca las líneas que están rotuladas en tienda (${g.length} líneas)${vences.length === 1 ? ` · Vence: ${vences[0]}` : ''}`,
       tipo: 'checklist', scored: false, permite_foto: true,
       opciones, lineas_origen: g.map(({ it }) => it.nombreOriginal || it.titulo.trim()),
+      estrategia, etiqueta,
     };
   });
 }
@@ -355,10 +367,18 @@ export default function PromoPublishWizard() {
       const [categoria, origen] = catExcel ? [catExcel, 'excel']
         : catMemoria ? [catMemoria, 'memoria']
         : catSugerida ? [catSugerida, 'sugerida'] : ['', ''];
+      // Estrategia (Descuento / Precio especial / Combo) y su oferta: la
+      // referencia bajo el nombre dice qué debe decir el rótulo.
+      const est = detectarEstrategia(row, excelData.headers);
+      const vence = venceCol ? (row[venceCol] ?? '') : '';
+      const referencia = est.estrategia
+        ? [`${ESTRATEGIA_LABEL[est.estrategia]}${est.oferta ? `: ${est.oferta}` : ''}`,
+          est.codigo ? `Código ${est.codigo}` : null, vence ? `Vence ${vence}` : null].filter(Boolean).join(' · ')
+        : hint;
       return {
-        localId: newItemId(), titulo: nombre, pregunta: hint, incluida: true, categoria, origen,
-        nombreOriginal: nombre,
-        descuento: descCol ? (row[descCol] ?? '') : '', vence: venceCol ? (row[venceCol] ?? '') : '',
+        localId: newItemId(), titulo: nombre, pregunta: referencia, incluida: true, categoria, origen,
+        nombreOriginal: nombre, estrategia: est.estrategia, oferta: est.oferta, etiqueta: est.etiqueta,
+        descuento: descCol ? (row[descCol] ?? '') : '', vence,
         opciones: OPCIONES_BASE.map((o) => ({ ...o })),
       };
     });
@@ -417,7 +437,12 @@ export default function PromoPublishWizard() {
     const nombre = (grupoDialog?.nombre || '').trim();
     if (!nombre) { toast.error('Ponle un nombre al grupo'); return; }
     setItems((its) => its.map((it) => (seleccion.has(it.localId) ? { ...it, grupo: nombre } : it)));
-    toast.success(`${seleccion.size} líneas agrupadas en "${nombre}"`);
+    const estrategias = new Set(items.filter((it) => seleccion.has(it.localId)).map((it) => it.estrategia).filter(Boolean));
+    if (estrategias.size > 1) {
+      toast.warning(`"${nombre}" mezcla ${[...estrategias].map((e) => ESTRATEGIA_LABEL[e]).join(' y ')} — cada línea mostrará su tipo de oferta`);
+    } else {
+      toast.success(`${seleccion.size} líneas agrupadas en "${nombre}"`);
+    }
     setSeleccion(new Set());
     setGrupoDialog(null);
   };
@@ -622,6 +647,7 @@ export default function PromoPublishWizard() {
                       <span key={`${g.seccion}|${g.titulo}`} title={g.opciones.map((o) => o.label).join('\n')}
                         className="text-[11px] rounded-full border bg-card px-2 py-0.5">
                         <span className="font-semibold">{g.titulo}</span> · {g.opciones.length} líneas · {g.seccion}
+                        {g.etiqueta && <span className="font-semibold" style={{ color: ESTRATEGIA_COLOR[g.estrategia] }}> · {g.etiqueta}</span>}
                       </span>
                     ))}
                   </div>
@@ -688,7 +714,13 @@ export default function PromoPublishWizard() {
                         </div>
                         {it.manual ? (
                           <div className="flex gap-1.5">
-                            <Input value={it.descuento || ''} onChange={(e) => updateItem(it.localId, { descuento: e.target.value, pregunta: e.target.value ? `Descuento: ${e.target.value}` : '' })}
+                            <Input value={it.descuento || ''} onChange={(e) => {
+                                const v = e.target.value;
+                                updateItem(it.localId, {
+                                  descuento: v, oferta: v, estrategia: v ? 'descuento' : '', etiqueta: v ? `DESCUENTO ${v}` : '',
+                                  pregunta: v ? `Descuento: ${v}` : '',
+                                });
+                              }}
                               placeholder="Descuento (ej. 15%)" className="h-8 text-xs w-[150px]" data-testid="promo-item-descuento" />
                             <Input value={it.vence || ''} onChange={(e) => updateItem(it.localId, { vence: e.target.value })}
                               placeholder="Vence (ej. 30/09/2026)" className="h-8 text-xs flex-1" />
@@ -697,7 +729,11 @@ export default function PromoPublishWizard() {
                           <Input value={it.pregunta} onChange={(e) => updateItem(it.localId, { pregunta: e.target.value })}
                             placeholder="Referencia (opcional)" className="h-8 text-xs text-muted-foreground" />
                         )}
-                        <p className="text-[11px] text-muted-foreground flex flex-wrap items-center gap-y-1">
+                        <p className="text-[11px] text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1">
+                          {it.etiqueta && (
+                            <span className="rounded-full px-2 py-0.5 font-semibold text-white" style={{ background: ESTRATEGIA_COLOR[it.estrategia] }}
+                              data-testid="promo-item-estrategia">{it.etiqueta}</span>
+                          )}
                           {grupoDeLinea[it.localId] ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(30,57,94,0.1)] text-[#1e395e] dark:text-[#3cbef6] px-2 py-0.5 font-medium" data-testid="promo-item-grupo">
                               <Layers className="h-3 w-3" /> {grupoDeLinea[it.localId].nombre} · {grupoDeLinea[it.localId].n} líneas

@@ -8,6 +8,7 @@ import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { compressImage } from '@/lib/flosPhoto';
 import { generateCustomFormPdf } from '@/lib/customFormPdf';
+import { ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -191,6 +192,8 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
     id: it.id, titulo: it.titulo, seccion: it.seccion, scored: it.scored,
     score: touched.has(it.id) ? itemScore(it) : 0, max: it.max,
     respuesta: answerLabel(it), note: (notes[it.id] || '').trim(), photos: photos[it.id] || [],
+    ...(isPromo && it.tipo === 'checklist' ? { opciones_total: it.opciones.map((o) => o.label) } : {}),
+    estrategia: it.estrategia, etiqueta: it.etiqueta,
   }));
 
   const exportPdf = async () => {
@@ -202,6 +205,7 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
           ...(isPromo ? { sucursal, socializo, categoria: eligeCategoria ? categoria : promoCategorias[0] } : {}),
         },
         rows: buildRows(), hasScoring: schema.has_scoring, totalScore: summary.totalAct, totalMax: summary.totalMax,
+        generalPhotos: isPromo && generalPhoto ? [generalPhoto] : [],
       });
     } catch (e) { toast.error('No se pudo generar el PDF'); }
   };
@@ -384,6 +388,12 @@ function WalkCard({ it, cursor, steps, items, choice, notes, photos, uploading, 
       <AnimatePresence mode="wait">
         <motion.div key={cursor} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.2 }}
           className="rounded-[18px] bg-card border shadow-card p-5 sm:p-6" data-testid="customform-walk-card">
+          {it.etiqueta && (
+            <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-white mb-2"
+              style={{ background: ESTRATEGIA_COLOR[it.estrategia] || ESTRATEGIA_COLOR.mixta }} data-testid="customform-estrategia">
+              {it.etiqueta}
+            </span>
+          )}
           <h3 className="font-heading text-lg font-semibold leading-snug">{it.titulo}</h3>
           {it.pregunta && <p className="text-sm text-muted-foreground mt-0.5">{it.pregunta}</p>}
 

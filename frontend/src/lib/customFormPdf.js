@@ -4,6 +4,11 @@
 // si el formulario no lleva puntaje, se omite el medidor y solo se listan las
 // respuestas.
 import { jsPDF } from 'jspdf';
+import { ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
+
+// Helvetica del PDF solo trae caracteres WinAnsi: la flecha de precio especial
+// ("L 5,300.00 → L 4,260.00") saldría como basura.
+const pdfSafe = (t) => String(t ?? '').replace(/→/g, '->');
 
 const NAVY = '#1e395e';
 const CYAN = '#00a5df';
@@ -34,6 +39,36 @@ async function loadImageDataUrl(url) {
   } catch (e) { return null; }
 }
 
+// Prepara una foto para el PDF: lee sus dimensiones reales (para no deformarla)
+// y la re-codifica a JPEG de tamaño razonable — suficiente para verse nítida a
+// media página sin que el PDF pese decenas de MB con muchas fotos.
+const PDF_PHOTO_MAX = 1400;
+function preparePhoto(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let { naturalWidth: w, naturalHeight: h } = img;
+      if (!w || !h) { resolve(null); return; }
+      const scale = Math.min(1, PDF_PHOTO_MAX / Math.max(w, h));
+      w = Math.round(w * scale); h = Math.round(h * scale);
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h); // PNG con transparencia -> fondo blanco
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve({ data: canvas.toDataURL('image/jpeg', 0.85), w, h });
+      } catch (e) { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
+// Cuadrícula de fotos: 2 columnas, cada foto con su proporción real, centrada
+// en su celda; como máximo PHOTO_MAX_H de alto (~8 cm) para que se vean bien.
+const PHOTO_COLS = 2, PHOTO_GAP = 10, PHOTO_MAX_H = 230;
+
 function drawGauge(doc, cx, cy, r, pct, color, lineWidth = 11) {
   doc.setLineWidth(lineWidth);
   doc.setDrawColor(226, 230, 236);
@@ -55,17 +90,52 @@ function drawGauge(doc, cx, cy, r, pct, color, lineWidth = 11) {
 }
 
 function answerText(row) {
+  // Pregunta agrupada por marca: separar rotuladas de no rotuladas
+  if (Array.isArray(row.respuesta) && row.opciones_total?.length) {
+    const no = row.opciones_total.filter((o) => !row.respuesta.includes(o));
+    return [
+      `Rotuladas (${row.respuesta.length}/${row.opciones_total.length}): ${row.respuesta.join(', ') || 'ninguna'}`,
+      no.length ? `No rotuladas: ${no.join(', ')}` : null,
+    ].filter(Boolean).join('\n');
+  }
   if (Array.isArray(row.respuesta)) return row.respuesta.length ? row.respuesta.join(', ') : '—';
   return row.respuesta ? String(row.respuesta) : '';
 }
 
-export async function generateCustomFormPdf({ formTitulo, meta, rows, hasScoring, totalScore, totalMax }) {
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+export async function generateCustomFormPdf({ formTitulo, meta, rows, hasScoring, totalScore, totalMax, generalPhotos = [] }) {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
   const logo = await loadImageDataUrl('/icon-192.png');
   let y = 0;
 
   const newPage = () => { doc.addPage(); y = MARGIN; };
   const ensure = (need) => { if (y + need > PAGE_H - 56) newPage(); };
+
+  // Fotos listas (dimensiones reales + JPEG re-codificado), preparadas antes de dibujar.
+  const prep = async (list) => (await Promise.all((list || []).map((p) => (p?.dataUrl ? preparePhoto(p.dataUrl) : null)))).filter(Boolean);
+  const rowPhotos = await Promise.all(rows.map((r) => prep(r.photos)));
+  const generales = await prep(generalPhotos);
+
+  const cellW = (PAGE_W - MARGIN * 2 - PHOTO_GAP * (PHOTO_COLS - 1)) / PHOTO_COLS;
+  const fitSizes = (fila) => fila.map((p) => { const s = Math.min(cellW / p.w, PHOTO_MAX_H / p.h); return { w: p.w * s, h: p.h * s }; });
+  // alto de la primera fila: la tarjeta de la pregunta no se separa de sus fotos
+  const firstRowH = (photos) => (photos.length ? Math.max(...fitSizes(photos.slice(0, PHOTO_COLS)).map((s) => s.h)) + PHOTO_GAP : 0);
+
+  const photoGrid = (photos) => {
+    for (let i = 0; i < photos.length; i += PHOTO_COLS) {
+      const fila = photos.slice(i, i + PHOTO_COLS);
+      const sizes = fitSizes(fila);
+      const rowH = Math.max(...sizes.map((s) => s.h));
+      ensure(rowH + PHOTO_GAP);
+      fila.forEach((p, j) => {
+        const cellX = MARGIN + j * (cellW + PHOTO_GAP);
+        const { w, h } = sizes[j];
+        doc.setFillColor(242, 244, 247);
+        doc.roundedRect(cellX, y, cellW, rowH, 4, 4, 'F');
+        try { doc.addImage(p.data, 'JPEG', cellX + (cellW - w) / 2, y + (rowH - h) / 2, w, h, undefined, 'FAST'); } catch (e) { /* imagen inválida, se omite */ }
+      });
+      y += rowH + PHOTO_GAP;
+    }
+  };
 
   doc.setFillColor(...hexToRgb(NAVY));
   doc.rect(0, 0, PAGE_W, 96, 'F');
@@ -112,16 +182,26 @@ export async function generateCustomFormPdf({ formTitulo, meta, rows, hasScoring
     y += 100;
   }
 
-  ensure(30);
+  if (generales.length) {
+    ensure(24 + firstRowH(generales));
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(...hexToRgb(NAVY));
+    doc.text('Evidencia general', MARGIN, y);
+    y += 10;
+    photoGrid(generales);
+    y += 8;
+  }
+
+  ensure(30 + 24 + 70 + firstRowH(rowPhotos[0] || []));
   doc.setFont('helvetica', 'bold'); doc.setFontSize(13.5); doc.setTextColor(...hexToRgb(NAVY));
   doc.text('Respuestas', MARGIN, y);
   y += 20;
 
   let curSec = null;
-  for (const r of rows) {
+  for (const [ri, r] of rows.entries()) {
     if (r.seccion !== curSec) {
       curSec = r.seccion;
-      ensure(24);
+      // el título de sección no queda solo al pie: baja con su primera tarjeta y fotos
+      ensure(24 + 70 + firstRowH(rowPhotos[ri]));
       doc.setFillColor(...hexToRgb(CYAN)); doc.rect(MARGIN, y - 10, 3, 14, 'F');
       doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(...hexToRgb(NAVY));
       doc.text(curSec, MARGIN + 10, y);
@@ -129,20 +209,33 @@ export async function generateCustomFormPdf({ formTitulo, meta, rows, hasScoring
     }
     const t = r.scored ? tone(r.max ? (r.score / r.max) * 100 : 0) : null;
     doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5);
-    const nameLines = doc.splitTextToSize(r.titulo, PAGE_W - MARGIN * 2 - 90);
-    const ansTxt = answerText(r);
+    // chip de estrategia (COMBO 2+1, DESCUENTO 15%, PRECIO ESPECIAL) a la derecha del título
+    const chipEstr = !r.scored && r.etiqueta ? pdfSafe(r.etiqueta) : '';
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+    const chipEstrW = chipEstr ? doc.getTextWidth(chipEstr) + 14 : 0;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5);
+    const nameLines = doc.splitTextToSize(pdfSafe(r.titulo), PAGE_W - MARGIN * 2 - Math.max(90, chipEstrW + 36));
+    const ansTxt = pdfSafe(answerText(r));
     const ansLines = ansTxt ? doc.splitTextToSize(ansTxt, PAGE_W - MARGIN * 2 - 24) : [];
-    const noteLines = r.note ? doc.splitTextToSize(`"${r.note}"`, PAGE_W - MARGIN * 2 - 24) : [];
-    const hasPhotos = r.photos && r.photos.length > 0;
+    const noteLines = r.note ? doc.splitTextToSize(`"${pdfSafe(r.note)}"`, PAGE_W - MARGIN * 2 - 24) : [];
+    const fotos = rowPhotos[ri];
     const cardH = 14 + nameLines.length * 12 + (ansLines.length ? ansLines.length * 10.5 + 3 : 0)
-      + (noteLines.length ? noteLines.length * 10.5 + 3 : 0) + (hasPhotos ? 58 : 6);
-    ensure(cardH + 8);
+      + (noteLines.length ? noteLines.length * 10.5 + 3 : 0) + 6;
+    ensure(cardH + 8 + firstRowH(fotos));
 
     doc.setFillColor(...(t ? tintRgb(TONE_HEX[t], 0.9) : [248, 248, 249]));
     doc.roundedRect(MARGIN, y - 12, PAGE_W - MARGIN * 2, cardH, 7, 7, 'F');
 
     doc.setTextColor(30, 32, 38);
     doc.text(nameLines, MARGIN + 14, y);
+    if (chipEstr) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+      doc.setFillColor(...hexToRgb(ESTRATEGIA_COLOR[r.estrategia] || ESTRATEGIA_COLOR.mixta));
+      doc.roundedRect(PAGE_W - MARGIN - 14 - chipEstrW, y - 10, chipEstrW, 14, 7, 7, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.text(chipEstr, PAGE_W - MARGIN - 14 - chipEstrW / 2, y - 0.5, { align: 'center' });
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(30, 32, 38);
+    }
     if (r.scored) {
       const chipTxt = `${r.score}/${r.max}`;
       const chipColor = TONE_HEX[t];
@@ -165,20 +258,13 @@ export async function generateCustomFormPdf({ formTitulo, meta, rows, hasScoring
       doc.text(noteLines, MARGIN + 14, y);
       y += noteLines.length * 10.5 + 3;
     }
-    if (hasPhotos) {
-      const thumb = 52, gap = 7;
-      r.photos.slice(0, 5).forEach((p, i) => {
-        try {
-          doc.addImage(p.dataUrl, 'JPEG', MARGIN + 14 + i * (thumb + gap), y, thumb, thumb);
-          doc.setDrawColor(255, 255, 255); doc.setLineWidth(1.5);
-          doc.roundedRect(MARGIN + 14 + i * (thumb + gap), y, thumb, thumb, 3, 3, 'S');
-        } catch (e) { /* imagen inválida, se omite */ }
-      });
-      y += thumb + 10;
-    } else {
+    y += 6 + 10;
+    // Fotos debajo de la tarjeta, grandes y sin deformar (todas, no solo 5)
+    if (fotos.length) {
+      y -= 4;
+      photoGrid(fotos);
       y += 6;
     }
-    y += 10;
   }
 
   const total = doc.internal.getNumberOfPages();

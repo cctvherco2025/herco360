@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { CheckCircle2, Store, ListChecks, Clock, Lock } from 'lucide-react';
 import api from '@/lib/api';
+import { ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 function Kpi({ icon: Icon, label, value, sub, color, tint }) {
@@ -103,6 +104,10 @@ export default function PromoResultados({ formId }) {
                 <span className="truncate" title={p.titulo}>
                   {p.titulo}
                   {p.lineas > 1 && <span className="ml-1.5 text-xs text-muted-foreground">({p.lineas} líneas)</span>}
+                  {p.etiqueta && (
+                    <span className="ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white"
+                      style={{ background: ESTRATEGIA_COLOR[p.estrategia] || ESTRATEGIA_COLOR.mixta }}>{p.etiqueta}</span>
+                  )}
                 </span>
                 <span className="truncate text-xs text-muted-foreground">{p.categoria}</span>
                 <span className="text-right text-[#16a34a] font-medium">{p.visibles}</span>

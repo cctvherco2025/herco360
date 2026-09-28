@@ -5,6 +5,7 @@ import { Eye, Calendar, User as UserIcon, ClipboardList, Download, Loader2, Info
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { generateCustomFormPdf } from '@/lib/customFormPdf';
+import { ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -47,7 +48,10 @@ function AuthedImg({ url, className, onClick }) {
 
 async function fetchRespPhotosAsDataUrls(formId, respId, respDoc) {
   const map = {};
-  const ids = (respDoc.entries || []).flatMap((e) => (e.photos || []).map((p) => p.id));
+  const ids = [
+    ...(respDoc.general_photos || []).map((p) => p.id),
+    ...(respDoc.entries || []).flatMap((e) => (e.photos || []).map((p) => p.id)),
+  ];
   await Promise.all(ids.map(async (photoId) => {
     try {
       const res = await api.get(`/formularios-custom/${formId}/respuestas/${respId}/foto/${photoId}`, { responseType: 'blob' });
@@ -70,6 +74,7 @@ async function exportResponsePdf(formId, formTitulo, hasScoring, respId, cached)
       sucursal: respDoc.sucursal, socializo: respDoc.socializo, categoria: respDoc.categoria,
     },
     rows, hasScoring, totalScore: respDoc.total_score, totalMax: respDoc.total_max,
+    generalPhotos: (respDoc.general_photos || []).map((p) => ({ dataUrl: photoMap[p.id] })).filter((p) => p.dataUrl),
   });
 }
 
@@ -137,7 +142,13 @@ function DetailDialog({ formId, formTitulo, hasScoring, id, onClose }) {
               {resp.entries.map((e) => (
                 <div key={e.id} className="rounded-xl border p-3">
                   <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm font-medium">{e.titulo}</p>
+                    <p className="text-sm font-medium">
+                      {e.titulo}
+                      {e.etiqueta && (
+                        <span className="ml-2 align-middle rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
+                          style={{ background: ESTRATEGIA_COLOR[e.estrategia] || ESTRATEGIA_COLOR.mixta }}>{e.etiqueta}</span>
+                      )}
+                    </p>
                     {e.max > 0 && <span className="text-xs font-bold shrink-0">{e.score}/{e.max}</span>}
                   </div>
                   <p className="text-xs text-muted-foreground">{e.seccion}</p>
