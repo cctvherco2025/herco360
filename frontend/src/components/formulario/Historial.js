@@ -265,11 +265,11 @@ export default function Historial({ refreshKey }) {
       <div className="rounded-[18px] bg-card border shadow-card p-4 mb-4 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end">
         <div className="space-y-1.5 min-w-0">
           <label className="text-xs text-muted-foreground">Desde</label>
-          <Input type="date" value={start} max={end} onChange={(e) => setStart(e.target.value)} className="h-10 w-full sm:w-[150px]" />
+          <Input type="date" value={start} max={end} onChange={(e) => setStart(e.target.value)} className="h-10 w-full sm:w-[150px] px-2.5" />
         </div>
         <div className="space-y-1.5 min-w-0">
           <label className="text-xs text-muted-foreground">Hasta</label>
-          <Input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} className="h-10 w-full sm:w-[150px]" />
+          <Input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} className="h-10 w-full sm:w-[150px] px-2.5" />
         </div>
         <div className="space-y-1.5 col-span-2 sm:col-span-1">
           <label className="text-xs text-muted-foreground">Sucursal</label>

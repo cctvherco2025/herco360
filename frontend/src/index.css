@@ -125,6 +125,28 @@ body {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
+/* Controles nativos en modo oscuro: sin esto el navegador dibuja el ícono
+   del calendario/reloj de los campos de fecha y hora en negro sobre el fondo
+   oscuro y "desaparece". También aplica a los selectores que abre. */
+:root { color-scheme: light; }
+.dark { color-scheme: dark; }
+
+/* Campos de fecha/hora angostos (p. ej. Desde/Hasta en celular): si no cabe
+   todo, se recorta el texto de la fecha y NUNCA el ícono del calendario. */
+input[type="date"]::-webkit-datetime-edit,
+input[type="time"]::-webkit-datetime-edit,
+input[type="datetime-local"]::-webkit-datetime-edit {
+  min-width: 0;
+  overflow: hidden;
+}
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  flex-shrink: 0;
+  margin-inline-start: 2px;
+  cursor: pointer;
+}
+
 @keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .animate-fade-up { animation: fadeInUp 0.4s ease both; }
 
