@@ -138,7 +138,7 @@ USER_PUBLIC_FIELDS = {'_id': 0, 'password_hash': 0}
 GATED_MODULES = (
     'inventario', 'reportes', 'cams', 'formulario', 'rutina',
     'formularios_principal', 'promociones_mes', 'formularios_custom',
-    'rutina_schema', 'formulario_schema',
+    'rutina_schema', 'formulario_schema', 'vacaciones',
 )
 
 
@@ -190,6 +190,28 @@ def can_access_reports(user) -> bool:
         return bool(ov)
     area = (user.get('area') or '').strip()
     return area in ('ECCP', 'Tienda')
+
+
+# ---- Vacaciones ----
+# Históricamente abierto a cualquier usuario logueado, y sigue así por defecto.
+# Se puede quitar por usuario (override manual en module_access.vacaciones).
+def can_access_vacaciones(user) -> bool:
+    if not user:
+        return False
+    if user.get('role') == 'admin':
+        return True
+    if (user.get('position') or '').strip() == 'Director comercial':
+        return True
+    ov = _module_override(user, 'vacaciones')
+    if ov is not None:
+        return bool(ov)
+    return True
+
+
+async def require_vacaciones_access(user=Depends(get_current_user)):
+    if not can_access_vacaciones(user):
+        raise HTTPException(status_code=403, detail='No tienes acceso al módulo de Vacaciones')
+    return user
 
 
 async def require_access_manager(user=Depends(get_current_user)):

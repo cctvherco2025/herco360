@@ -83,6 +83,17 @@ export function canAccessInventory(user) {
   return false;
 }
 
+// Vacaciones: abierto a todos por defecto; se puede quitar por usuario
+// (override manual module_access.vacaciones). Igual que core.can_access_vacaciones.
+export function canAccessVacaciones(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  if ((user.position || '').trim() === 'Director comercial') return true;
+  const ov = (user.module_access || {}).vacaciones;
+  if (ov !== undefined && ov !== null) return !!ov;
+  return true;
+}
+
 // Reportes module: belongs to ECCP (owners) who deliver reports to Tienda.
 // Access limited to ECCP, Tienda and admins.
 export function canAccessReports(user) {

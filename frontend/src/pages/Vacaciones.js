@@ -3,7 +3,9 @@ import { motion } from 'framer-motion';
 import { Palmtree, Plus, Check, X, Clock, CalendarRange, Inbox, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { canAccessVacaciones } from '@/lib/constants';
 import { fullDateEs, capitalize, ymd, MESES } from '@/lib/time';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -34,7 +36,15 @@ function StatusBadge({ status }) {
   return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ color: s.color, background: s.bg }}>{s.label}</span>;
 }
 
+// Sin permiso de Vacaciones (override por usuario) se redirige al inicio.
+// Va en un envoltorio para no cortar el orden de los hooks de la página.
 export default function Vacaciones() {
+  const { user } = useAuth();
+  if (!canAccessVacaciones(user)) return <Navigate to="/" replace />;
+  return <VacacionesPage />;
+}
+
+function VacacionesPage() {
   const { user } = useAuth();
   const isManager = user?.role === 'admin' || ['Jefe', 'Gerente', 'Director comercial'].includes(user?.position);
 

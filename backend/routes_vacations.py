@@ -1,7 +1,7 @@
 """Vacation / leave requests with area-manager authorization."""
 from datetime import date as date_cls, timedelta
 from fastapi import APIRouter, HTTPException, Depends
-from core import db, get_current_user, serialize_doc, now_iso, new_id, today_local_str
+from core import db, get_current_user, require_vacaciones_access, serialize_doc, now_iso, new_id, today_local_str
 from models import VacationRequestInput, VacationReview
 from notifications import create_notification, notify_area_managers, log_activity
 
@@ -39,7 +39,7 @@ def _date_range(start, end):
 
 
 @router.post('')
-async def create_request(data: VacationRequestInput, user=Depends(get_current_user)):
+async def create_request(data: VacationRequestInput, user=Depends(require_vacaciones_access)):
     if data.end_date < data.start_date:
         raise HTTPException(status_code=400, detail='La fecha de fin no puede ser anterior a la de inicio')
     if data.start_date < today_local_str():
@@ -69,13 +69,13 @@ async def create_request(data: VacationRequestInput, user=Depends(get_current_us
 
 
 @router.get('/mine')
-async def my_requests(user=Depends(get_current_user)):
+async def my_requests(user=Depends(require_vacaciones_access)):
     rows = await db.vacation_requests.find({'user_id': user['id']}, {'_id': 0}).sort('created_at', -1).to_list(200)
     return serialize_doc(rows)
 
 
 @router.get('/to-review')
-async def to_review(user=Depends(get_current_user)):
+async def to_review(user=Depends(require_vacaciones_access)):
     if not _is_manager(user):
         return []
     q = {'status': 'pending', 'user_id': {'$ne': user['id']}}
@@ -86,7 +86,7 @@ async def to_review(user=Depends(get_current_user)):
 
 
 @router.get('/pending-count')
-async def pending_count(user=Depends(get_current_user)):
+async def pending_count(user=Depends(require_vacaciones_access)):
     if not _is_manager(user):
         return {'count': 0}
     q = {'status': 'pending', 'user_id': {'$ne': user['id']}}
@@ -111,7 +111,7 @@ async def _load_reviewable(request_id, user):
 
 
 @router.post('/{request_id}/approve')
-async def approve_request(request_id: str, data: VacationReview, user=Depends(get_current_user)):
+async def approve_request(request_id: str, data: VacationReview, user=Depends(require_vacaciones_access)):
     req = await _load_reviewable(request_id, user)
     await db.vacation_requests.update_one({'id': request_id}, {'$set': {
         'status': 'approved', 'reviewed_by': user['id'], 'reviewed_by_name': user['name'],
@@ -142,7 +142,7 @@ async def approve_request(request_id: str, data: VacationReview, user=Depends(ge
 
 
 @router.post('/{request_id}/reject')
-async def reject_request(request_id: str, data: VacationReview, user=Depends(get_current_user)):
+async def reject_request(request_id: str, data: VacationReview, user=Depends(require_vacaciones_access)):
     req = await _load_reviewable(request_id, user)
     await db.vacation_requests.update_one({'id': request_id}, {'$set': {
         'status': 'rejected', 'reviewed_by': user['id'], 'reviewed_by_name': user['name'],
@@ -157,7 +157,7 @@ async def reject_request(request_id: str, data: VacationReview, user=Depends(get
     return serialize_doc(updated)
 
 @router.get('/calendar')
-async def calendar(start: str, end: str, user=Depends(get_current_user)):
+async def calendar(start: str, end: str, user=Depends(require_vacaciones_access)):
     """Vacaciones/permisos visibles en el calendario, según jerarquía:
     admin y Director comercial ven todas las áreas; jefes/gerentes ven su área;
     un usuario normal (sin posición de mando) solo ve las suyas."""
@@ -176,7 +176,7 @@ async def calendar(start: str, end: str, user=Depends(get_current_user)):
     return serialize_doc(rows)
 
 @router.put('/{request_id}')
-async def update_request(request_id: str, data: VacationRequestInput, user=Depends(get_current_user)):
+async def update_request(request_id: str, data: VacationRequestInput, user=Depends(require_vacaciones_access)):
     req = await db.vacation_requests.find_one({'id': request_id}, {'_id': 0})
     if not req:
         raise HTTPException(status_code=404, detail='Solicitud no encontrada')
@@ -221,7 +221,7 @@ async def update_request(request_id: str, data: VacationRequestInput, user=Depen
 
 
 @router.delete('/{request_id}')
-async def delete_request(request_id: str, user=Depends(get_current_user)):
+async def delete_request(request_id: str, user=Depends(require_vacaciones_access)):
     req = await db.vacation_requests.find_one({'id': request_id}, {'_id': 0})
     if not req:
         raise HTTPException(status_code=404, detail='Solicitud no encontrada')

@@ -9,7 +9,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import {
   canAccessInventory, canAccessReports, canAccessOrgChart, canAccessCams, canAccessFlos, canAccessRutina,
-  canAccessFormulariosPrincipal, canAccessPromocionesMes,
+  canAccessFormulariosPrincipal, canAccessPromocionesMes, canAccessVacaciones,
 } from '@/lib/constants';
 import { Logo } from '@/components/Logo';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -146,6 +146,12 @@ function SidebarContent({ onNavigate }) {
   if (canAccessOrgChart(user)) {
     const idx = navItems.findIndex((n) => n.to === '/usuarios');
     navItems.splice(idx >= 0 ? idx + 1 : navItems.length - 1, 0, { to: '/organigrama', label: 'Jerarquía y permisos', icon: Network, testid: 'sidebar-nav-organigrama' });
+  }
+  // Vacaciones se quita al final (no antes) para no mover los índices en los
+  // que se insertan Inventario/Reportes arriba.
+  if (!canAccessVacaciones(user)) {
+    const idx = navItems.findIndex((n) => n.to === '/vacaciones');
+    if (idx >= 0) navItems.splice(idx, 1);
   }
 
   return (

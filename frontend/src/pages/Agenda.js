@@ -5,6 +5,7 @@ import { Plus, ChevronLeft, ChevronRight, CalendarDays, Check, X as XIcon, Eye, 
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { canAccessVacaciones } from '@/lib/constants';
 import { fullDateEs, capitalize, ymd, MESES, MESES_CORTO } from '@/lib/time';
 import ActivityModal from '@/components/ActivityModal';
 import { WeekView, DayView, MonthView, startOfWeek, addDays } from '@/components/CalendarViews';
@@ -143,9 +144,11 @@ export default function Agenda() {
     <p className="text-muted-foreground text-sm mt-0.5">Gestiona las actividades y reuniones de tu equipo</p>
   </div>
   <div className="flex items-center gap-2">
-    <Button asChild variant="outline" className="rounded-xl flex-1 sm:flex-none" data-testid="agenda-vacations-button">
-      <Link to="/vacaciones"><Palmtree className="h-4 w-4 mr-1.5" /> Vacaciones</Link>
-    </Button>
+    {canAccessVacaciones(user) && (
+      <Button asChild variant="outline" className="rounded-xl flex-1 sm:flex-none" data-testid="agenda-vacations-button">
+        <Link to="/vacaciones"><Palmtree className="h-4 w-4 mr-1.5" /> Vacaciones</Link>
+      </Button>
+    )}
     <Button onClick={openNew} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white flex-1 sm:flex-none" data-testid="agenda-new-activity-button"><Plus className="h-4 w-4 mr-1" /> Nueva actividad</Button>
   </div>
 </div>

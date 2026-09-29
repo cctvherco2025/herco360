@@ -163,6 +163,7 @@ function AccessManager() {
     { key: 'formularios_custom', label: 'Crear form personalizado', color: C.cyan },
     { key: 'rutina_schema', label: 'Editar puntajes Rutina', color: C.purple },
     { key: 'formulario_schema', label: 'Editar puntajes FLOS', color: C.navy },
+    { key: 'vacaciones', label: 'Vacaciones', color: C.green },
   ];
 
   return (
