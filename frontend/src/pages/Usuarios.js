@@ -125,13 +125,13 @@ export default function Usuarios() {
           ) : (
             <div className="grid sm:grid-cols-2 gap-3">
               {pending.map((u) => (
-                <div key={u.id} className="rounded-xl border p-4 flex items-center gap-3" data-testid="pending-user-card">
+                <div key={u.id} className="min-w-0 rounded-xl border p-4 flex items-center gap-3" data-testid="pending-user-card">
                   <Avatar className="h-11 w-11 border"><AvatarImage src={u.avatar_url} /><AvatarFallback>{u.name?.[0]}</AvatarFallback></Avatar>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{u.name}</p>
                     <p className="text-xs text-muted-foreground truncate">{u.position} · {timeAgoEs(u.created_at)}</p>
                   </div>
-                  <div className="flex gap-1.5">
+                  <div className="flex gap-1.5 shrink-0">
                     <button onClick={() => approve(u.id)} className="h-9 w-9 grid place-items-center rounded-lg bg-[rgba(22,163,74,0.12)] text-[#16a34a] hover:bg-[rgba(22,163,74,0.22)]" data-testid="approve-user-button"><Check className="h-4 w-4" /></button>
                     <button onClick={() => reject(u.id)} className="h-9 w-9 grid place-items-center rounded-lg bg-[rgba(220,38,38,0.1)] text-[#dc2626] hover:bg-[rgba(220,38,38,0.2)]" data-testid="reject-user-button"><X className="h-4 w-4" /></button>
                   </div>
@@ -147,7 +147,7 @@ export default function Usuarios() {
         <h2 className="font-heading text-lg font-semibold mb-4">Equipo ({approved.length})</h2>
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
           {approved.map((u) => (
-            <div key={u.id} className="rounded-xl border p-4 hover:shadow-card transition-shadow" data-testid="user-card">
+            <div key={u.id} className="min-w-0 rounded-xl border p-4 hover:shadow-card transition-shadow" data-testid="user-card">
               <div className="flex items-start gap-3">
   <Avatar className="h-12 w-12 border shrink-0"><AvatarImage src={u.avatar_url} /><AvatarFallback>{u.name?.[0]}</AvatarFallback></Avatar>
   <div className="flex-1 min-w-0">
@@ -189,11 +189,14 @@ export default function Usuarios() {
 
       {/* Create / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-[520px] rounded-[22px]">
-          <DialogHeader>
+        {/* En celular: margen a los lados, alto máximo de la pantalla y el
+            formulario con scroll propio — el encabezado y los botones quedan
+            siempre visibles (antes el botón "Crear usuario" quedaba fuera). */}
+        <DialogContent className="w-[calc(100%-1.5rem)] sm:max-w-[520px] rounded-[22px] p-0 gap-0 max-h-[90dvh] flex flex-col overflow-hidden">
+          <DialogHeader className="px-5 sm:px-6 pt-5 sm:pt-6 pb-3">
             <DialogTitle className="font-heading text-xl">{editing ? 'Editar usuario' : 'Crear usuario'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-1">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-6 pb-4 space-y-4">
             <div className="space-y-1.5">
               <Label>Nombre completo</Label>
               <Input value={form.name} onChange={(e) => setF('name', e.target.value)} placeholder="Nombre" className="h-11" data-testid="user-form-name" />
@@ -212,15 +215,15 @@ export default function Usuarios() {
                 </button>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5 min-w-0">
                 <Label>Cargo</Label>
                 <Select value={form.position} onValueChange={(v) => setForm((f) => ({ ...f, position: v, area: v === 'Director comercial' ? 'Casa Matriz' : (f.area === 'Casa Matriz' ? '' : f.area), sucursal: '' }))}>
                   <SelectTrigger className="h-11" data-testid="user-form-position"><SelectValue placeholder="Selecciona" /></SelectTrigger>
                   <SelectContent>{CARGOS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0">
                 <Label>Área</Label>
                 {form.position === 'Director comercial' ? (
                   <div className="h-11 flex items-center rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground" data-testid="user-form-area-fixed">Casa Matriz</div>
@@ -252,7 +255,7 @@ export default function Usuarios() {
               </Select>
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-2">
+          <DialogFooter className="gap-2 sm:gap-2 px-5 sm:px-6 py-4 border-t">
             <Button variant="outline" onClick={() => setDialogOpen(false)} className="rounded-xl">Cancelar</Button>
             <Button onClick={save} disabled={saving} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="user-form-submit">
               {saving ? 'Guardando…' : (editing ? 'Guardar cambios' : 'Crear usuario')}
@@ -263,7 +266,7 @@ export default function Usuarios() {
 
       {/* Delete confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <AlertDialogContent className="rounded-[22px]">
+        <AlertDialogContent className="w-[calc(100%-1.5rem)] rounded-[22px]">
           <AlertDialogHeader>
             <AlertDialogTitle>Eliminar usuario</AlertDialogTitle>
             <AlertDialogDescription>
