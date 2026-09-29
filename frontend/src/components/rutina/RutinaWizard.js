@@ -282,9 +282,9 @@ function WalkCard({ flat, cursor, steps, answers, notes, photos, uploading, onSe
   return (
     <div>
       <div className="mb-4">
-        <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
-          <span>Pregunta {cursor + 1} de {steps}</span>
-          <span>{it.seccion}</span>
+        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground mb-1.5">
+          <span className="shrink-0">Pregunta {cursor + 1} de {steps}</span>
+          <span className="truncate text-right">{it.seccion}</span>
         </div>
         <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
           <div className="h-full rounded-full bg-[#00a5df] transition-all" style={{ width: `${((cursor + 1) / steps) * 100}%` }} />
@@ -312,7 +312,7 @@ function WalkCard({ flat, cursor, steps, answers, notes, photos, uploading, onSe
                   className={`w-full flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-colors ${
                     active ? 'border-[#1e395e] bg-[rgba(30,57,94,0.08)] dark:bg-[rgba(60,190,246,0.12)]' : 'hover:bg-muted/50'
                   }`}>
-                  <span className="flex items-center gap-2.5">
+                  <span className="flex items-center gap-2.5 min-w-0 break-words">
                     <span className={`h-4 w-4 rounded-full border-2 shrink-0 grid place-items-center ${active ? 'border-[#00a5df]' : 'border-muted-foreground/40'}`}>
                       {active && <span className="h-2 w-2 rounded-full bg-[#00a5df]" />}
                     </span>
@@ -380,7 +380,7 @@ function Tile({ icon: IconEl, label, value, sub, color, tint }) {
     <div className="rounded-[16px] bg-card border shadow-card p-4">
       <span className="h-9 w-9 rounded-full grid place-items-center" style={{ background: tint }}><IconEl className="h-4 w-4" style={{ color }} /></span>
       <p className="mt-3 text-xs text-muted-foreground">{label}</p>
-      <p className="font-heading text-xl font-semibold mt-0.5">{value}</p>
+      <p className="font-heading text-lg sm:text-xl font-semibold mt-0.5 break-words">{value}</p>
       {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
     </div>
   );
@@ -407,10 +407,12 @@ function Resumen({ summary, totalSteps, onExport, onSubmit, submitting }) {
           {summary.sections.map((s) => {
             const t = rutinaTone(s.pct);
             return (
-              <div key={s.seccion} className="flex items-center gap-3">
-                <span className="w-40 shrink-0 text-sm font-medium truncate">{s.seccion}</span>
-                <span className="flex-1 h-2.5 rounded-full bg-muted overflow-hidden"><span className="block h-full rounded-full" style={{ width: `${s.pct}%`, background: RUTINA_TONE_COLOR[t] }} /></span>
-                <span className="w-14 text-right text-sm font-semibold" style={{ color: RUTINA_TONE_COLOR[t] }}>{s.pct}%</span>
+              // celular: nombre de la sección arriba y la barra a todo el ancho
+              // debajo (antes la etiqueta de 160 px dejaba ~50 px de barra)
+              <div key={s.seccion} className="grid grid-cols-[1fr_auto] sm:flex sm:items-center gap-x-3 gap-y-1">
+                <span className="sm:w-40 shrink-0 text-sm font-medium truncate">{s.seccion}</span>
+                <span className="col-span-2 row-start-2 sm:row-auto sm:col-auto flex-1 h-2.5 rounded-full bg-muted overflow-hidden"><span className="block h-full rounded-full" style={{ width: `${s.pct}%`, background: RUTINA_TONE_COLOR[t] }} /></span>
+                <span className="col-start-2 row-start-1 sm:row-auto sm:col-auto sm:w-14 text-right text-sm font-semibold" style={{ color: RUTINA_TONE_COLOR[t] }}>{s.pct}%</span>
               </div>
             );
           })}

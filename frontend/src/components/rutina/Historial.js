@@ -117,9 +117,10 @@ function DetailDialog({ id, onClose }) {
 
   return (
     <Dialog open={!!id} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-[640px] rounded-[22px] max-h-[88vh] flex flex-col p-0 overflow-hidden">
-        <DialogHeader className="px-6 pt-6 pb-2 flex-row items-center justify-between gap-3 pr-10">
-          <DialogTitle className="font-heading">Rutina Operativa · {evalDoc?.sucursal || '…'}</DialogTitle>
+      <DialogContent className="w-[calc(100%-1.5rem)] sm:max-w-[640px] rounded-[22px] max-h-[88dvh] flex flex-col p-0 gap-0 overflow-hidden">
+        {/* celular: título arriba y "Descargar PDF" debajo; desde sm en una fila */}
+        <DialogHeader className="px-4 sm:px-6 pt-5 sm:pt-6 pb-3 flex flex-col items-start sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 pr-10 text-left">
+          <DialogTitle className="font-heading leading-snug">Rutina Operativa · {evalDoc?.sucursal || '…'}</DialogTitle>
           {evalDoc && (
             <button onClick={download} disabled={exporting} data-testid="rutina-history-download"
               className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50 shrink-0">
@@ -129,9 +130,9 @@ function DetailDialog({ id, onClose }) {
           )}
         </DialogHeader>
         {!evalDoc ? (
-          <div className="px-6 pb-8 text-sm text-muted-foreground">Cargando…</div>
+          <div className="px-4 sm:px-6 pb-8 text-sm text-muted-foreground">Cargando…</div>
         ) : (
-          <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 space-y-4">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 pb-6 space-y-4">
             <div className="flex flex-wrap items-center gap-3">
               <PercentChip pct={evalDoc.percent} />
               <span className="text-sm text-muted-foreground">{evalDoc.total_score}/{evalDoc.total_max} pts</span>
@@ -149,14 +150,14 @@ function DetailDialog({ id, onClose }) {
                 return (
                   <div key={e.id} className="rounded-xl border p-3">
                     <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium">{e.titulo}</p>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium break-words">{e.titulo}</p>
                         <p className="text-xs text-muted-foreground">{e.seccion}</p>
                       </div>
                       <span className="text-sm font-bold shrink-0" style={{ color: RUTINA_TONE_COLOR[t] }}>{e.score}/{e.max}</span>
                     </div>
-                    {e.opcion && <p className="text-sm text-foreground mt-1.5">{e.opcion}</p>}
-                    {e.note && <p className="text-xs text-muted-foreground italic mt-1">"{e.note}"</p>}
+                    {e.opcion && <p className="text-sm text-foreground mt-1.5 break-words">{e.opcion}</p>}
+                    {e.note && <p className="text-xs text-muted-foreground italic mt-1 break-words">"{e.note}"</p>}
                     {e.photos?.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-2">
                         {e.photos.map((p) => (
@@ -239,22 +240,24 @@ export default function Historial({ refreshKey }) {
 
   return (
     <div>
-      <div className="rounded-[18px] bg-card border shadow-card p-4 mb-4 flex flex-wrap items-end gap-3">
-        <div className="space-y-1.5">
+      {/* Celular: Mes y Sucursal lado a lado, búsqueda a todo el ancho.
+          Desde sm: todo en una fila como antes. */}
+      <div className="rounded-[18px] bg-card border shadow-card p-4 mb-4 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end">
+        <div className="space-y-1.5 min-w-0">
           <label className="text-xs text-muted-foreground">Mes</label>
-          <Input type="month" value={mes} max={currentMonth()} onChange={(e) => setMes(e.target.value)} className="h-10 w-[160px]" />
+          <Input type="month" value={mes} max={currentMonth()} onChange={(e) => setMes(e.target.value)} className="h-10 w-full sm:w-[160px] px-2.5" />
         </div>
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 min-w-0">
           <label className="text-xs text-muted-foreground">Sucursal</label>
           <Select value={sucursal || 'todas'} onValueChange={(v) => setSucursal(v === 'todas' ? '' : v)}>
-            <SelectTrigger className="h-10 w-[160px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-10 w-full sm:w-[160px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="todas">Todas</SelectItem>
               {RUTINA_SUCURSALES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
-        <div className="relative flex-1 min-w-[160px]">
+        <div className="relative col-span-2 sm:flex-1 sm:min-w-[160px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por tienda o gerente…" className="pl-9 h-10" />
         </div>
@@ -272,13 +275,17 @@ export default function Historial({ refreshKey }) {
         {filtered.map((r) => (
           <motion.div key={r.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
             role="button" tabIndex={0} onClick={() => setOpenId(r.id)} data-testid="rutina-history-row"
-            className="w-full flex items-center gap-3 rounded-[16px] bg-card border shadow-card p-4 text-left hover:shadow-cardmd transition-shadow cursor-pointer">
-            <PercentChip pct={r.percent} />
+            className="w-full flex items-center gap-2 sm:gap-3 rounded-[16px] bg-card border shadow-card p-3 sm:p-4 text-left hover:shadow-cardmd transition-shadow cursor-pointer">
+            <span className="shrink-0"><PercentChip pct={r.percent} /></span>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium flex items-center gap-1.5"><Store className="h-3.5 w-3.5 text-muted-foreground" />{r.sucursal} <span className="text-muted-foreground">· {monthLabel(r.mes)}</span></p>
-              <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-3">
-                <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{r.fecha}</span>
-                <span className="flex items-center gap-1"><UserIcon className="h-3 w-3" />{r.gerente_name}</span>
+              <p className="text-sm font-medium flex items-center gap-1.5 min-w-0">
+                <Store className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="truncate">{r.sucursal} <span className="text-muted-foreground">· {monthLabel(r.mes)}</span></span>
+              </p>
+              {/* la fecha y el gerente bajan de línea si no caben */}
+              <p className="text-xs text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                <span className="flex items-center gap-1 whitespace-nowrap"><Calendar className="h-3 w-3" />{(r.fecha || '').split('-').reverse().join('/')}</span>
+                <span className="flex items-center gap-1 min-w-0"><UserIcon className="h-3 w-3 shrink-0" /><span className="truncate">{r.gerente_name}</span></span>
               </p>
             </div>
             <span className="text-sm text-muted-foreground shrink-0 hidden sm:inline">{r.total_score}/{r.total_max} pts</span>
@@ -294,7 +301,8 @@ export default function Historial({ refreshKey }) {
                 {deletingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               </button>
             )}
-            <Eye className="h-4 w-4 text-muted-foreground shrink-0" />
+            {/* toda la fila abre el detalle; en celular el ojo solo quita espacio */}
+            <Eye className="h-4 w-4 text-muted-foreground shrink-0 hidden sm:block" />
           </motion.div>
         ))}
       </div>
@@ -302,7 +310,7 @@ export default function Historial({ refreshKey }) {
       <DetailDialog id={openId} onClose={() => setOpenId(null)} />
 
       <AlertDialog open={!!confirmDel} onOpenChange={(o) => { if (!o) setConfirmDel(null); }}>
-        <AlertDialogContent className="rounded-[22px]">
+        <AlertDialogContent className="w-[calc(100%-1.5rem)] rounded-[22px]">
           <AlertDialogHeader>
             <div className="h-11 w-11 rounded-full grid place-items-center bg-[rgba(220,38,38,0.1)] mb-1">
               <Trash2 className="h-5 w-5 text-[#dc2626]" />

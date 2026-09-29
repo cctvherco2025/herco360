@@ -128,9 +128,9 @@ export default function RutinaSchemaEditor({ open, onClose, onSaved }) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-[720px] rounded-[22px] max-h-[90vh] flex flex-col p-0 overflow-hidden">
-        <DialogHeader className="px-6 pt-6 pb-3 border-b">
-          <DialogTitle className="font-heading flex items-center gap-2">
+      <DialogContent className="w-[calc(100%-1.5rem)] sm:max-w-[720px] rounded-[22px] max-h-[90dvh] flex flex-col p-0 gap-0 overflow-hidden">
+        <DialogHeader className="px-4 sm:px-6 pt-5 sm:pt-6 pb-3 pr-10 border-b text-left">
+          <DialogTitle className="font-heading flex items-start gap-2 leading-snug">
             <ListChecks className="h-5 w-5 text-[#00a5df]" /> Editar preguntas y puntajes — Rutina Operativa
           </DialogTitle>
           {!loading && (
@@ -143,7 +143,7 @@ export default function RutinaSchemaEditor({ open, onClose, onSaved }) {
         {loading ? (
           <div className="px-6 py-16 text-center text-sm text-muted-foreground">Cargando…</div>
         ) : (
-          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-6 py-4 space-y-5">
             {secciones.map((s, sIdx) => (
               <div key={s.localId} className="rounded-[16px] border bg-muted/20 p-4 space-y-3">
                 <div className="flex items-center gap-2">
@@ -223,7 +223,7 @@ export default function RutinaSchemaEditor({ open, onClose, onSaved }) {
           </div>
         )}
 
-        <div className="flex justify-end gap-2 px-6 py-4 border-t shrink-0">
+        <div className="flex justify-end gap-2 px-4 sm:px-6 py-4 border-t shrink-0">
           <Button variant="outline" onClick={onClose} className="rounded-xl" disabled={saving}>Cancelar</Button>
           <Button onClick={save} disabled={loading || saving} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white">
             {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
