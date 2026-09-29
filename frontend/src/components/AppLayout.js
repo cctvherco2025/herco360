@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
+import PushPrompt from '@/components/PushPrompt';
 
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -24,6 +25,7 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <PushPrompt />
     </div>
   );
 }
