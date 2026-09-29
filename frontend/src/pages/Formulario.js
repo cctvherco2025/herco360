@@ -22,8 +22,8 @@ export default function Formulario() {
 
   return (
     <div className="max-w-[1000px] mx-auto pt-2">
-      <div className="flex items-center justify-between mb-5">
-        <div>
+      <div className="flex flex-wrap items-start sm:items-center justify-between gap-3 mb-5">
+        <div className="min-w-0">
           <h1 className="font-heading text-2xl sm:text-3xl font-semibold flex items-center gap-2">
             <ClipboardCheck className="h-7 w-7 text-[#00a5df]" /> Formulario
           </h1>

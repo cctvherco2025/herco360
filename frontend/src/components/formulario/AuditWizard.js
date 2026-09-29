@@ -304,17 +304,18 @@ function PhaseNav({ phase, setPhase, onReset }) {
     { k: 'plan', label: 'Plan' },
   ];
   return (
-    <div className="flex items-center justify-between gap-3 mb-4">
-      <div className="flex items-center gap-1 rounded-xl border bg-card p-1">
+    <div className="flex items-center justify-between gap-2 sm:gap-3 mb-4">
+      <div className="flex items-center gap-1 rounded-xl border bg-card p-1 min-w-0">
         {tabs.map((t) => (
           <button key={t.k} onClick={() => setPhase(t.k)} data-testid={`flos-tab-${t.k}`}
-            className={`px-3.5 py-1.5 text-sm font-medium rounded-lg transition-colors ${phase === t.k ? 'bg-[#1e395e] text-white' : 'text-muted-foreground hover:bg-muted'}`}>
+            className={`px-2.5 sm:px-3.5 py-1.5 text-sm font-medium rounded-lg transition-colors ${phase === t.k ? 'bg-[#1e395e] text-white' : 'text-muted-foreground hover:bg-muted'}`}>
             {t.label}
           </button>
         ))}
       </div>
-      <Button variant="ghost" size="sm" onClick={onReset} className="text-muted-foreground" data-testid="flos-reset-button">
-        <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Reiniciar
+      {/* en celular solo el ícono, para que las 3 pestañas quepan */}
+      <Button variant="ghost" size="sm" onClick={onReset} className="text-muted-foreground shrink-0" title="Reiniciar" aria-label="Reiniciar" data-testid="flos-reset-button">
+        <RotateCcw className="h-3.5 w-3.5 sm:mr-1.5" /> <span className="hidden sm:inline">Reiniciar</span>
       </Button>
     </div>
   );
@@ -533,8 +534,8 @@ function PlanView({ summary, onExport, onSubmit, submitting }) {
           {summary.plan.map((g) => (
             <div key={g.v.id} className="rounded-[16px] bg-card border shadow-card p-4" data-testid="flos-plan-item">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-medium text-sm">{g.v.name}</p>
+                <div className="min-w-0">
+                  <p className="font-medium text-sm break-words">{g.v.name}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{g.dim}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -559,8 +560,8 @@ function RefDialog({ flat, id, onClose }) {
   const v = id ? flat.find((f) => f.id === id) : null;
   return (
     <Dialog open={!!id} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-[480px] rounded-[22px]">
-        <DialogHeader><DialogTitle>{v?.name || 'Referencia'}</DialogTitle></DialogHeader>
+      <DialogContent className="w-[calc(100%-1.5rem)] sm:max-w-[480px] rounded-[22px] max-h-[90dvh] overflow-y-auto">
+        <DialogHeader className="pr-6 text-left"><DialogTitle className="leading-snug">{v?.name || 'Referencia'}</DialogTitle></DialogHeader>
         {v && (
           <div>
             <p className="text-sm text-muted-foreground mb-3">{FLOS_REF_CAPTION[id] || v.desc}</p>
@@ -575,7 +576,7 @@ function RefDialog({ flat, id, onClose }) {
 function ZoomDialog({ src, onClose }) {
   return (
     <Dialog open={!!src} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-[640px] rounded-[22px] p-2">
+      <DialogContent className="w-[calc(100%-1.5rem)] sm:max-w-[640px] rounded-[22px] p-2 max-h-[90dvh] overflow-y-auto">
         {src && <img src={src} alt="Evidencia ampliada" className="w-full rounded-xl" />}
       </DialogContent>
     </Dialog>
