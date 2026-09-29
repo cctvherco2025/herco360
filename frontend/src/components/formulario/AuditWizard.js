@@ -22,6 +22,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import PhotoZoomDialog, { ZOOM_IMG_CLASS } from '@/components/PhotoZoomDialog';
 
 const DIM_ICON = { FRENTEO: AlignStartVertical, LIMPIEZA: Sparkles, ORDEN: LayoutGrid, SURTIDO: PackageSearch };
 const DRAFT_KEY = 'herco360_flos_draft_v1';
@@ -575,10 +576,8 @@ function RefDialog({ flat, id, onClose }) {
 
 function ZoomDialog({ src, onClose }) {
   return (
-    <Dialog open={!!src} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="w-[calc(100%-1.5rem)] sm:max-w-[640px] rounded-[22px] p-2 max-h-[90dvh] overflow-y-auto">
-        {src && <img src={src} alt="Evidencia ampliada" className="w-full rounded-xl" />}
-      </DialogContent>
-    </Dialog>
+    <PhotoZoomDialog open={!!src} onClose={onClose}>
+      {src && <img src={src} alt="Evidencia ampliada" className={ZOOM_IMG_CLASS} />}
+    </PhotoZoomDialog>
   );
 }

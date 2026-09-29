@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import PhotoZoomDialog, { ZOOM_IMG_CLASS } from '@/components/PhotoZoomDialog';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -172,11 +173,9 @@ function DetailDialog({ id, onClose }) {
           </div>
         )}
       </DialogContent>
-      <Dialog open={!!zoom} onOpenChange={(o) => !o && setZoom(null)}>
-        <DialogContent className="sm:max-w-[640px] rounded-[22px] p-2">
-          {zoom && <AuthedImg url={zoom} className="w-full rounded-xl" />}
-        </DialogContent>
-      </Dialog>
+      <PhotoZoomDialog open={!!zoom} onClose={() => setZoom(null)}>
+        {zoom && <AuthedImg url={zoom} className={ZOOM_IMG_CLASS} />}
+      </PhotoZoomDialog>
     </Dialog>
   );
 }

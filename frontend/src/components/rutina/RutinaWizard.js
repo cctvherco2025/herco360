@@ -20,7 +20,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import PhotoZoomDialog, { ZOOM_IMG_CLASS } from '@/components/PhotoZoomDialog';
 
 const DRAFT_KEY = 'herco360_rutina_draft_v1';
 const MAX_PHOTOS_PER_ITEM = 8;
@@ -431,10 +431,8 @@ function Resumen({ summary, totalSteps, onExport, onSubmit, submitting }) {
 
 function ZoomDialog({ src, onClose }) {
   return (
-    <Dialog open={!!src} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-[640px] rounded-[22px] p-2">
-        {src && <img src={src} alt="Evidencia ampliada" className="w-full rounded-xl" />}
-      </DialogContent>
-    </Dialog>
+    <PhotoZoomDialog open={!!src} onClose={onClose}>
+      {src && <img src={src} alt="Evidencia ampliada" className={ZOOM_IMG_CLASS} />}
+    </PhotoZoomDialog>
   );
 }

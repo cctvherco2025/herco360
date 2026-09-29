@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import PhotoZoomDialog, { ZOOM_IMG_CLASS } from '@/components/PhotoZoomDialog';
 
 const MAX_PHOTOS_PER_ITEM = 8;
 const GENERAL_PHOTO_OWNER = '_general';
@@ -352,11 +352,9 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
         <Resumen schema={schema} summary={summary} categoria={eligeCategoria ? categoria : ''} onExport={exportPdf} onSubmit={submit} submitting={submitting} />
       )}
 
-      <Dialog open={!!zoomSrc} onOpenChange={(o) => !o && setZoomSrc(null)}>
-        <DialogContent className="sm:max-w-[640px] rounded-[22px] p-2">
-          {zoomSrc && <img src={zoomSrc} alt="Evidencia ampliada" className="w-full rounded-xl" />}
-        </DialogContent>
-      </Dialog>
+      <PhotoZoomDialog open={!!zoomSrc} onClose={() => setZoomSrc(null)}>
+        {zoomSrc && <img src={zoomSrc} alt="Evidencia ampliada" className={ZOOM_IMG_CLASS} />}
+      </PhotoZoomDialog>
     </div>
   );
 }
