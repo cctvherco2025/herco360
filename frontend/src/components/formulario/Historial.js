@@ -317,20 +317,28 @@ export default function Historial({ refreshKey }) {
               </p>
             </div>
             <span className="text-sm text-muted-foreground shrink-0 hidden sm:inline">{r.total_score}/{r.total_max} pts</span>
-            <button onClick={(e) => quickDownload(e, r.id)} disabled={exportingId === r.id} title="Descargar PDF"
-              data-testid="flos-history-quick-download"
-              className="p-2 rounded-lg hover:bg-muted text-muted-foreground shrink-0 disabled:opacity-50">
-              {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            </button>
-            {canDelete(r) && (
-              <button onClick={(e) => { e.stopPropagation(); setConfirmDel(r); }} disabled={deletingId === r.id} title="Eliminar auditoría"
-                data-testid="flos-history-delete-row"
-                className="p-2 rounded-lg hover:bg-[rgba(220,38,38,0.08)] text-muted-foreground hover:text-[#dc2626] shrink-0 disabled:opacity-50 transition-colors">
-                {deletingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            {/* Acciones en el mismo orden en todos los tamaños: descargar,
+                eliminar, ver. Área táctil de 36×36 px (h-9 w-9). */}
+            <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+              <button onClick={(e) => quickDownload(e, r.id)} disabled={exportingId === r.id} title="Descargar PDF" aria-label="Descargar PDF"
+                data-testid="flos-history-quick-download"
+                className="h-9 w-9 grid place-items-center rounded-lg hover:bg-muted text-muted-foreground disabled:opacity-50">
+                {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               </button>
-            )}
-            {/* toda la fila abre el detalle; en celular el ojo solo quita espacio */}
-            <Eye className="h-4 w-4 text-muted-foreground shrink-0 hidden sm:block" />
+              {canDelete(r) && (
+                <button onClick={(e) => { e.stopPropagation(); setConfirmDel(r); }} disabled={deletingId === r.id} title="Eliminar auditoría" aria-label="Eliminar auditoría"
+                  data-testid="flos-history-delete-row"
+                  className="h-9 w-9 grid place-items-center rounded-lg hover:bg-[rgba(220,38,38,0.08)] text-muted-foreground hover:text-[#dc2626] disabled:opacity-50 transition-colors">
+                  {deletingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                </button>
+              )}
+              {/* mismo detalle que al tocar la fila */}
+              <button onClick={(e) => { e.stopPropagation(); setOpenId(r.id); }} title="Ver auditoría" aria-label="Ver auditoría"
+                data-testid="flos-history-view"
+                className="h-9 w-9 grid place-items-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground">
+                <Eye className="h-4 w-4" />
+              </button>
+            </div>
           </motion.div>
         ))}
       </div>
