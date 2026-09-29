@@ -19,7 +19,7 @@ _PUSH_URL_BY_TYPE = {
 }
 
 
-def _fire_push(user_id, title, message, related_type):
+def _fire_push(user_id, title, message, related_type, ttl=None):
     """Schedule a best-effort Web Push for this notification. Never raises."""
     try:
         payload = {
@@ -29,7 +29,7 @@ def _fire_push(user_id, title, message, related_type):
             'icon': '/icon-192.png',
             'tag': related_type or 'general',
         }
-        task = asyncio.create_task(push.send_push_to_user(user_id, payload))
+        task = asyncio.create_task(push.send_push_to_user(user_id, payload, ttl=ttl))
         _bg_tasks.add(task)
         task.add_done_callback(_bg_tasks.discard)
     except RuntimeError:
@@ -54,7 +54,9 @@ NOTIFICATION_META = {
 
 
 async def create_notification(user_id, ntype, message, related_id=None, related_type=None,
-                              actor_name=None, actor_avatar=None):
+                              actor_name=None, actor_avatar=None, push_ttl=None):
+    """`push_ttl`: segundos que el servicio push puede guardar el aviso para un
+    dispositivo apagado/dormido (None = valor por defecto de push.py)."""
     meta = NOTIFICATION_META.get(ntype, {'title': 'Notificación', 'icon': 'Bell', 'color': '#1e395e'})
     doc = {
         'id': new_id(),
@@ -72,7 +74,7 @@ async def create_notification(user_id, ntype, message, related_id=None, related_
         'created_at': now_iso(),
     }
     await db.notifications.insert_one(doc)
-    _fire_push(user_id, meta['title'], message, related_type)
+    _fire_push(user_id, meta['title'], message, related_type, ttl=push_ttl)
     return doc
 
 

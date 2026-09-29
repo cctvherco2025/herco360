@@ -20,6 +20,7 @@ import os
 import json
 import asyncio
 import logging
+from typing import Optional
 
 from core import db
 
@@ -34,7 +35,15 @@ def is_configured() -> bool:
     return bool(VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY)
 
 
-def _send_one(subscription_info: dict, data: str) -> int:
+# How long the push service (FCM / Mozilla / WNS / Apple) keeps a message for a
+# device that is offline or asleep. pywebpush defaults to ttl=0, which means
+# "deliver right now or drop it" — phones in Doze / closed browsers silently
+# lost notifications. One hour covers the longest routine gap; reminders pass a
+# shorter TTL so a reminder never shows up after the activity already started.
+DEFAULT_TTL_SECONDS = 3600
+
+
+def _send_one(subscription_info: dict, data: str, ttl: int = DEFAULT_TTL_SECONDS) -> int:
     """Send a single Web Push message. Returns the HTTP status code (or 0 on error)."""
     from pywebpush import webpush, WebPushException
     try:
@@ -44,6 +53,10 @@ def _send_one(subscription_info: dict, data: str) -> int:
             vapid_private_key=VAPID_PRIVATE_KEY,
             vapid_claims={"sub": VAPID_SUBJECT},
             timeout=10,
+            ttl=ttl,
+            # Without Urgency the push service treats it as "normal" and
+            # Android/Windows may hold it until the device wakes up (late).
+            headers={"Urgency": "high"},
         )
         return getattr(resp, "status_code", 201)
     except WebPushException as e:
@@ -60,14 +73,14 @@ def _send_one(subscription_info: dict, data: str) -> int:
         return 0
 
 
-def _deliver_sync(subs: list, payload: dict) -> list:
+def _deliver_sync(subs: list, payload: dict, ttl: int = DEFAULT_TTL_SECONDS) -> list:
     """Blocking fan-out. Returns endpoints that must be pruned (expired/gone)."""
     data = json.dumps(payload)
     dead = []
     ok = 0
     for s in subs:
         info = {"endpoint": s["endpoint"], "keys": s.get("keys", {})}
-        code = _send_one(info, data)
+        code = _send_one(info, data, ttl)
         if code in (404, 410):
             dead.append(s["endpoint"])
         elif code in (200, 201):
@@ -76,20 +89,23 @@ def _deliver_sync(subs: list, payload: dict) -> list:
     return dead
 
 
-async def send_push_to_user(user_id: str, payload: dict) -> None:
+async def send_push_to_user(user_id: str, payload: dict, ttl: Optional[int] = None) -> None:
     """Fire-and-forget push to every browser/device the user has registered.
 
     `payload` is delivered verbatim to the service worker; expected shape:
         { "title": str, "body": str, "url": str, "icon": str, "tag": str }
+    `ttl`: seconds the push service may hold it for an offline device
+    (default DEFAULT_TTL_SECONDS; at least 60).
     Never raises — push must not be able to break the request that triggered it.
     """
+    ttl = max(60, int(ttl)) if ttl is not None else DEFAULT_TTL_SECONDS
     try:
         if not is_configured():
             return
         subs = await db.push_subscriptions.find({"user_id": user_id}, {"_id": 0}).to_list(50)
         if not subs:
             return
-        dead = await asyncio.to_thread(_deliver_sync, subs, payload)
+        dead = await asyncio.to_thread(_deliver_sync, subs, payload, ttl)
         if dead:
             await db.push_subscriptions.delete_many({"endpoint": {"$in": dead}})
     except Exception as e:  # pragma: no cover

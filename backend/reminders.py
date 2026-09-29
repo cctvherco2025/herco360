@@ -123,6 +123,9 @@ async def _scan_and_send() -> None:
                 await create_notification(
                     uid, "actividad_recordatorio", msg,
                     related_id=a["id"], related_type="activity",
+                    # un recordatorio que llega después de que empezó no sirve:
+                    # el servicio push lo guarda solo hasta la hora de inicio
+                    push_ttl=int(delta_min * 60),
                 )
             except Exception as e:  # pragma: no cover
                 logger.warning(f"reminder notify failed for {uid}: {e}")
