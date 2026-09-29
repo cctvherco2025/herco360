@@ -43,7 +43,8 @@ async function loadImageDataUrl(url) {
 // y la re-codifica a JPEG de tamaño razonable — suficiente para verse nítida a
 // media página sin que el PDF pese decenas de MB con muchas fotos.
 const PDF_PHOTO_MAX = 1400;
-function preparePhoto(dataUrl) {
+// (exportada: también la usa flosPdf.js)
+export function preparePhoto(dataUrl) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {

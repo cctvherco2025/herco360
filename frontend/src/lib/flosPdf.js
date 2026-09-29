@@ -4,6 +4,7 @@
 // paleta institucional de HERCO.
 import { jsPDF } from 'jspdf';
 import { flosTone } from '@/lib/flosSchema';
+import { preparePhoto } from '@/lib/customFormPdf';
 
 const NAVY = '#1e395e';
 const CYAN = '#00a5df';
@@ -11,6 +12,9 @@ const TONE_HEX = { g: '#16a34a', a: '#ec9032', r: '#dc2626' };
 const DIM_COLOR = { FRENTEO: '#00a5df', LIMPIEZA: '#16a34a', ORDEN: '#1e395e', SURTIDO: '#ec9032' };
 const DIM_MONO = { FRENTEO: 'FR', LIMPIEZA: 'LI', ORDEN: 'OR', SURTIDO: 'SU' };
 const PAGE_W = 595.28, PAGE_H = 841.89, MARGIN = 40;
+const CONTENT_W = PAGE_W - MARGIN * 2;
+// Fotos: por criterio 4 por fila (hasta ~4.6 cm de alto); comentario general 3 por fila.
+const PHOTO_GAP = 8, ROW_PHOTO_COLS = 4, ROW_PHOTO_MAX_H = 130, GENERAL_PHOTO_COLS = 3, GENERAL_PHOTO_MAX_H = 180;
 
 function hexToRgb(hex) {
   const n = parseInt(hex.replace('#', ''), 16);
@@ -70,7 +74,7 @@ function dimBadge(doc, dim, x, y, size = 22) {
 }
 
 export async function generateFlosPdf({ meta, rows, generalComment, generalPhotos, summary }) {
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const doc = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
   const logo = await loadImageDataUrl('/icon-192.png');
   let y = 0;
 
@@ -94,23 +98,71 @@ export async function generateFlosPdf({ meta, rows, generalComment, generalPhoto
   doc.text(`Generado el ${new Date().toLocaleString('es-HN')}`, titleX, 78);
   y = 122;
 
+  // Fotos listas para el PDF (dimensiones reales, JPEG re-codificado) — se
+  // preparan antes de dibujar para poder medir cada fila y no deformarlas.
+  const prep = async (list) => (await Promise.all((list || []).map((p) => (p?.dataUrl ? preparePhoto(p.dataUrl) : null)))).filter(Boolean);
+  const rowPhotos = await Promise.all(rows.map((r) => prep(r.photos)));
+  const generales = await prep(generalPhotos);
+
+  // Cuadrícula de fotos con su proporción real, centrada en cada celda. Salta
+  // de página por fila. `firstRowH` sirve para que un título o tarjeta no se
+  // quede al pie de una página y sus fotos en la siguiente.
+  const fitSizes = (fila, cellW, maxH) => fila.map((p) => { const s = Math.min(cellW / p.w, maxH / p.h); return { w: p.w * s, h: p.h * s }; });
+  const gridCellW = (cols) => (CONTENT_W - PHOTO_GAP * (cols - 1)) / cols;
+  const firstRowH = (photos, cols, maxH) => (photos.length
+    ? Math.max(...fitSizes(photos.slice(0, cols), gridCellW(cols), maxH).map((s) => s.h)) + PHOTO_GAP : 0);
+  const photoGrid = (photos, cols, maxH, titulo) => {
+    const cellW = gridCellW(cols);
+    for (let i = 0; i < photos.length; i += cols) {
+      const fila = photos.slice(i, i + cols);
+      const sizes = fitSizes(fila, cellW, maxH);
+      const rowH = Math.max(...sizes.map((s) => s.h));
+      const pagina = doc.internal.getNumberOfPages();
+      ensure(rowH + PHOTO_GAP);
+      // si las fotos siguen en otra página, se aclara de qué criterio son
+      if (i > 0 && titulo && doc.internal.getNumberOfPages() !== pagina) {
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(8.5); doc.setTextColor(120, 128, 140);
+        doc.text(`${titulo} (continuación)`, MARGIN, y + 8);
+        y += 16;
+      }
+      fila.forEach((p, j) => {
+        const cellX = MARGIN + j * (cellW + PHOTO_GAP);
+        const { w, h } = sizes[j];
+        doc.setFillColor(242, 244, 247);
+        doc.roundedRect(cellX, y, cellW, rowH, 4, 4, 'F');
+        try { doc.addImage(p.data, 'JPEG', cellX + (cellW - w) / 2, y + (rowH - h) / 2, w, h); } catch (e) { /* imagen inválida, se omite */ }
+      });
+      y += rowH + PHOTO_GAP;
+    }
+  };
+
   // ── Ficha de la visita ───────────────────────────────────────
-  const fieldW = (PAGE_W - MARGIN * 2 - 24) / 3;
+  // El alto de las casillas se calcula con el texto real: un nombre largo
+  // ("Moisés Armando Melgar Álvarez") ocupa 2 líneas y antes se salía.
+  const fieldW = (CONTENT_W - 24) / 3;
   const fields = [['Sucursal', meta.sucursal], ['Auditor', meta.auditor], ['Fecha', meta.fecha]];
-  fields.forEach(([label, value], i) => {
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5);
+  const fieldLines = fields.map(([, value]) => doc.splitTextToSize(String(value || '—'), fieldW - 24));
+  const fichaH = 46 + (Math.max(...fieldLines.map((l) => l.length)) - 1) * 14;
+  fields.forEach(([label], i) => {
     const x = MARGIN + i * (fieldW + 12);
-    doc.setFillColor(246, 248, 251); doc.roundedRect(x, y, fieldW, 46, 8, 8, 'F');
+    doc.setFillColor(246, 248, 251); doc.roundedRect(x, y, fieldW, fichaH, 8, 8, 'F');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(140, 148, 160);
     doc.text(label.toUpperCase(), x + 12, y + 17);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5); doc.setTextColor(...hexToRgb(NAVY));
-    doc.text(String(value || '—'), x + 12, y + 34, { maxWidth: fieldW - 20 });
+    fieldLines[i].forEach((ln, k) => doc.text(ln, x + 12, y + 34 + k * 14));
   });
-  doc.setFillColor(246, 248, 251); doc.roundedRect(MARGIN, y + 54, PAGE_W - MARGIN * 2, 30, 8, 8, 'F');
+  y += fichaH + 8;
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5);
+  const lineaLines = doc.splitTextToSize(String(meta.linea || '—'), CONTENT_W - 150 - 12);
+  const lineaH = 30 + (lineaLines.length - 1) * 14;
+  doc.setFillColor(246, 248, 251); doc.roundedRect(MARGIN, y, CONTENT_W, lineaH, 8, 8, 'F');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(140, 148, 160);
-  doc.text('CATEGORÍA / LÍNEA', MARGIN + 12, y + 71);
+  doc.text('CATEGORÍA / LÍNEA', MARGIN + 12, y + 18);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5); doc.setTextColor(...hexToRgb(NAVY));
-  doc.text(String(meta.linea || '—'), MARGIN + 150, y + 74);
-  y += 100;
+  lineaLines.forEach((ln, k) => doc.text(ln, MARGIN + 150, y + 20 + k * 14));
+  y += lineaH + 16;
 
   // ── Resultado global: medidor + dimensiones ─────────────────
   const tone = flosTone(summary.pct);
@@ -138,7 +190,12 @@ export async function generateFlosPdf({ meta, rows, generalComment, generalPhoto
     doc.setFillColor(...hexToRgb(TONE_HEX[t]));
     doc.roundedRect(cx + 38, cy + 30, Math.max(4, ((cellW - 48) * d.pct) / 100), 6, 3, 3, 'F');
   });
-  y += cellH * 2 + 8 + 18;
+  // El bloque mide lo que ocupe lo más alto: el medidor con su estado debajo
+  // (hasta gcy + 76 + descendentes) o la cuadrícula de dimensiones. Antes solo
+  // se contaba la cuadrícula y el estado ("Excelente ejecución") quedaba
+  // tapado por las estadísticas.
+  const dimsRows = Math.ceil(summary.dims.length / 2);
+  y += Math.max(dimsRows * cellH + (dimsRows - 1) * 8, 62 + 76 + 6) + 16;
 
   // ── Franja de estadísticas ───────────────────────────────────
   const stats = [
@@ -146,7 +203,7 @@ export async function generateFlosPdf({ meta, rows, generalComment, generalPhoto
     ['En riesgo (<75%)', summary.atRisk],
     ['Puntos perdidos', summary.lost],
   ];
-  const statW = (PAGE_W - MARGIN * 2 - 16) / 3;
+  const statW = (CONTENT_W - 16) / 3;
   stats.forEach(([label, value], i) => {
     const x = MARGIN + i * (statW + 8);
     doc.setFillColor(...tintRgb(NAVY, 0.93)); doc.roundedRect(x, y, statW, 40, 8, 8, 'F');
@@ -155,93 +212,86 @@ export async function generateFlosPdf({ meta, rows, generalComment, generalPhoto
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(110, 120, 134);
     doc.text(label, x + 12, y + 33);
   });
-  y += 58;
+  y += 40 + 26;
 
   // ── Detalle por criterio ────────────────────────────────────
-  ensure(30);
+  // Cada tarjeta se mide ANTES de dibujarla (nombre + comentario) y las fotos
+  // van debajo en cuadrícula, con su proporción real y todas (antes: cuadradas,
+  // deformadas y máximo 5). Separación fija entre tarjetas y títulos.
+  ensure(30 + 24 + 60);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(13.5); doc.setTextColor(...hexToRgb(NAVY));
   doc.text('Detalle del recorrido', MARGIN, y);
-  y += 20;
+  y += 14;
 
   let curDim = null;
-  for (const r of rows) {
-    if (r.dim !== curDim) {
-      curDim = r.dim;
-      ensure(30);
-      dimBadge(doc, curDim, MARGIN, y - 15, 18);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...hexToRgb(DIM_COLOR[curDim] || NAVY));
-      doc.text(curDim, MARGIN + 24, y - 2);
-      y += 12;
-    }
+  rows.forEach((r, ri) => {
+    const fotos = rowPhotos[ri];
     const t = r.touched ? flosTone(r.max ? (r.score / r.max) * 100 : 0) : null;
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5);
-    const nameLines = doc.splitTextToSize(r.name, PAGE_W - MARGIN * 2 - 90);
-    const noteLines = r.comment ? doc.splitTextToSize(`"${r.comment}"`, PAGE_W - MARGIN * 2 - 24) : [];
-    const hasPhotos = r.photos && r.photos.length > 0;
-    const cardH = 14 + nameLines.length * 12 + (noteLines.length ? noteLines.length * 11 + 4 : 0) + (hasPhotos ? 58 : 8);
-    ensure(cardH + 8);
-
-    doc.setFillColor(...(t ? tintRgb(TONE_HEX[t], 0.9) : [248, 248, 249]));
-    doc.roundedRect(MARGIN, y - 12, PAGE_W - MARGIN * 2, cardH, 7, 7, 'F');
-
-    doc.setTextColor(30, 32, 38);
-    doc.text(nameLines, MARGIN + 14, y);
     const chipTxt = r.touched ? `${r.score}/${r.max}` : 'No evaluado';
-    const chipColor = t ? TONE_HEX[t] : '#9aa1ad';
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
     const chipW = doc.getTextWidth(chipTxt) + 16;
-    doc.setFillColor(...hexToRgb(chipColor));
-    doc.roundedRect(PAGE_W - MARGIN - 14 - chipW, y - 10, chipW, 15, 7.5, 7.5, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5);
+    const nameLines = doc.splitTextToSize(r.name, CONTENT_W - 28 - chipW - 12);
+    doc.setFont('helvetica', 'italic'); doc.setFontSize(8.6);
+    const noteLines = r.comment ? doc.splitTextToSize(`"${r.comment}"`, CONTENT_W - 28) : [];
+    // posiciones relativas a la parte de arriba de la tarjeta
+    const nameB = 20;
+    const lastNameB = nameB + (nameLines.length - 1) * 12;
+    const noteB = lastNameB + 15;
+    const lastB = noteLines.length ? noteB + (noteLines.length - 1) * 11 : lastNameB;
+    const cardH = lastB + 11;
+    const primeraFila = firstRowH(fotos, ROW_PHOTO_COLS, ROW_PHOTO_MAX_H);
+
+    if (r.dim !== curDim) {
+      curDim = r.dim;
+      // el título de la dimensión baja de página junto con su primera tarjeta
+      ensure(10 + 22 + cardH + primeraFila);
+      y += 10;
+      dimBadge(doc, curDim, MARGIN, y, 18);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...hexToRgb(DIM_COLOR[curDim] || NAVY));
+      doc.text(curDim, MARGIN + 24, y + 13);
+      y += 26;
+    } else {
+      ensure(cardH + primeraFila);
+    }
+
+    const top = y;
+    doc.setFillColor(...(t ? tintRgb(TONE_HEX[t], 0.9) : [248, 248, 249]));
+    doc.roundedRect(MARGIN, top, CONTENT_W, cardH, 7, 7, 'F');
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(30, 32, 38);
+    nameLines.forEach((ln, k) => doc.text(ln, MARGIN + 14, top + nameB + k * 12));
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
+    doc.setFillColor(...hexToRgb(t ? TONE_HEX[t] : '#9aa1ad'));
+    doc.roundedRect(PAGE_W - MARGIN - 14 - chipW, top + 8, chipW, 15, 7.5, 7.5, 'F');
     doc.setTextColor(255, 255, 255);
-    doc.text(chipTxt, PAGE_W - MARGIN - 14 - chipW / 2, y, { align: 'center' });
-    y += nameLines.length * 12 + 2;
+    doc.text(chipTxt, PAGE_W - MARGIN - 14 - chipW / 2, top + 18.5, { align: 'center' });
 
     if (noteLines.length) {
       doc.setFont('helvetica', 'italic'); doc.setFontSize(8.6); doc.setTextColor(90, 96, 106);
-      doc.text(noteLines, MARGIN + 14, y);
-      y += noteLines.length * 11 + 4;
+      noteLines.forEach((ln, k) => doc.text(ln, MARGIN + 14, top + noteB + k * 11));
     }
-    if (hasPhotos) {
-      const thumb = 52, gap = 7;
-      r.photos.slice(0, 5).forEach((p, i) => {
-        try {
-          doc.setDrawColor(255, 255, 255); doc.setLineWidth(1.5);
-          doc.addImage(p.dataUrl, 'JPEG', MARGIN + 14 + i * (thumb + gap), y, thumb, thumb);
-          doc.roundedRect(MARGIN + 14 + i * (thumb + gap), y, thumb, thumb, 3, 3, 'S');
-        } catch (e) { /* imagen inválida, se omite */ }
-      });
-      y += thumb + 10;
-    } else {
-      y += 8;
-    }
-    y += 10;
-  }
+    y = top + cardH + 6;
+    if (fotos.length) photoGrid(fotos, ROW_PHOTO_COLS, ROW_PHOTO_MAX_H, `Fotos de: ${r.name}`);
+    y += 6;
+  });
 
   // ── Comentario general ──────────────────────────────────────
-  if (generalComment || (generalPhotos && generalPhotos.length)) {
-    ensure(46);
+  if (generalComment || generales.length) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
+    const lines = generalComment ? doc.splitTextToSize(generalComment, CONTENT_W) : [];
+    ensure(16 + 22 + lines.length * 12 + firstRowH(generales, GENERAL_PHOTO_COLS, GENERAL_PHOTO_MAX_H));
+    y += 16;
     doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5); doc.setTextColor(...hexToRgb(NAVY));
-    doc.text('Comentario general de la visita', MARGIN, y + 4);
-    y += 20;
-    if (generalComment) {
+    doc.text('Comentario general de la visita', MARGIN, y);
+    y += 18;
+    if (lines.length) {
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(50, 54, 62);
-      const lines = doc.splitTextToSize(generalComment, PAGE_W - MARGIN * 2);
-      ensure(lines.length * 12);
-      doc.text(lines, MARGIN, y);
-      y += lines.length * 12 + 6;
+      lines.forEach((ln) => { ensure(12); doc.text(ln, MARGIN, y); y += 12; });
+      y += 6;
     }
-    if (generalPhotos && generalPhotos.length) {
-      const thumb = 90, gap = 10;
-      ensure(thumb + 10);
-      generalPhotos.slice(0, 4).forEach((p, i) => {
-        try {
-          doc.addImage(p.dataUrl, 'JPEG', MARGIN + i * (thumb + gap), y, thumb, thumb);
-          doc.setDrawColor(226, 230, 236); doc.setLineWidth(1);
-          doc.roundedRect(MARGIN + i * (thumb + gap), y, thumb, thumb, 4, 4, 'S');
-        } catch (e) { /* omite */ }
-      });
-      y += thumb + 14;
-    }
+    if (generales.length) photoGrid(generales, GENERAL_PHOTO_COLS, GENERAL_PHOTO_MAX_H, 'Fotos del comentario general');
   }
 
   // ── Plan de acción ───────────────────────────────────────────
@@ -252,48 +302,67 @@ export async function generateFlosPdf({ meta, rows, generalComment, generalPhoto
   doc.text('Plan de acción', MARGIN, y);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(130, 138, 150);
   doc.text('Ordenado por urgencia — de la mayor pérdida de puntos a la menor.', MARGIN, y + 16);
-  y += 40;
+  y += 32;
 
   if (summary.plan.length === 0) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(22, 163, 74);
     doc.text(summary.touchedCount > 0
       ? 'Sin acciones pendientes: todo lo evaluado alcanzó el máximo.'
-      : 'Recorrido incompleto: no hay acciones que priorizar.', MARGIN, y);
+      : 'Recorrido incompleto: no hay acciones que priorizar.', MARGIN, y + 12);
   } else {
     const prioColor = { hi: '#dc2626', md: '#ec9032', lo: '#16a34a' };
     summary.plan.forEach((g) => {
-      const actLines = doc.splitTextToSize(g.v.action, PAGE_W - MARGIN * 2 - 24);
-      const noteLines = g.note ? doc.splitTextToSize(`Hallazgo: "${g.note}"`, PAGE_W - MARGIN * 2 - 24) : [];
-      const cardH = 22 + actLines.length * 11 + (noteLines.length ? noteLines.length * 10.5 + 4 : 0) + 14;
-      ensure(cardH + 10);
-
-      doc.setFillColor(...tintRgb(prioColor[g.priorityKey], 0.93));
-      doc.roundedRect(MARGIN, y - 14, PAGE_W - MARGIN * 2, cardH, 8, 8, 'F');
-      doc.setFillColor(...hexToRgb(prioColor[g.priorityKey]));
-      doc.roundedRect(MARGIN, y - 14, 4, cardH, 2, 2, 'F');
-
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(30, 32, 38);
-      doc.text(g.v.name, MARGIN + 16, y);
+      // A la derecha, en la misma línea del nombre: "3/5 pts" + chip de
+      // prioridad. El nombre se corta antes de llegar ahí y la acción va
+      // debajo a todo el ancho (antes "3/5 pts" se montaba sobre la acción).
       const pTxt = g.priority.toUpperCase();
+      const ptsTxt = `${g.s}/${g.v.max} pts`;
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
       const pW = doc.getTextWidth(pTxt) + 14;
-      doc.setFillColor(...hexToRgb(prioColor[g.priorityKey]));
-      doc.roundedRect(PAGE_W - MARGIN - 16 - pW, y - 11, pW, 14, 7, 7, 'F');
+      doc.setFontSize(8.5);
+      const ptsW = doc.getTextWidth(ptsTxt);
+      doc.setFontSize(10.5);
+      const nameLines = doc.splitTextToSize(g.v.name, CONTENT_W - 16 - 12 - pW - 8 - ptsW - 12);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+      const actLines = doc.splitTextToSize(g.v.action, CONTENT_W - 32);
+      doc.setFont('helvetica', 'italic'); doc.setFontSize(8.3);
+      const noteLines = g.note ? doc.splitTextToSize(`Hallazgo: "${g.note}"`, CONTENT_W - 32) : [];
+
+      const nameB = 19;
+      const lastNameB = nameB + (nameLines.length - 1) * 13;
+      const actB = lastNameB + 15;
+      const lastActB = actB + (actLines.length - 1) * 11;
+      const noteB = lastActB + 14;
+      const lastB = noteLines.length ? noteB + (noteLines.length - 1) * 10.5 : lastActB;
+      const cardH = lastB + 12;
+      ensure(cardH + 8);
+
+      const top = y;
+      const color = prioColor[g.priorityKey];
+      doc.setFillColor(...tintRgb(color, 0.93));
+      doc.roundedRect(MARGIN, top, CONTENT_W, cardH, 8, 8, 'F');
+      doc.setFillColor(...hexToRgb(color));
+      doc.roundedRect(MARGIN, top, 4, cardH, 2, 2, 'F');
+
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(30, 32, 38);
+      nameLines.forEach((ln, k) => doc.text(ln, MARGIN + 16, top + nameB + k * 13));
+
+      const chipX = PAGE_W - MARGIN - 12 - pW;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+      doc.setFillColor(...hexToRgb(color));
+      doc.roundedRect(chipX, top + 8, pW, 14, 7, 7, 'F');
       doc.setTextColor(255, 255, 255);
-      doc.text(pTxt, PAGE_W - MARGIN - 16 - pW / 2, y - 1, { align: 'center' });
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(90, 96, 106);
-      doc.text(`${g.s}/${g.v.max} pts`, PAGE_W - MARGIN - 16, y + 12, { align: 'right' });
-      y += 16;
+      doc.text(pTxt, chipX + pW / 2, top + 18, { align: 'center' });
+      doc.setFontSize(8.5); doc.setTextColor(90, 96, 106);
+      doc.text(ptsTxt, chipX - 8, top + 18, { align: 'right' });
 
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(60, 66, 76);
-      doc.text(actLines, MARGIN + 16, y);
-      y += actLines.length * 11 + 4;
+      actLines.forEach((ln, k) => doc.text(ln, MARGIN + 16, top + actB + k * 11));
       if (noteLines.length) {
         doc.setFont('helvetica', 'italic'); doc.setFontSize(8.3); doc.setTextColor(110, 116, 126);
-        doc.text(noteLines, MARGIN + 16, y);
-        y += noteLines.length * 10.5;
+        noteLines.forEach((ln, k) => doc.text(ln, MARGIN + 16, top + noteB + k * 10.5));
       }
-      y += 22;
+      y = top + cardH + 8;
     });
   }
 
