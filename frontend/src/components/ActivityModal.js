@@ -1,11 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Check, Trash2, Users as UsersIcon, AlertTriangle } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { ACTIVITY_COLORS, DEFAULT_ACTIVITY_COLOR } from '@/lib/constants';
 import { ymd } from '@/lib/time';
-import { iniciarDiagnostico } from '@/lib/diagnostico';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -89,39 +88,6 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
     }
   }, [open, activity, defaultDate, defaultTime, user]);
 
-  // --- Diagnóstico temporal de fecha/hora en celulares (ver lib/diagnostico.js) ---
-  const fieldsetRef = useRef(null);
-  const diagRef = useRef(null); // { detener, timer }
-  const [diag, setDiag] = useState(null); // { restante } mientras graba
-  const terminarDiagnostico = async () => {
-    const d = diagRef.current;
-    if (!d) return;
-    diagRef.current = null;
-    clearInterval(d.timer);
-    setDiag(null);
-    try {
-      const codigo = await d.detener();
-      toast.success(`Diagnóstico enviado. Código: ${codigo}`, { duration: 10000 });
-    } catch (e) { toast.error('No se pudo enviar el diagnóstico'); }
-  };
-  const empezarDiagnostico = () => {
-    if (diagRef.current) return;
-    const rec = iniciarDiagnostico({
-      contexto: `actividad-${isEdit ? 'editar' : 'nueva'}`,
-      campos: () => [...(fieldsetRef.current?.querySelectorAll('input[data-diag]') || [])],
-    });
-    let restante = 20;
-    setDiag({ restante });
-    const timer = setInterval(() => {
-      restante -= 1;
-      if (restante <= 0) terminarDiagnostico();
-      else setDiag({ restante });
-    }, 1000);
-    diagRef.current = { ...rec, timer };
-  };
-  // si cierran la ventana a mitad de la grabación, se envía lo que haya
-  useEffect(() => { if (!open && diagRef.current) terminarDiagnostico(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const toggleParticipant = (id) => set('participant_ids', form.participant_ids.includes(id)
     ? form.participant_ids.filter((x) => x !== id) : [...form.participant_ids, id]);
@@ -204,25 +170,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
           </div>
         )}
         <div className="flex-1 min-h-0 overflow-y-auto">
-          {/* Diagnóstico temporal: "no abre el selector de fecha/hora" en celulares */}
-          {!readOnly && (
-            <div className="mx-6 mb-3">
-              {diag ? (
-                <div className="rounded-xl border border-[#ec9032] bg-[rgba(236,144,50,0.1)] px-3 py-2.5 text-xs" data-testid="activity-diag-banner">
-                  <p className="font-semibold text-[#b45309]">Grabando diagnóstico… {diag.restante}s</p>
-                  <p className="text-muted-foreground mt-0.5">Toca ahora <b>Fecha</b>, <b>Inicio</b> y <b>Fin</b> como lo harías normalmente.</p>
-                  <button type="button" onClick={terminarDiagnostico} className="mt-1.5 font-semibold text-[#1e395e] dark:text-[#3cbef6] underline">
-                    Terminar y enviar
-                  </button>
-                </div>
-              ) : (
-                <button type="button" onClick={empezarDiagnostico} className="text-[11px] text-muted-foreground underline hover:text-foreground" data-testid="activity-diag-start">
-                  ¿No abre la fecha u hora? Enviar diagnóstico
-                </button>
-              )}
-            </div>
-          )}
-          <fieldset ref={fieldsetRef} disabled={readOnly} className="px-6 pb-2 space-y-4 min-w-0 border-0">
+          <fieldset disabled={readOnly} className="px-6 pb-2 space-y-4 min-w-0 border-0">
             <div className="space-y-1.5">
               <Label>Título</Label>
               <Input data-testid="activity-form-title-input" value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Ej. Reunión de seguimiento" className="h-11" />
@@ -254,15 +202,15 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label>Fecha</Label>
-                <Input data-testid="activity-form-date-picker" data-diag="fecha" type="date" value={form.date} onChange={(e) => set('date', e.target.value)} className="h-11" />
+                <Input data-testid="activity-form-date-picker" type="date" value={form.date} onChange={(e) => set('date', e.target.value)} className="h-11" />
               </div>
               <div className="space-y-1.5">
                 <Label>Inicio</Label>
-                <Input type="time" data-diag="hora-inicio" value={form.start_time} onChange={(e) => set('start_time', e.target.value)} className="h-11" />
+                <Input type="time" value={form.start_time} onChange={(e) => set('start_time', e.target.value)} className="h-11" />
               </div>
               <div className="space-y-1.5">
                 <Label>Fin</Label>
-                <Input type="time" data-diag="hora-fin" value={form.end_time} onChange={(e) => set('end_time', e.target.value)} className="h-11" />
+                <Input type="time" value={form.end_time} onChange={(e) => set('end_time', e.target.value)} className="h-11" />
               </div>
             </div>
 
