@@ -260,18 +260,22 @@ export default function Historial({ refreshKey }) {
 
   return (
     <div>
-      {/* Celular: Desde/Hasta lado a lado, Sucursal y búsqueda a todo el ancho.
-          Desde sm: todo en una fila como antes. */}
-      <div className="rounded-[18px] bg-card border shadow-card p-4 mb-4 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end">
+      {/* Celular: Desde/Hasta lado a lado (apilados por debajo de 360 px),
+          Sucursal y búsqueda a todo el ancho. Desde sm: todo en una fila.
+          Los inputs de fecha llevan min-w-0: el campo nativo tiene un ancho
+          mínimo intrínseco que, sin eso, lo desborda de su columna. Sucursal y
+          búsqueda usan col-span-full (col-span-2 en una cuadrícula de 1
+          columna crearía una segunda columna implícita). */}
+      <div className="rounded-[18px] bg-card border shadow-card p-4 mb-4 grid grid-cols-1 min-[360px]:grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end">
         <div className="space-y-1.5 min-w-0">
           <label className="text-xs text-muted-foreground">Desde</label>
-          <Input type="date" value={start} max={end} onChange={(e) => setStart(e.target.value)} className="h-10 w-full sm:w-[150px] px-2.5" />
+          <Input type="date" value={start} max={end} onChange={(e) => setStart(e.target.value)} className="h-10 w-full min-w-0 box-border sm:w-[150px] px-2.5 text-sm" />
         </div>
         <div className="space-y-1.5 min-w-0">
           <label className="text-xs text-muted-foreground">Hasta</label>
-          <Input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} className="h-10 w-full sm:w-[150px] px-2.5" />
+          <Input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} className="h-10 w-full min-w-0 box-border sm:w-[150px] px-2.5 text-sm" />
         </div>
-        <div className="space-y-1.5 col-span-2 sm:col-span-1">
+        <div className="space-y-1.5 col-span-full min-w-0">
           <label className="text-xs text-muted-foreground">Sucursal</label>
           <Select value={sucursal || 'todas'} onValueChange={(v) => setSucursal(v === 'todas' ? '' : v)}>
             <SelectTrigger className="h-10 w-full sm:w-[160px]"><SelectValue /></SelectTrigger>
@@ -281,7 +285,7 @@ export default function Historial({ refreshKey }) {
             </SelectContent>
           </Select>
         </div>
-        <div className="relative col-span-2 sm:flex-1 sm:min-w-[160px]">
+        <div className="relative col-span-full min-w-0 sm:flex-1 sm:min-w-[160px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por línea o auditor…" className="pl-9 h-10" />
         </div>
