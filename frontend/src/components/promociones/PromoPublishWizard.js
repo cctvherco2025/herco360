@@ -35,7 +35,7 @@ const SIN_CATEGORIA = '__none';
 const ORIGEN_LABEL = { excel: 'del Excel', memoria: 'recordada', sugerida: 'sugerida — revisar' };
 
 // minúsculas, sin tildes, sin espacios dobles — para buscar y comparar
-const normTxt = (v) => (v ?? '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const normTxt = (v) => (v ?? '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 // Sugerencia de categoría por palabras clave del nombre de la línea. Solo es
 // un punto de partida: el administrador revisa y corrige cada línea antes de

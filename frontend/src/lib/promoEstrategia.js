@@ -12,7 +12,7 @@ export const ESTRATEGIA_COLOR = {
   descuento: '#16a34a', precio: '#00a5df', combo: '#712146', mixta: '#6b7280',
 };
 
-const norm = (v) => (v ?? '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const norm = (v) => (v ?? '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 // Valor de una columna por nombre normalizado ("Observación" == "observacion")
 function col(row, headers, name) {

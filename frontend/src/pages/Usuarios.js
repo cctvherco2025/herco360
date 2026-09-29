@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Check, X, Shield, UserCog, Clock, Mail, Plus, Pencil, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Check, X, Shield, UserCog, Clock, Mail, Plus, Pencil, Trash2, Eye, EyeOff, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -40,6 +40,19 @@ export default function Usuarios() {
 
   const pending = users.filter((u) => u.status === 'pending');
   const approved = users.filter((u) => u.status === 'approved');
+
+  // Buscador del equipo: nombre, correo, cargo, área o tienda; ignora
+  // mayúsculas, tildes y espacios de más. Varias palabras = deben estar todas
+  // ("ligia h1", "coordinador tienda").
+  const [busqueda, setBusqueda] = useState('');
+  const norm = (v) => (v || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const palabras = norm(busqueda).split(' ').filter(Boolean);
+  const approvedFiltrados = palabras.length
+    ? approved.filter((u) => {
+      const texto = norm([u.name, u.email, u.position, u.area, u.sucursal, u.role === 'admin' ? 'admin administrador' : ''].join(' '));
+      return palabras.every((p) => texto.includes(p));
+    })
+    : approved;
 
   const approve = async (id) => { try { await api.post(`/users/${id}/approve`); toast.success('Usuario aprobado'); load(); } catch (e) { toast.error('Error'); } };
   const reject = async (id) => { try { await api.post(`/users/${id}/reject`); toast.success('Usuario rechazado'); load(); } catch (e) { toast.error('Error'); } };
@@ -144,9 +157,30 @@ export default function Usuarios() {
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.06 }}
         className="rounded-[18px] bg-card border shadow-card p-5">
-        <h2 className="font-heading text-lg font-semibold mb-4">Equipo ({approved.length})</h2>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <h2 className="font-heading text-lg font-semibold">
+            Equipo ({palabras.length ? `${approvedFiltrados.length} de ${approved.length}` : approved.length})
+          </h2>
+          <div className="relative w-full sm:w-[320px]">
+            <Search className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Input value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar por nombre, correo, cargo, área o tienda…"
+              className="h-10 pl-9 pr-9 rounded-xl" data-testid="users-search-input" />
+            {busqueda && (
+              <button type="button" onClick={() => setBusqueda('')} aria-label="Limpiar búsqueda"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 h-6 w-6 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+        {palabras.length > 0 && approvedFiltrados.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-8" data-testid="users-search-empty">
+            Ningún usuario coincide con “{busqueda.trim()}”
+          </p>
+        )}
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
-          {approved.map((u) => (
+          {approvedFiltrados.map((u) => (
             <div key={u.id} className="min-w-0 rounded-xl border p-4 hover:shadow-card transition-shadow" data-testid="user-card">
               <div className="flex items-start gap-3">
   <Avatar className="h-12 w-12 border shrink-0"><AvatarImage src={u.avatar_url} /><AvatarFallback>{u.name?.[0]}</AvatarFallback></Avatar>
