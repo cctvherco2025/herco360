@@ -189,6 +189,17 @@ export function canManagePromos(user) {
   return canAccessFlos(user);
 }
 
+// "Administrar Promociones del mes": ver y administrar TODAS las publicaciones
+// de Promociones como si fueran propias. Se otorga por usuario
+// (module_access.promociones_admin); admin y Director comercial ya lo tienen.
+// Igual que core.can_admin_promos.
+export function canAdminPromos(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  if ((user.position || '').trim() === 'Director comercial') return true;
+  return !!(user.module_access || {}).promociones_admin;
+}
+
 // ---- Formularios: permisos independientes del menú padre "Formulario" ----
 // formularios.principal: pantalla /formularios (Hub) y su listado de
 // formularios personalizados. formularios.promocionesMes: tarjeta/pantalla

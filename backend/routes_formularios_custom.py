@@ -32,7 +32,7 @@ from fastapi.responses import Response, StreamingResponse
 
 from core import (db, get_current_user, serialize_doc, new_id, now_iso, can_manage_promos,
                   require_promo_access, can_create_custom_formulario, require_formularios_principal_access,
-                  require_promociones_mes_access)
+                  require_promociones_mes_access, can_admin_promos)
 from models import CustomFormInput
 import storage
 
@@ -110,6 +110,18 @@ async def _resolve_audience_users(audiencia: dict) -> list:
     return [u['id'] for u in users]
 
 
+def _is_promo_admin(user, form: dict) -> bool:
+    """Tiene "Administrar Promociones del mes" y el formulario es de
+    Promociones: se le trata como al creador (ver todo, editar, eliminar)."""
+    return (form.get('kind') or 'generic') == 'promociones' and can_admin_promos(user)
+
+
+def _can_manage_form(user, form: dict) -> bool:
+    """Editar / eliminar el formulario o vaciar su historial."""
+    return (user.get('role') == 'admin' or form.get('creator_id') == user['id']
+            or _is_promo_admin(user, form))
+
+
 def _can_fill(user, form: dict) -> bool:
     if form.get('status') == 'borrador' and form.get('creator_id') != user.get('id'):
         return False
@@ -119,6 +131,8 @@ def _can_fill(user, form: dict) -> bool:
         return True
     if form.get('creator_id') == user.get('id'):
         return True
+    if _is_promo_admin(user, form):
+        return True
     return _audience_match(user, form.get('audiencia'))
 
 
@@ -126,6 +140,8 @@ def _sees_all_responses(user, form: dict) -> bool:
     if user.get('role') == 'admin':
         return True
     if (user.get('position') or '').strip() == 'Director comercial':
+        return True
+    if _is_promo_admin(user, form):
         return True
     return form.get('creator_id') == user.get('id')
 
@@ -575,7 +591,7 @@ async def update_form(form_id: str, data: CustomFormInput, user=Depends(get_curr
     (título, sección, tipo, max), así que editar el formulario no reescribe
     el historial; sólo cambia cómo se responde de aquí en adelante."""
     form = await _get_form_or_404(form_id)
-    if not (user.get('role') == 'admin' or form.get('creator_id') == user['id']):
+    if not _can_manage_form(user, form):
         raise HTTPException(status_code=403, detail='Solo quien lo creó (o un admin) puede editarlo')
 
     titulo = data.titulo.strip()
@@ -618,7 +634,7 @@ async def update_form(form_id: str, data: CustomFormInput, user=Depends(get_curr
 @router.delete('/{form_id}')
 async def delete_form(form_id: str, user=Depends(get_current_user)):
     form = await _get_form_or_404(form_id)
-    if not (user.get('role') == 'admin' or form.get('creator_id') == user['id']):
+    if not _can_manage_form(user, form):
         raise HTTPException(status_code=403, detail='Solo quien lo creó (o un admin) puede eliminarlo')
     await db.custom_form_responses.delete_many({'form_id': form_id})
     await db.custom_forms.delete_one({'id': form_id})
@@ -769,7 +785,7 @@ async def clear_responses(form_id: str, user=Depends(get_current_user)):
     al eliminar el formulario completo—, pero ya no son accesibles porque el
     endpoint de descarga exige que la respuesta exista."""
     form = await _get_form_or_404(form_id)
-    if not (user.get('role') == 'admin' or form.get('creator_id') == user['id']):
+    if not _can_manage_form(user, form):
         raise HTTPException(status_code=403, detail='Solo quien creó el formulario (o un admin) puede vaciar su historial')
     res = await db.custom_form_responses.delete_many({'form_id': form_id})
     return {'message': 'Historial vaciado', 'deleted': res.deleted_count}
@@ -881,8 +897,7 @@ async def delete_response(form_id: str, resp_id: str, user=Depends(get_current_u
         {'id': resp_id, 'form_id': form_id}, {'_id': 0, 'respondent_id': 1})
     if not row:
         raise HTTPException(status_code=404, detail='Respuesta no encontrada')
-    if not (user.get('role') == 'admin'
-            or form.get('creator_id') == user['id']
+    if not (_can_manage_form(user, form)
             or row.get('respondent_id') == user['id']):
         raise HTTPException(status_code=403, detail='No puedes eliminar esta respuesta')
     await db.custom_form_responses.delete_one({'id': resp_id, 'form_id': form_id})

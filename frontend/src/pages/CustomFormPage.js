@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { ClipboardList, ArrowLeft, Trash2, Pencil } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { canAdminPromos } from '@/lib/constants';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import CustomFormWizard from '@/components/customform/CustomFormWizard';
@@ -45,8 +46,11 @@ export default function CustomFormPage() {
   }
   if (!schema) return <p className="text-sm text-muted-foreground text-center py-16">Cargando…</p>;
 
-  const canSeeAll = user?.role === 'admin' || (user?.position || '').trim() === 'Director comercial' || schema.creator_id === user?.id;
-  const canManage = user?.role === 'admin' || schema.creator_id === user?.id;
+  // Quien tiene "Administrar Promociones del mes" ve y administra cualquier
+  // publicación de Promociones como si la hubiera creado.
+  const promoAdmin = schema.kind === 'promociones' && canAdminPromos(user);
+  const canSeeAll = user?.role === 'admin' || (user?.position || '').trim() === 'Director comercial' || schema.creator_id === user?.id || promoAdmin;
+  const canManage = user?.role === 'admin' || schema.creator_id === user?.id || promoAdmin;
 
   return (
     <div className="max-w-[1000px] mx-auto pt-2">

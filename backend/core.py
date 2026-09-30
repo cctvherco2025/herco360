@@ -138,7 +138,7 @@ USER_PUBLIC_FIELDS = {'_id': 0, 'password_hash': 0}
 GATED_MODULES = (
     'inventario', 'reportes', 'cams', 'formulario', 'rutina',
     'formularios_principal', 'promociones_mes', 'formularios_custom',
-    'rutina_schema', 'formulario_schema', 'vacaciones',
+    'rutina_schema', 'formulario_schema', 'vacaciones', 'promociones_admin',
 )
 
 
@@ -340,6 +340,21 @@ async def require_rutina_schema_editor(user=Depends(get_current_user)):
     if not can_edit_rutina_schema(user):
         raise HTTPException(status_code=403, detail='No tienes permiso para editar el esquema de Rutina Operativa')
     return user
+
+
+def can_admin_promos(user) -> bool:
+    """"Administrar Promociones del mes": ver y administrar TODAS las
+    publicaciones de Promociones como si fueran propias (abrirlas aunque no
+    esté en la audiencia, ver todas las respuestas/historial/resultados,
+    editar, eliminar). No viene por rol: se otorga por usuario
+    (module_access.promociones_admin). Admin y Director comercial ya lo tienen."""
+    if not user:
+        return False
+    if user.get('role') == 'admin':
+        return True
+    if (user.get('position') or '').strip() == 'Director comercial':
+        return True
+    return bool(_module_override(user, 'promociones_admin'))
 
 
 def can_manage_promos(user) -> bool:

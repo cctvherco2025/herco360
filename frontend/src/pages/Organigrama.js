@@ -164,6 +164,7 @@ function AccessManager() {
     { key: 'rutina_schema', label: 'Editar puntajes Rutina', color: C.purple },
     { key: 'formulario_schema', label: 'Editar puntajes FLOS', color: C.navy },
     { key: 'vacaciones', label: 'Vacaciones', color: C.green },
+    { key: 'promociones_admin', label: 'Administrar Promociones del mes', color: C.orange },
   ];
 
   return (
