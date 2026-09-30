@@ -76,6 +76,27 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
     api.get('/formularios-custom/promociones/meta').then(({ data }) => setPromoSucursales(data.sucursales || [])).catch(() => {});
   }, [isPromo]);
 
+  // Promociones con tareas: cada tienda × categoría la contesta un solo
+  // coordinador. Las que ya contestó otro aparecen bloqueadas; las propias se
+  // pueden reenviar mientras el jefe no las revise. El gerente de tienda solo revisa.
+  const conTareas = isPromo && !!schema.flujo_tareas;
+  const esGerenteTienda = conTareas && (user?.position || '').trim() === 'Gerente' && (user?.area || '').trim() === 'Tienda';
+  const [tareas, setTareas] = useState([]);
+  const cargarTareas = useCallback(() => {
+    if (!conTareas) return;
+    api.get(`/promo-tareas/form/${schema.id}`).then(({ data }) => setTareas(data)).catch(() => {});
+  }, [conTareas, schema.id]);
+  useEffect(() => { cargarTareas(); }, [cargarTareas]);
+  const tareaDe = (tienda, cat) => tareas.find((t) => t.tienda === tienda && t.categoria === cat);
+  // nombre de quien ya la contestó, si no es uno mismo
+  const ocupadaPor = (tienda, cat) => {
+    const t = tareaDe(tienda, cat);
+    return t && t.estado !== 'pendiente' && t.coordinador_id !== user?.id ? (t.coordinador_name || 'otro coordinador') : null;
+  };
+  const esMia = (tienda, cat) => { const t = tareaDe(tienda, cat); return !!t && t.estado === 'enviada' && t.coordinador_id === user?.id; };
+  const catActual = eligeCategoria ? categoria : promoCategorias[0];
+  const bloqueadaPor = conTareas && sucursal && catActual ? ocupadaPor(sucursal, catActual) : null;
+
   const pickGeneralPhoto = async (fileList) => {
     const file = fileList?.[0];
     if (!file) return;
@@ -231,6 +252,7 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
       }
       await api.post(`/formularios-custom/${schema.id}/respuestas`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Respuesta enviada correctamente');
+      cargarTareas();
       clearDraft();
       setChoice({}); setNotes({}); setTouched(new Set()); setPhotos({}); setCursor(0); setPhase('intro'); setHasDraft(false);
       setSucursal(''); setSocializo(false); setGeneralPhoto(null); setCategoria('');
@@ -243,10 +265,22 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
   const beginWalk = () => {
     if (isPromo && !sucursal) { toast.error('Selecciona la sucursal que estás reportando'); return; }
     if (eligeCategoria && !categoria) { toast.error('Selecciona tu categoría'); return; }
+    if (bloqueadaPor) { toast.error(`${catActual} de ${sucursal} ya la contestó ${bloqueadaPor}`); return; }
     setPhase('walk');
   };
 
   if (schema.items.length === 0) return <p className="text-sm text-muted-foreground text-center py-10">Este formulario no tiene preguntas.</p>;
+
+  if (esGerenteTienda) {
+    return (
+      <div className="max-w-[520px] mx-auto rounded-[18px] bg-card border shadow-card p-6 sm:p-8 text-center" data-testid="promo-gerente-aviso">
+        <h2 className="font-heading text-lg font-semibold">{schema.titulo}</h2>
+        <p className="text-sm text-muted-foreground mt-2">
+          Como gerente de tienda, revisas las respuestas de tu tienda. Este formulario lo contestan los coordinadores y jefes de tienda.
+        </p>
+      </div>
+    );
+  }
 
   if (phase === 'intro') {
     return (
@@ -276,7 +310,10 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Datos Generales</p>
             <div className="space-y-1.5">
               <Label>Sucursal</Label>
-              <Select value={sucursal} onValueChange={setSucursal}>
+              <Select value={sucursal} onValueChange={(v) => {
+                setSucursal(v);
+                if (conTareas && categoria && ocupadaPor(v, categoria)) setCategoria('');
+              }}>
                 <SelectTrigger className="h-11" data-testid="promo-resp-sucursal-select"><SelectValue placeholder="Selecciona…" /></SelectTrigger>
                 <SelectContent>{promoSucursales.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
               </Select>
@@ -284,15 +321,26 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
             {eligeCategoria && (
               <div className="space-y-1.5">
                 <Label>Categoría</Label>
-                <Select value={categoria} onValueChange={(v) => { setCategoria(v); setCursor(0); }}>
-                  <SelectTrigger className="h-11" data-testid="promo-resp-categoria-select"><SelectValue placeholder="Selecciona tu categoría…" /></SelectTrigger>
+                <Select value={categoria} onValueChange={(v) => { setCategoria(v); setCursor(0); }} disabled={conTareas && !sucursal}>
+                  <SelectTrigger className="h-11" data-testid="promo-resp-categoria-select">
+                    <SelectValue placeholder={conTareas && !sucursal ? 'Primero elige la sucursal' : 'Selecciona tu categoría…'} />
+                  </SelectTrigger>
                   <SelectContent>
-                    {promoCategorias.map((c) => (
-                      <SelectItem key={c} value={c}>{c} ({conteoPorCategoria[c]})</SelectItem>
-                    ))}
+                    {promoCategorias.map((c) => {
+                      const quien = conTareas && sucursal ? ocupadaPor(sucursal, c) : null;
+                      return (
+                        <SelectItem key={c} value={c} disabled={!!quien}>
+                          {c} ({conteoPorCategoria[c]}){quien ? ` · ya la contestó ${quien}` : conTareas && sucursal && esMia(sucursal, c) ? ' · ya la contestaste' : ''}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">Solo verás las promociones de la categoría que elijas.</p>
+                <p className="text-xs text-muted-foreground">
+                  {conTareas && sucursal && categoria && esMia(sucursal, categoria)
+                    ? 'Ya la contestaste: si la envías de nuevo, reemplaza tu respuesta anterior mientras el jefe no la revise.'
+                    : 'Solo verás las promociones de la categoría que elijas.'}
+                </p>
               </div>
             )}
             <div className="flex items-center justify-between rounded-xl border px-3.5 py-2.5">
@@ -321,7 +369,10 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
           </div>
         )}
 
-        <Button onClick={beginWalk} className="w-full h-11 rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="customform-begin-button">
+        {bloqueadaPor && (
+          <p className="text-xs text-[#dc2626] mb-3" data-testid="promo-resp-bloqueada">{catActual} de {sucursal} ya la contestó {bloqueadaPor}.</p>
+        )}
+        <Button onClick={beginWalk} disabled={!!bloqueadaPor} className="w-full h-11 rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="customform-begin-button">
           {hasDraft ? 'Continuar' : 'Comenzar'} <ChevronRight className="h-4 w-4 ml-1" />
         </Button>
       </motion.div>

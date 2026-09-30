@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { CalendarDays, Users, Clock, Activity, ArrowRight, Plus, ChevronLeft, ChevronRight, Bookmark, Bell } from 'lucide-react';
+import { CalendarDays, Users, Clock, Activity, ArrowRight, Plus, ChevronLeft, ChevronRight, Bookmark, Bell, Percent } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { greetingEs, fullDateEs, timeAgoEs, capitalize, ymd, MESES_CORTO } from '@/lib/time';
@@ -12,6 +12,66 @@ import { useTheme } from '@/context/ThemeContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import { periodoLabel } from '@/pages/PromocionesHome';
+
+const ESTADO_TAREA = {
+  pendiente: { label: 'Pendiente', cls: 'bg-muted text-muted-foreground' },
+  enviada: { label: 'Enviada', cls: 'bg-[rgba(0,165,223,0.12)] text-[#1e395e] dark:text-[#3cbef6]' },
+};
+
+// Promociones del mes en Inicio: al coordinador de tienda, lo que falta por
+// contestar y lo que ya contestó; al jefe y al gerente de tienda (revisan),
+// cada categoría de su tienda. A nadie más se le muestra.
+function PromosPendientes() {
+  const navigate = useNavigate();
+  const [data, setData] = useState(null);
+  useEffect(() => { api.get('/promo-tareas/mias').then(({ data: d }) => setData(d)).catch(() => {}); }, []);
+  if (!data?.rol || !data.publicaciones.length) return null;
+  const jefe = data.rol === 'revisor';
+  return (
+    <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.16 }}
+      className="rounded-[18px] bg-card border shadow-card p-5 mb-6" data-testid="dashboard-promos-card">
+      <div className="flex items-center gap-2.5 mb-3">
+        <span className="h-9 w-9 rounded-full grid place-items-center bg-[rgba(22,163,74,0.12)]"><Percent className="h-4 w-4 text-[#16a34a]" /></span>
+        <div>
+          <h2 className="font-heading font-semibold">Promociones del mes</h2>
+          <p className="text-xs text-muted-foreground">{jefe ? `Lo que contestó ${data.publicaciones[0].tienda}` : 'Elige tu tienda y categoría al contestar'}</p>
+        </div>
+      </div>
+      <div className="space-y-2.5">
+        {data.publicaciones.map((p) => {
+          const enviadas = p.tareas.filter((t) => t.estado === 'enviada').length;
+          return (
+            <div key={p.id} className="rounded-xl border p-3.5 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{p.titulo} · {periodoLabel(p.periodo)}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {jefe
+                    ? `${enviadas} de ${p.tareas.length} categorías contestadas`
+                    : p.pendientes ? `${p.pendientes} categoría${p.pendientes === 1 ? '' : 's'} sin contestar entre las tiendas` : 'Todas las categorías tienen respuesta'}
+                </p>
+                {p.tareas.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {p.tareas.map((t) => (
+                      <span key={`${t.tienda}-${t.categoria}`} className={`text-[11px] font-medium rounded-full px-2 py-0.5 ${(ESTADO_TAREA[t.estado] || ESTADO_TAREA.pendiente).cls}`}>
+                        {jefe ? t.categoria : `${t.tienda} · ${t.categoria}`} · {(ESTADO_TAREA[t.estado] || ESTADO_TAREA.pendiente).label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <Button size="sm" onClick={() => navigate(`/formularios/custom/${p.id}`)}
+                className={`rounded-xl shrink-0 ${!jefe && p.pendientes ? 'bg-[#1e395e] hover:bg-[#162c49] text-white' : ''}`}
+                variant={!jefe && p.pendientes ? 'default' : 'outline'} data-testid="dashboard-promos-open">
+                {jefe ? 'Ver' : p.pendientes ? 'Contestar' : 'Ver'}
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}
 
 function KpiCard({ icon: Icon, label, value, sub, color, tint, onClick, testid, delay }) {
   return (
@@ -92,6 +152,8 @@ export default function Dashboard() {
         <KpiCard icon={Activity} label="Estado Sala de Juntas" value={stats.room_status || 'Disponible'} sub={stats.room_name} color={roomState.solid} tint={roomState.bg} onClick={() => navigate('/sala-de-juntas')} testid="dashboard-card-room" delay={0.1} />
         <KpiCard icon={user?.role === 'admin' ? Users : Bell} label={user?.role === 'admin' ? 'Usuarios pendientes' : 'Notificaciones'} value={user?.role === 'admin' ? (stats.pending_users ?? 0) : (stats.unread_notifications ?? 0)} sub={user?.role === 'admin' ? 'por aprobar' : 'sin leer'} color="#712146" tint="rgba(113,33,70,0.12)" onClick={() => navigate(user?.role === 'admin' ? '/usuarios' : '/notificaciones')} testid="dashboard-card-pending" delay={0.14} />
       </div>
+
+      <PromosPendientes />
 
       {/* Today + Recent */}
       <div className="lg:col-span-3 rounded-[18px] bg-card border shadow-card p-5">

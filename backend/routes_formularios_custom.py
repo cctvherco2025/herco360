@@ -32,8 +32,11 @@ from fastapi.responses import Response, StreamingResponse
 
 from core import (db, get_current_user, serialize_doc, new_id, now_iso, can_manage_promos,
                   require_promo_access, can_create_custom_formulario, require_formularios_principal_access,
-                  require_promociones_mes_access, can_admin_promos)
+                  require_promociones_mes_access, can_admin_promos, PROMO_TIENDAS,
+                  es_jefe_tienda, es_gerente_tienda, es_coordinador_tienda)
 from models import CustomFormInput
+from notifications import create_notification
+import promo_tareas
 import storage
 
 router = APIRouter(prefix='/formularios-custom', tags=['formularios-custom'])
@@ -133,6 +136,12 @@ def _can_fill(user, form: dict) -> bool:
         return True
     if _is_promo_admin(user, form):
         return True
+    if form.get('flujo_tareas'):
+        # Promociones con tareas: lo contestan los coordinadores y jefes de las
+        # tiendas que participan y lo ve también su gerente (revisa); la
+        # audiencia por área o cargo (que también alcanzaba a coordinadores de
+        # otros departamentos) ya no aplica.
+        return es_coordinador_tienda(user) or es_jefe_tienda(user) or es_gerente_tienda(user)
     return _audience_match(user, form.get('audiencia'))
 
 
@@ -180,8 +189,16 @@ def _guess_main_column(headers: list, rows: list) -> Optional[str]:
 @router.get('/promociones/meta')
 async def promo_meta(user=Depends(require_promociones_mes_access)):
     """Config del paso "Datos Generales" al responder una publicación de
-    Promociones del mes (sucursal a reportar) y categorías del wizard."""
-    return {'sucursales': PROMO_SUCURSALES, 'categorias': PROMO_CATEGORIAS}
+    Promociones del mes (tiendas que participan) y categorías del wizard, más
+    quién contesta y quién revisa en cada tienda (para el asistente de publicar)."""
+    revisores = await promo_tareas.revisores_por_tienda()
+    coords = await promo_tareas.coordinadores_tienda()
+    tiendas = [{'tienda': t, 'sucursal': suc,
+                'jefes': [r['name'] for r in revisores.get(t, []) if r['cargo'] != 'Gerente'],
+                'gerentes': [r['name'] for r in revisores.get(t, []) if r['cargo'] == 'Gerente'],
+                'coordinadores': sum(1 for c in coords if c.get('sucursal') == suc)}
+               for suc, t in PROMO_TIENDAS.items()]
+    return {'sucursales': list(PROMO_TIENDAS.values()), 'categorias': PROMO_CATEGORIAS, 'tiendas': tiendas}
 
 
 # --------------------------------------------------------------------------- #
@@ -502,15 +519,24 @@ async def create_form(data: CustomFormInput, user=Depends(require_builder_access
     titulo = data.titulo.strip()
     if not titulo:
         raise HTTPException(status_code=400, detail='Indica un título para el formulario')
+    flujo = kind == 'promociones'
     aud = data.audiencia
-    if not (aud.todos or aud.areas or aud.cargos or aud.user_ids):
+    if not flujo and not (aud.todos or aud.areas or aud.cargos or aud.user_ids):
         raise HTTPException(status_code=400, detail='Indica a quién va dirigido el formulario')
 
     items = _normalize_items(data.items, MAX_PROMO_ITEMS if kind == 'promociones' else MAX_ITEMS)
 
     periodo = (data.periodo or '').strip() or None
     serie_key = (data.serie_key or '').strip() or None
-    audiencia_dict = data.audiencia.model_dump()
+    if flujo:
+        # Promociones del mes: lo contestan los coordinadores y jefes de las
+        # tiendas que participan (una tarea por tienda × categoría). La
+        # audiencia queda fija.
+        audiencia_dict = {'todos': False, 'areas': ['Tienda'], 'cargos': ['Coordinador', 'Jefe de tienda'], 'user_ids': []}
+        resueltos = [u['id'] for u in await promo_tareas.quienes_contestan()]
+    else:
+        audiencia_dict = data.audiencia.model_dump()
+        resueltos = await _resolve_audience_users(audiencia_dict)
     total_max = sum(it['max'] for it in items)
     doc = {
         'id': new_id(),
@@ -522,7 +548,8 @@ async def create_form(data: CustomFormInput, user=Depends(require_builder_access
         'status': status,
         'creator_id': user['id'], 'creator_name': user['name'], 'creator_avatar': user.get('avatar_url'),
         'audiencia': audiencia_dict,
-        'audiencia_resueltos': await _resolve_audience_users(audiencia_dict),
+        'audiencia_resueltos': resueltos,
+        'flujo_tareas': flujo,
         'items': items,
         'has_scoring': total_max > 0,
         'total_max': total_max,
@@ -532,6 +559,8 @@ async def create_form(data: CustomFormInput, user=Depends(require_builder_access
     doc.pop('_id', None)
     if kind == 'promociones':
         await _recordar_categorias(items, user)
+        if await promo_tareas.sincronizar_tareas(doc):
+            await promo_tareas.avisar_publicacion(doc, user)
     return serialize_doc(doc)
 
 
@@ -597,8 +626,9 @@ async def update_form(form_id: str, data: CustomFormInput, user=Depends(get_curr
     titulo = data.titulo.strip()
     if not titulo:
         raise HTTPException(status_code=400, detail='Indica un título para el formulario')
+    flujo = bool(form.get('flujo_tareas'))
     aud = data.audiencia
-    if not (aud.todos or aud.areas or aud.cargos or aud.user_ids):
+    if not flujo and not (aud.todos or aud.areas or aud.cargos or aud.user_ids):
         raise HTTPException(status_code=400, detail='Indica a quién va dirigido el formulario')
 
     status = (data.status or form.get('status') or 'publicado').strip()
@@ -608,7 +638,8 @@ async def update_form(form_id: str, data: CustomFormInput, user=Depends(get_curr
     is_promo_form = (form.get('kind') or 'generic') == 'promociones'
     items = _normalize_items(data.items, MAX_PROMO_ITEMS if is_promo_form else MAX_ITEMS)
     total_max = sum(it['max'] for it in items)
-    audiencia_dict = data.audiencia.model_dump()
+    # Promociones con tareas: la audiencia es fija (coordinadores de tienda).
+    audiencia_dict = form.get('audiencia') if flujo else data.audiencia.model_dump()
 
     update = {
         'titulo': titulo,
@@ -628,6 +659,11 @@ async def update_form(form_id: str, data: CustomFormInput, user=Depends(get_curr
     if is_promo_form:
         await _recordar_categorias(items, user)
     fresh = await db.custom_forms.find_one({'id': form_id}, {'_id': 0})
+    if flujo:
+        # categorías nuevas -> sus tareas; categorías que salieron -> canceladas
+        creadas = await promo_tareas.sincronizar_tareas(fresh)
+        if creadas and (form.get('status') or 'publicado') != 'publicado':  # recién publicada
+            await promo_tareas.avisar_publicacion(fresh, user)
     return serialize_doc(fresh)
 
 
@@ -637,6 +673,7 @@ async def delete_form(form_id: str, user=Depends(get_current_user)):
     if not _can_manage_form(user, form):
         raise HTTPException(status_code=403, detail='Solo quien lo creó (o un admin) puede eliminarlo')
     await db.custom_form_responses.delete_many({'form_id': form_id})
+    await db.promo_tareas.delete_many({'form_id': form_id})
     await db.custom_forms.delete_one({'id': form_id})
     return {'message': 'Formulario eliminado'}
 
@@ -672,6 +709,12 @@ async def submit_response(
     sucursal_reportada = (payload.get('sucursal') or '').strip()
     socializo = payload.get('socializo')
     if is_promo:
+        if form.get('flujo_tareas'):
+            if es_gerente_tienda(user):
+                raise HTTPException(status_code=403,
+                                    detail='Los gerentes de tienda revisan Promociones del mes; lo contestan coordinadores y jefes')
+            if sucursal_reportada not in PROMO_TIENDAS.values():
+                raise HTTPException(status_code=400, detail='Selecciona la tienda que estás reportando')
         if sucursal_reportada not in PROMO_SUCURSALES:
             raise HTTPException(status_code=400, detail='Selecciona la sucursal que estás reportando')
         if not isinstance(socializo, bool):
@@ -719,6 +762,41 @@ async def submit_response(
     if len(photos) != len(photo_owner):
         raise HTTPException(status_code=400, detail='Las fotos no coinciden con sus preguntas')
 
+    # Promociones con tareas: la tienda × categoría queda a nombre de quien
+    # contesta (409 si otro coordinador ya la contestó). Si el envío falla más
+    # abajo, se deshace para no dejarla tomada sin respuesta.
+    tarea, previo = None, None
+    if is_promo and form.get('flujo_tareas'):
+        tarea, previo = await promo_tareas.tomar_tarea(form, sucursal_reportada, categoria, user)
+    try:
+        doc = await _guardar_respuesta(form, form_id, user, photos, photo_owner, clean_entries, total_score, total_max,
+                                       is_promo, sucursal_reportada, socializo, categoria, tarea)
+    except Exception:
+        if tarea:
+            await promo_tareas.deshacer_toma(tarea['id'], previo)
+        raise
+    if tarea:
+        anterior = tarea.get('respuesta_id')
+        await db.promo_tareas.update_one({'id': tarea['id']}, {'$set': {'respuesta_id': doc['id']}})
+        if anterior and anterior != doc['id']:
+            # reenvío antes de la revisión: la nueva reemplaza a la anterior
+            await db.custom_form_responses.delete_one({'id': anterior, 'form_id': form_id})
+        verbo = 'actualizó' if anterior else 'contestó'
+        mes = promo_tareas.periodo_label(form.get('periodo'))
+        for r in (await promo_tareas.revisores_por_tienda()).get(sucursal_reportada, []):
+            if r['id'] == user['id']:
+                continue  # una jefa que contesta su propia categoría no se avisa a sí misma
+            await create_notification(
+                r['id'], 'promo_enviada',
+                f"{user['name']} {verbo} {categoria} de {sucursal_reportada} ({mes}). Revísalo en piso.",
+                related_id=form_id, related_type='promociones',
+                actor_name=user['name'], actor_avatar=user.get('avatar_url'))
+    return serialize_doc(doc)
+
+
+async def _guardar_respuesta(form, form_id, user, photos, photo_owner, clean_entries, total_score, total_max,
+                             is_promo, sucursal_reportada, socializo, categoria, tarea):
+    """Sube las fotos y guarda la respuesta. Devuelve el documento guardado."""
     resp_id = new_id()
     entries_by_id = {e['id']: e for e in clean_entries}
     general_photos = []
@@ -753,6 +831,7 @@ async def submit_response(
         'sucursal': sucursal_reportada if is_promo else None,
         'socializo': socializo if is_promo else None,
         'categoria': categoria,
+        'tarea_id': tarea['id'] if tarea else None,
         'general_photos': general_photos,
         'entries': clean_entries,
         'total_score': total_score, 'total_max': total_max, 'percent': pct,
@@ -760,7 +839,7 @@ async def submit_response(
     }
     await db.custom_form_responses.insert_one(doc)
     doc.pop('_id', None)
-    return serialize_doc(doc)
+    return doc
 
 
 @router.get('/{form_id}/respuestas')
@@ -787,7 +866,9 @@ async def clear_responses(form_id: str, user=Depends(get_current_user)):
     form = await _get_form_or_404(form_id)
     if not _can_manage_form(user, form):
         raise HTTPException(status_code=403, detail='Solo quien creó el formulario (o un admin) puede vaciar su historial')
+    ids = [r['id'] for r in await db.custom_form_responses.find({'form_id': form_id}, {'_id': 0, 'id': 1}).to_list(5000)]
     res = await db.custom_form_responses.delete_many({'form_id': form_id})
+    await promo_tareas.liberar_por_respuesta(ids)
     return {'message': 'Historial vaciado', 'deleted': res.deleted_count}
 
 
@@ -901,6 +982,7 @@ async def delete_response(form_id: str, resp_id: str, user=Depends(get_current_u
             or row.get('respondent_id') == user['id']):
         raise HTTPException(status_code=403, detail='No puedes eliminar esta respuesta')
     await db.custom_form_responses.delete_one({'id': resp_id, 'form_id': form_id})
+    await promo_tareas.liberar_por_respuesta([resp_id])
     return {'message': 'Respuesta eliminada'}
 
 

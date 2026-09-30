@@ -16,6 +16,7 @@ _PUSH_URL_BY_TYPE = {
     'reservation': '/sala-de-juntas',
     'vacation': '/vacaciones',
     'user': '/usuarios',
+    'promociones': '/formularios/promociones',
 }
 
 
@@ -50,6 +51,9 @@ NOTIFICATION_META = {
     'vacacion_solicitada': {'title': 'Solicitud de vacaciones', 'icon': 'Palmtree', 'color': '#ec9032'},
     'vacacion_aprobada': {'title': 'Solicitud aprobada', 'icon': 'CalendarCheck', 'color': '#16a34a'},
     'vacacion_rechazada': {'title': 'Solicitud rechazada', 'icon': 'CalendarX', 'color': '#dc2626'},
+    'promo_publicada': {'title': 'Promociones del mes', 'icon': 'Percent', 'color': '#16a34a'},
+    'promo_enviada': {'title': 'Promociones por revisar', 'icon': 'ClipboardCheck', 'color': '#ec9032'},
+    'promo_sin_jefe': {'title': 'Tienda sin jefe', 'icon': 'Bell', 'color': '#dc2626'},
 }
 
 

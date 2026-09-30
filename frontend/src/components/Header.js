@@ -6,6 +6,7 @@ import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { timeAgoEs } from '@/lib/time';
+import { destinoNotificacion } from '@/lib/notifDestino';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -18,6 +19,7 @@ export default function Header({ onMenuClick }) {
   const [notifs, setNotifs] = useState([]);
   const [unread, setUnread] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [q, setQ] = useState('');
   const [results, setResults] = useState({ activities: [], users: [] });
   const searchRef = useRef();
@@ -115,7 +117,7 @@ export default function Header({ onMenuClick }) {
      
 
         {/* Notifications */}
-        <Popover>
+        <Popover open={notifOpen} onOpenChange={setNotifOpen}>
           <PopoverTrigger asChild>
             <button data-testid="topbar-notifications-button" className="relative p-2.5 rounded-xl hover:bg-muted text-muted-foreground transition-colors">
               <Bell className="h-5 w-5" />
@@ -132,7 +134,12 @@ export default function Header({ onMenuClick }) {
             <div className="max-h-[380px] overflow-y-auto">
               {notifs.length === 0 && <p className="text-sm text-muted-foreground text-center py-10">Sin notificaciones</p>}
               {notifs.slice(0, 12).map((n) => (
-                <button key={n.id} onClick={() => markRead(n.id)}
+                <button key={n.id} onClick={() => {
+                  markRead(n.id);
+                  // tocar la notificación lleva a lo que la originó
+                  const destino = destinoNotificacion(n);
+                  if (destino) { setNotifOpen(false); navigate(destino); }
+                }}
                   className={`w-full flex items-start gap-3 px-4 py-3 text-left border-b last:border-0 hover:bg-muted/60 transition-colors ${!n.read ? 'bg-[rgba(0,165,223,0.05)]' : ''}`}>
                   <span className="mt-0.5 h-9 w-9 shrink-0 rounded-full grid place-items-center" style={{ background: `${n.color}1f` }}>
                     {n.actor_avatar ? <Avatar className="h-9 w-9"><AvatarImage src={n.actor_avatar} /><AvatarFallback>{n.actor_name?.[0]}</AvatarFallback></Avatar>
@@ -146,7 +153,7 @@ export default function Header({ onMenuClick }) {
                 </button>
               ))}
             </div>
-            <button onClick={() => navigate('/notificaciones')} className="w-full py-2.5 text-sm text-[#00a5df] hover:bg-muted font-medium">Ver todas</button>
+            <button onClick={() => { setNotifOpen(false); navigate('/notificaciones'); }} className="w-full py-2.5 text-sm text-[#00a5df] hover:bg-muted font-medium">Ver todas</button>
           </PopoverContent>
         </Popover>
 

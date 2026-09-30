@@ -4,11 +4,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import {
   UploadCloud, FileSpreadsheet, X, ChevronLeft, ChevronRight, ListChecks,
-  Trash2, Plus, ArrowUp, ArrowDown, Check, Users as UsersIcon, Building2,
-  Briefcase, Rocket, Loader2, FileDown, Layers,
+  Trash2, Plus, ArrowUp, ArrowDown, Check, Rocket, Loader2, FileDown, Layers,
 } from 'lucide-react';
 import api from '@/lib/api';
-import { AREAS, CARGOS } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,8 +14,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { periodoLabel } from '@/pages/PromocionesHome';
 import { detectarEstrategia, etiquetaDeGrupo, ESTRATEGIA_LABEL, ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
@@ -151,101 +147,6 @@ async function downloadTemplate() {
   } catch (e) { toast.error('No se pudo descargar la plantilla'); }
 }
 
-// ---------------------------------------------------------------------------
-// Popover de selección múltiple genérico (áreas / cargos): checkboxes + chips
-// ---------------------------------------------------------------------------
-function MultiPickerPopover({ icon: Icon, placeholder, options, selected, onChange, disabled }) {
-  const toggle = (v) => onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v]);
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button type="button" disabled={disabled}
-          className="w-full min-h-11 flex items-center gap-2 flex-wrap rounded-xl border bg-card px-3 py-2 text-sm text-left hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed">
-          <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-          {selected.length === 0 && <span className="text-muted-foreground">{placeholder}</span>}
-          {selected.map((v) => (
-            <span key={v} className="inline-flex items-center gap-1 rounded-full bg-[rgba(22,163,74,0.12)] text-[#16a34a] px-2 py-0.5 text-xs">{v}</span>
-          ))}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" side="bottom" sideOffset={6}
-        className="w-[--radix-popover-trigger-width] max-h-[280px] overflow-y-auto p-1.5 rounded-2xl">
-        {options.map((v) => {
-          const active = selected.includes(v);
-          return (
-            <button key={v} type="button" onClick={() => toggle(v)}
-              className="w-full flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-muted text-left">
-              <span className={`h-4 w-4 rounded-md border-2 shrink-0 grid place-items-center ${active ? 'border-[#16a34a] bg-[#16a34a]' : 'border-muted-foreground/40'}`}>
-                {active && <Check className="h-3 w-3 text-white" />}
-              </span>
-              <span className="text-sm">{v}</span>
-            </button>
-          );
-        })}
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-// Popover de usuarios individuales, agrupados por área (mismo patrón que el
-// selector de participantes de actividades).
-function UsersPickerPopover({ selected, onChange, disabled }) {
-  const [users, setUsers] = useState(null);
-  const load = () => {
-    if (users !== null) return;
-    api.get('/users?status=approved').then(({ data }) => setUsers(data)).catch(() => setUsers([]));
-  };
-  const list = users || [];
-  const grouped = list.reduce((acc, u) => {
-    const area = (u.area || '').trim() || 'Sin área';
-    (acc[area] = acc[area] || []).push(u);
-    return acc;
-  }, {});
-  const toggle = (id) => onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
-  const selectedUsers = list.filter((u) => selected.includes(u.id));
-
-  return (
-    <Popover onOpenChange={(o) => o && load()}>
-      <PopoverTrigger asChild>
-        <button type="button" disabled={disabled}
-          className="w-full min-h-11 flex items-center gap-2 flex-wrap rounded-xl border bg-card px-3 py-2 text-sm text-left hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed">
-          <UsersIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-          {selectedUsers.length === 0 && <span className="text-muted-foreground">Usuarios específicos (opcional)</span>}
-          {selectedUsers.map((u) => (
-            <span key={u.id} className="inline-flex items-center gap-1 rounded-full bg-[rgba(22,163,74,0.12)] text-[#16a34a] px-2 py-0.5 text-xs">{u.name}</span>
-          ))}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" side="bottom" sideOffset={6} onWheel={(e) => e.stopPropagation()}
-        className="w-[--radix-popover-trigger-width] max-h-[300px] overflow-y-auto overscroll-contain touch-pan-y p-1.5 rounded-2xl">
-        {users === null && <p className="text-sm text-muted-foreground text-center py-4">Cargando…</p>}
-        {Object.keys(grouped).sort((a, b) => a.localeCompare(b)).map((area) => (
-          <div key={area} className="mb-1.5 last:mb-0">
-            <div className="px-2 py-1.5 sticky top-0 bg-popover/95 backdrop-blur z-10">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground truncate">{area}</span>
-            </div>
-            {grouped[area].map((u) => {
-              const active = selected.includes(u.id);
-              return (
-                <button key={u.id} type="button" onClick={() => toggle(u.id)}
-                  className="w-full flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-muted text-left">
-                  <Avatar className="h-7 w-7"><AvatarImage src={u.avatar_url} /><AvatarFallback>{u.name?.[0]}</AvatarFallback></Avatar>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm truncate">{u.name}</span>
-                    <span className="block text-xs text-muted-foreground truncate">{u.position}</span>
-                  </span>
-                  {active && <Check className="h-4 w-4 text-[#16a34a]" />}
-                </button>
-              );
-            })}
-          </div>
-        ))}
-        {users !== null && list.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin usuarios</p>}
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 function Stepper({ step }) {
   return (
     <div className="flex items-center gap-1.5 mb-5 overflow-x-auto pb-1">
@@ -292,9 +193,14 @@ export default function PromoPublishWizard() {
   const [seleccion, setSeleccion] = useState(new Set());
   const [agruparMarca, setAgruparMarca] = useState(true);
 
+  // Tiendas que participan, con sus jefes y cuántos coordinadores contestan.
+  const [tiendas, setTiendas] = useState([]);
   useEffect(() => {
     api.get('/formularios-custom/promociones/meta')
-      .then(({ data }) => { if (data.categorias?.length) setCategorias(data.categorias); })
+      .then(({ data }) => {
+        if (data.categorias?.length) setCategorias(data.categorias);
+        setTiendas(data.tiendas || []);
+      })
       .catch(() => {});
   }, []);
 
@@ -303,10 +209,6 @@ export default function PromoPublishWizard() {
   const [mes, setMes] = useState(now.getMonth() + 1);
   const [anio, setAnio] = useState(now.getFullYear());
   const [descripcion, setDescripcion] = useState('');
-  const [todos, setTodos] = useState(false);
-  const [areas, setAreas] = useState([]);
-  const [cargos, setCargos] = useState([]);
-  const [userIds, setUserIds] = useState([]);
 
   const periodo = `${anio}-${String(mes).padStart(2, '0')}`;
 
@@ -498,15 +400,13 @@ export default function PromoPublishWizard() {
     if (includedItems.length === 0) { toast.error('Agrega al menos una promoción'); return; }
     if (includedItems.some((it) => !it.titulo.trim())) { toast.error('Cada promoción necesita un nombre'); return; }
     if (sinCategoria > 0) { toast.error('Hay líneas sin categoría'); setStep(2); return; }
-    if (!(todos || areas.length || cargos.length || userIds.length)) {
-      toast.error('Indica a quién va dirigido el formulario'); return;
-    }
     setSaving(true);
     try {
       const payload = {
         titulo: titulo.trim(), descripcion: descripcion.trim(),
         kind: 'promociones', periodo, serie_key: 'promociones-mes', status: 'publicado',
-        audiencia: { todos, areas: todos ? [] : areas, cargos: todos ? [] : cargos, user_ids: todos ? [] : userIds },
+        // la fija el servidor: coordinadores de las tiendas que participan
+        audiencia: { todos: false, areas: ['Tienda'], cargos: ['Coordinador'], user_ids: [] },
         items: preguntas.map(({ localIds, ...q }) => q),
       };
       const { data } = await api.post('/formularios-custom', payload);
@@ -842,31 +742,30 @@ export default function PromoPublishWizard() {
                 </div>
               </div>
 
-              <div className="rounded-[18px] bg-card border shadow-card p-6 sm:p-8 space-y-4">
-                <h2 className="font-heading text-lg font-semibold">Asignar responsables</h2>
-                <p className="text-sm text-muted-foreground -mt-2">Selecciona los usuarios que deberán completar el formulario</p>
-
-                <div className="flex items-center justify-between rounded-xl border px-3.5 py-2.5">
-                  <span className="text-sm">Todos en la empresa</span>
-                  <Switch checked={todos} onCheckedChange={setTodos} data-testid="promo-audiencia-todos" />
+              <div className="rounded-[18px] bg-card border shadow-card p-6 sm:p-8 space-y-4" data-testid="promo-responsables">
+                <h2 className="font-heading text-lg font-semibold">Quién contesta y quién revisa</h2>
+                <p className="text-sm text-muted-foreground -mt-2">
+                  Se crea una tarea por tienda y categoría. La contesta el coordinador (o jefe) de tienda que elija esa categoría y la revisan el jefe o el gerente de tienda.
+                </p>
+                <div className="space-y-2">
+                  {tiendas.map((t) => (
+                    <div key={t.tienda} className="flex items-start justify-between gap-3 rounded-xl border px-3.5 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">{t.tienda} <span className="text-xs text-muted-foreground font-normal">· {t.sucursal}</span></p>
+                        <p className="text-xs text-muted-foreground">
+                          {[...t.jefes, ...(t.gerentes || [])].length
+                            ? `Revisan: ${[...t.jefes, ...(t.gerentes || []).map((g) => `${g} (gerente)`)].join(' · ')}`
+                            : 'Sin jefe ni gerente de tienda: nadie revisará sus respuestas'}
+                        </p>
+                      </div>
+                      <span className={`text-xs font-medium whitespace-nowrap ${t.coordinadores ? 'text-muted-foreground' : 'text-[#dc2626]'}`}>
+                        {t.coordinadores} coordinador{t.coordinadores === 1 ? '' : 'es'}
+                      </span>
+                    </div>
+                  ))}
+                  {tiendas.length === 0 && <p className="text-sm text-muted-foreground">Cargando tiendas…</p>}
                 </div>
-
-                {!todos && (
-                  <>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Por área</Label>
-                      <MultiPickerPopover icon={Building2} placeholder="Áreas (opcional)" options={AREAS} selected={areas} onChange={setAreas} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Por cargo</Label>
-                      <MultiPickerPopover icon={Briefcase} placeholder="Cargos (opcional)" options={CARGOS} selected={cargos} onChange={setCargos} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Usuarios específicos</Label>
-                      <UsersPickerPopover selected={userIds} onChange={setUserIds} />
-                    </div>
-                  </>
-                )}
+                <p className="text-xs text-muted-foreground">Coordinadores de otros departamentos no reciben este formulario.</p>
               </div>
 
               <div className="flex justify-between">
@@ -897,13 +796,13 @@ export default function PromoPublishWizard() {
                     ))}
                   </div>
                 </div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Audiencia</span>
+                <div className="flex justify-between"><span className="text-muted-foreground">Tiendas</span>
+                  <span className="font-medium text-right">{tiendas.map((t) => t.tienda).join(' y ') || '—'}</span>
+                </div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Tareas a crear</span>
                   <span className="font-medium text-right">
-                    {todos ? 'Todos en la empresa' : [
-                      areas.length ? `${areas.length} área(s)` : null,
-                      cargos.length ? `${cargos.length} cargo(s)` : null,
-                      userIds.length ? `${userIds.length} usuario(s)` : null,
-                    ].filter(Boolean).join(' · ') || 'Sin definir'}
+                    {tiendas.length} tienda{tiendas.length === 1 ? '' : 's'} × {categorias.filter((c) => preguntasPorCategoria[c]).length} categorías
+                    = {tiendas.length * categorias.filter((c) => preguntasPorCategoria[c]).length}
                   </span>
                 </div>
               </div>

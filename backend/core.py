@@ -348,6 +348,38 @@ async def require_rutina_schema_editor(user=Depends(get_current_user)):
 JEFE_TIENDA = 'Jefe de tienda'
 CARGOS_SOLO_ADMIN = {JEFE_TIENDA}
 
+# Promociones del mes: tiendas que participan, por la sucursal del perfil.
+# Por ahora solo Herco Max y Herco Centro (las que tienen coordinadores y jefe).
+PROMO_TIENDAS = {'H1': 'Herco Max', 'H2': 'Herco Centro'}
+
+
+def tienda_promos(user) -> str:
+    """Tienda de Promociones de la persona según su sucursal ('' si no participa)."""
+    return PROMO_TIENDAS.get(((user or {}).get('sucursal') or '').strip(), '')
+
+
+def es_jefe_tienda(user) -> bool:
+    return ((user or {}).get('position') or '').strip() == JEFE_TIENDA and bool(tienda_promos(user))
+
+
+def es_gerente_tienda(user) -> bool:
+    u = user or {}
+    return ((u.get('position') or '').strip() == 'Gerente' and (u.get('area') or '').strip() == 'Tienda'
+            and bool(tienda_promos(u)))
+
+
+def es_revisor_tienda(user) -> bool:
+    """Revisa Promociones del mes de su tienda: jefe o gerente de tienda."""
+    return es_jefe_tienda(user) or es_gerente_tienda(user)
+
+
+def es_coordinador_tienda(user) -> bool:
+    """Contesta Promociones del mes: Coordinador del área Tienda de una tienda
+    que participa. Los coordinadores de otros departamentos no."""
+    u = user or {}
+    return ((u.get('position') or '').strip() == 'Coordinador' and (u.get('area') or '').strip() == 'Tienda'
+            and bool(tienda_promos(u)))
+
 
 def can_admin_promos(user) -> bool:
     """"Administrar Promociones del mes": ver y administrar TODAS las

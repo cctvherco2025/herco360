@@ -1,14 +1,17 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Bell, CheckCheck, UserPlus, UserCheck, CalendarPlus, UserX, Bookmark, Ban, Palmtree, CalendarCheck, CalendarX, Clock } from 'lucide-react';
+import { Bell, CheckCheck, UserPlus, UserCheck, CalendarPlus, UserX, Bookmark, Ban, Palmtree, CalendarCheck, CalendarX, Clock, Percent, ClipboardCheck } from 'lucide-react';
 import api from '@/lib/api';
 import { timeAgoEs } from '@/lib/time';
+import { destinoNotificacion } from '@/lib/notifDestino';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 
-const ICONS = { UserPlus, UserCheck, CalendarPlus, UserX, Bookmark, Ban, Bell, Palmtree, CalendarCheck, CalendarX, Clock };
+const ICONS = { UserPlus, UserCheck, CalendarPlus, UserX, Bookmark, Ban, Bell, Palmtree, CalendarCheck, CalendarX, Clock, Percent, ClipboardCheck };
 
 export default function Notificaciones() {
+  const navigate = useNavigate();
   const [notifs, setNotifs] = useState([]);
   const load = useCallback(async () => { try { const { data } = await api.get('/notifications'); setNotifs(data); } catch (e) {} }, []);
   useEffect(() => { load(); }, [load]);
@@ -38,7 +41,7 @@ export default function Notificaciones() {
         {notifs.map((n) => {
           const Icon = ICONS[n.icon] || Bell;
           return (
-            <button key={n.id} onClick={() => markRead(n.id)}
+            <button key={n.id} onClick={() => { markRead(n.id); const d = destinoNotificacion(n); if (d) navigate(d); }}
               className={`w-full flex items-start gap-3.5 px-5 py-4 text-left border-b last:border-0 hover:bg-muted/50 transition-colors ${!n.read ? 'bg-[rgba(0,165,223,0.05)]' : ''}`}
               data-testid="notification-row">
               <span className="mt-0.5 h-10 w-10 shrink-0 rounded-full grid place-items-center" style={{ background: `${n.color}1f` }}>
