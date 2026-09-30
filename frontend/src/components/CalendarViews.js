@@ -107,8 +107,8 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
   const top = ((toMin(ev.start_time) - START_HOUR * 60) / 60) * HOUR_H;
   const height = Math.max(30, ((toMin(ev.end_time) - toMin(ev.start_time)) / 60) * HOUR_H - 4);
 
-  const showSubtitle = !!ev.owner_name || !compact;
-  const availableForTitle = height - BLOCK_V_PADDING - (showSubtitle ? SUBTITLE_LINE_H : 0);
+  const subtitleLines = (esVariosDias(ev) ? 1 : 0) + (ev.owner_name || (!compact && !esVariosDias(ev)) ? 1 : 0);
+  const availableForTitle = height - BLOCK_V_PADDING - subtitleLines * SUBTITLE_LINE_H;
   // At least 1 line, but let the title use as many lines as the block's real height allows.
   const titleLines = Math.max(1, Math.min(6, Math.floor(availableForTitle / TITLE_LINE_H)));
 
@@ -118,14 +118,19 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
   const leftPct = col * widthPct;
   const GUTTER = 2; // px gap between side-by-side events
 
+  // Las de varios días se pintan en cada día que duran; no se arrastran (moverlas
+  // un día cambiaría todo el rango) y muestran su rango de fechas.
+  const variosDias = esVariosDias(ev);
+  const canDrag = draggable && !ev.foreign && !ev.is_vacation && !variosDias;
+
   return (
     <button
       type="button"
-      draggable={draggable && !ev.foreign && !ev.is_vacation}
-      onDragStart={(e) => { if (ev.foreign || ev.is_vacation) return; e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; onDragStart?.(ev); }}
+      draggable={canDrag}
+      onDragStart={(e) => { if (!canDrag) return; e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; onDragStart?.(ev); }}
       onDragEnd={() => onDragEnd?.()}
       onClick={(e) => { e.stopPropagation(); onClick?.(ev); }}
-      className={`absolute rounded-[12px] px-2 py-1 text-left overflow-hidden border shadow-xs hover:shadow-card transition-[transform,box-shadow] z-10 ${(draggable && !ev.foreign) ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
+      className={`absolute rounded-[12px] px-2 py-1 text-left overflow-hidden border shadow-xs hover:shadow-card transition-[transform,box-shadow] z-10 ${canDrag ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
       style={{
         top, height, background: tint, borderColor: solid, borderStyle: ev.pending ? 'dashed' : 'solid',
         left: `calc(${leftPct}% + ${GUTTER}px)`,
@@ -139,12 +144,17 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
         >
           {ev.title}
         </span>
+        {variosDias && (
+          <span className="block text-[9px] font-medium leading-[14px] truncate opacity-80" style={{ color: solid }}>
+            {rangoCortoCal(ev)} · {ev.start_time} - {ev.end_time}
+          </span>
+        )}
         {ev.owner_name && (
           <span className="block text-[9px] font-medium leading-[14px] truncate opacity-80" style={{ color: solid }}>
             {ev.owner_name}
           </span>
         )}
-        {!compact && !ev.owner_name && (
+        {!compact && !ev.owner_name && !variosDias && (
           <span className="block text-[10px] leading-[14px] text-muted-foreground truncate">
             {ev.start_time} - {ev.end_time}
           </span>
@@ -160,6 +170,8 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
    actividad sigue en otra semana, en cada semana se ve su tramo: así se "parte
    en dos barras". Los extremos que continúan fuera de la fila van rectos. */
 export const esVariosDias = (a) => !!a.end_date && a.end_date !== a.date;
+// ¿La actividad ocupa el día `ds` (YYYY-MM-DD)? Incluye cada día de las de varios días.
+const ocupaDia = (a, ds) => (esVariosDias(a) ? a.date <= ds && ds <= a.end_date : a.date === ds);
 const LANE_H = 22; // alto de cada carril de barras (px)
 const MES_CORTO_CAL = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
@@ -341,35 +353,17 @@ export const WeekView = React.forwardRef(function WeekView({ anchor, activities,
   const todayStr = ymd(new Date());
   const railHours = END_HOUR - START_HOUR + 1;
 
-  // Barras de varios días arriba de la cuadrícula de horas
-  const diasFila = days.map(ymd);
-  const { segs, carriles } = tramosDeFila(activities, diasFila);
-  const franja = carriles ? carriles * LANE_H + 6 : 0;
-  const acumulado = (hasta) => colWidths.slice(0, hasta).reduce((s, w) => s + w, 0);
-
   return (
     <div className="flex overflow-x-auto no-scrollbar">
-      <TimeRail offset={franja} />
+      <TimeRail />
       <div
         ref={gridRef}
         className="relative flex-1 grid min-w-[640px]"
         style={{ gridTemplateColumns: colWidths.map((w) => `${w}%`).join(' ') }}
       >
-        {franja > 0 && (
-          <div className="absolute inset-x-0 z-20 pointer-events-none" style={{ top: 34, height: franja }}>
-            {segs.map((s) => (
-              <BarraVariosDias key={`${s.ev.id}-${s.i0}`} seg={s} isDark={isDark} onClick={onEventClick}
-                style={{
-                  top: 2 + s.lane * LANE_H,
-                  left: `calc(${acumulado(s.i0)}% + 2px)`,
-                  width: `calc(${acumulado(s.i1 + 1) - acumulado(s.i0)}% - 4px)`,
-                }} />
-            ))}
-          </div>
-        )}
         {days.map((day, i) => {
           const ds = ymd(day);
-          const dayEvents = activities.filter((a) => a.date === ds && !esVariosDias(a));
+          const dayEvents = activities.filter((a) => ocupaDia(a, ds));
           const laidOut = layoutDayEvents(dayEvents);
           const isToday = ds === todayStr;
           return (
@@ -378,7 +372,6 @@ export const WeekView = React.forwardRef(function WeekView({ anchor, activities,
                 <span className="text-[10px] font-medium text-muted-foreground">{DIAS_CORTO[day.getDay()]}</span>
                 <span className={`text-xs font-semibold grid place-items-center h-6 w-6 rounded-full ${isToday ? 'bg-[#1e395e] text-white' : 'text-foreground'}`}>{day.getDate()}</span>
               </div>
-              {franja > 0 && <div style={{ height: franja }} className="border-b border-border/60" />}
               <div className="relative" style={{ height: railHours * HOUR_H }}
                 onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); onSlotClick?.(ds, timeFromOffset(e.clientY - r.top)); }}
                 onDragOver={(e) => { if (dragEv) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
@@ -405,25 +398,14 @@ export function DayView({ anchor, activities, onEventClick, onSlotClick, onEvent
   const { isDark } = useTheme();
   const [dragEv, setDragEv] = React.useState(null);
   const ds = ymd(anchor);
-  const dayEvents = activities.filter((a) => a.date === ds && !esVariosDias(a));
-  // actividades de varios días que pasan por este día: barras arriba
-  const { segs } = tramosDeFila(activities, [ds]);
-  const franja = segs.length ? segs.length * LANE_H + 6 : 0;
+  const dayEvents = activities.filter((a) => ocupaDia(a, ds));
   const laidOut = layoutDayEvents(dayEvents);
   const railHours = END_HOUR - START_HOUR + 1;
   return (
     <div className="flex">
-      <TimeRail offset={franja} />
+      <TimeRail />
       <div className="flex-1">
         <div className="h-[34px]" />
-        {franja > 0 && (
-          <div className="relative border-b border-border/60" style={{ height: franja }}>
-            {segs.map((s, idx) => (
-              <BarraVariosDias key={s.ev.id} seg={s} isDark={isDark} onClick={onEventClick}
-                style={{ top: 2 + idx * LANE_H, left: 2, right: 2 }} />
-            ))}
-          </div>
-        )}
         <div className="relative" style={{ height: railHours * HOUR_H }}
           onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); onSlotClick?.(ds, timeFromOffset(e.clientY - r.top)); }}
           onDragOver={(e) => { if (dragEv) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
@@ -434,7 +416,7 @@ export function DayView({ anchor, activities, onEventClick, onSlotClick, onEvent
           {laidOut.map(({ ev, col, totalCols }) => (
             <EventBlock key={ev.id} ev={ev} isDark={isDark} onClick={onEventClick} col={col} totalCols={totalCols} draggable={!!onEventMove} onDragStart={setDragEv} onDragEnd={() => setDragEv(null)} />
           ))}
-          {dayEvents.length === 0 && segs.length === 0 && (
+          {dayEvents.length === 0 && (
             <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground pointer-events-none">No hay actividades este día</div>
           )}
         </div>
