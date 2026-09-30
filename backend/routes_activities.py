@@ -1,8 +1,10 @@
 """Activity (Agenda) routes."""
 import calendar
+from collections import defaultdict
 from datetime import datetime, timedelta, date as date_cls
 from fastapi import APIRouter, HTTPException, Depends
-from core import db, get_current_user, serialize_doc, new_id, now_iso
+from core import db, get_current_user, serialize_doc, new_id, now_iso, now_local
+import recurrence as rec
 from models import ActivityInput, RespondInput
 from notifications import create_notification, log_activity
 from reminders import DEFAULT_REMINDER_OFFSETS
@@ -21,6 +23,11 @@ DEFAULT_COUNTS = {'daily': 30, 'weekly': 12, 'monthly': 6}
 # fecha_hora_fin completas en hora de Honduras (UTC-6, sin horario de verano).
 MAX_SPAN_DAYS = 31
 TZ_SUFFIX = '-06:00'  # America/Tegucigalpa
+
+# Una serie con RRULE que reserva la Sala de Juntas: la sala se reserva (y se
+# validan choques y lunes) en cada repetición de los próximos 12 meses. Una
+# serie sin fin no puede reservar "para siempre" en la agenda de la sala.
+SALA_HORIZONTE_DIAS = 365
 
 
 def _parse_date(s: str) -> date_cls:
@@ -146,33 +153,56 @@ def _times_overlap(start_a: str, end_a: str, start_b: str, end_b: str) -> bool:
     return start_a < end_b and start_b < end_a
 
 
-async def _check_conflicts(date: str, start_time: str, end_time: str,
-                           participant_ids, creator_id: str, uses_meeting_room: bool,
-                           exclude_activity_id: str = None):
-    """Raise 409 if the proposed slot clashes with the meeting room.
+def _tramos(activity: dict) -> list:
+    """Tramos por día [(día, desde, hasta)] que ocupa la actividad en la sala.
+    En una serie: cada repetición desde la primera hasta 12 meses adelante
+    (o hasta que termine la serie, si es antes)."""
+    if not activity.get('rrule'):
+        return _dias(activity['date'], activity.get('end_date'), activity['start_time'], activity['end_time'])
+    d0 = _parse_date(activity['date'])
+    span = _parse_date(activity.get('end_date') or activity['date']) - d0
+    hasta = max(d0, now_local().date()) + timedelta(days=SALA_HORIZONTE_DIAS)
+    out = []
+    for f in rec.fechas(activity['rrule'], activity['date'], activity['start_time'], d0, hasta):
+        out.extend(_dias(f.isoformat(), (f + span).isoformat(), activity['start_time'], activity['end_time']))
+    return out
 
+
+def _dia_corto(d: str) -> str:
+    y, m, dd = d.split('-')
+    return f'{dd}/{m}/{y}'
+
+
+async def _check_conflicts(tramos: list, uses_meeting_room: bool, exclude_activity_id: str = None):
+    """Raise 409 si algún tramo choca con la Sala de Juntas (lunes o reserva).
+
+    - Una sola consulta para todos los días (una serie puede tener cientos).
     - Vacation markers (is_vacation=True) never block a slot.
     - Cancelled/finished room reservations never block.
     - Participant conflicts are intentionally NOT checked: people can be
       double-booked across activities.
     """
-    # --- Room conflict (source of truth: reservations collection) ---
-    if uses_meeting_room:
-        res_query = {'date': date}
-        if exclude_activity_id:
-            res_query['activity_id'] = {'$ne': exclude_activity_id}
-        reservations = await db.reservations.find(res_query, {'_id': 0}).to_list(500)
-        for r in reservations:
-            if r.get('status') in ('Cancelada', 'Finalizada'):
-                continue
-            if _times_overlap(start_time, end_time, r.get('start_time', ''), r.get('end_time', '')):
+    if not uses_meeting_room or not tramos:
+        return
+    if any(_is_monday(d) for d, _, _ in tramos):
+        raise HTTPException(status_code=409,
+                            detail='Los lunes la Sala de Juntas está reservada para Dirección Comercial')
+    dias = sorted({d for d, _, _ in tramos})
+    res_query = {'date': {'$gte': dias[0], '$lte': dias[-1]}}
+    if exclude_activity_id:
+        res_query['activity_id'] = {'$ne': exclude_activity_id}
+    por_dia = defaultdict(list)
+    async for r in db.reservations.find(res_query, {'_id': 0}):
+        if r.get('status') not in ('Cancelada', 'Finalizada'):
+            por_dia[r.get('date')].append(r)
+    for dia, desde, hasta in tramos:
+        for r in por_dia.get(dia, []):
+            if _times_overlap(desde, hasta, r.get('start_time', ''), r.get('end_time', '')):
+                cuando = 'ese día' if len(dias) == 1 else f'el {_dia_corto(dia)}'
                 raise HTTPException(
                     status_code=409,
                     detail=(f"La Sala de Juntas ya está reservada de "
-                            f"{r.get('start_time')} a {r.get('end_time')} ese día."))
-
-    # Participant conflict check removed — participants can now be double-booked.
-    return
+                            f"{r.get('start_time')} a {r.get('end_time')} {cuando}."))
 
 
 async def _build_participants(participant_ids):
@@ -188,27 +218,24 @@ async def _build_participants(participant_ids):
 
 
 async def _ensure_room_reservation(activity, actor):
-    """Reserva la sala para la actividad: una reserva por cada día que dura
-    (la agenda de la sala es por día). Los lunes nunca se auto-reservan
-    (Dirección Comercial); igual ya se rechazan antes de llegar aquí."""
+    """Reserva la sala para la actividad: una reserva por cada día que dura y,
+    si se repite, por cada repetición de los próximos 12 meses (la agenda de la
+    sala es por día). Los lunes nunca se auto-reservan (Dirección Comercial);
+    igual ya se rechazan antes de llegar aquí."""
     room = await db.rooms.find_one({}, {'_id': 0})
     if not room:
         return
-    primera = None
-    for dia, desde, hasta in _dias(activity['date'], activity.get('end_date'), activity['start_time'], activity['end_time']):
-        if _is_monday(dia):
-            continue
-        reservation = {
-            'id': new_id(), 'room_id': room['id'], 'room_name': room['name'],
-            'activity_id': activity['id'], 'title': activity['title'],
-            'date': dia, 'start_time': desde, 'end_time': hasta, 'status': 'Reservada',
-            'reserved_by': actor['id'], 'reserved_by_name': actor['name'],
-            'notes': activity.get('description', ''), 'created_at': now_iso(),
-        }
-        await db.reservations.insert_one(reservation)
-        primera = primera or reservation
-    if not primera:
+    reservas = [{
+        'id': new_id(), 'room_id': room['id'], 'room_name': room['name'],
+        'activity_id': activity['id'], 'title': activity['title'],
+        'date': dia, 'start_time': desde, 'end_time': hasta, 'status': 'Reservada',
+        'reserved_by': actor['id'], 'reserved_by_name': actor['name'],
+        'notes': activity.get('description', ''), 'created_at': now_iso(),
+    } for dia, desde, hasta in _tramos(activity) if not _is_monday(dia)]
+    if not reservas:
         return
+    await db.reservations.insert_many(reservas)
+    primera = reservas[0]
     await log_activity(actor['id'], actor['name'], actor.get('avatar_url'),
                        'reservó la Sala de Juntas', activity['title'], 'reservation')
     for p in activity.get('participants', []):
@@ -218,16 +245,24 @@ async def _ensure_room_reservation(activity, actor):
                                   actor_name=actor['name'], actor_avatar=actor.get('avatar_url'))
 
 
-async def _check_conflicts_rango(date, end_date, start_time, end_time, participant_ids, creator_id,
-                                 uses_meeting_room, exclude_activity_id=None):
-    """Lunes y choques de sala en CADA día que dura la actividad."""
-    tramos = _dias(date, end_date, start_time, end_time)
-    if uses_meeting_room and any(_is_monday(d) for d, _, _ in tramos):
-        raise HTTPException(status_code=409,
-                            detail='Los lunes la Sala de Juntas está reservada para Dirección Comercial')
-    for dia, desde, hasta in tramos:
-        await _check_conflicts(dia, desde, hasta, participant_ids, creator_id, uses_meeting_room,
-                               exclude_activity_id=exclude_activity_id)
+def _serie(rule: str, date0: str, end0: str, start_time: str, end_time: str) -> dict:
+    """Valida la regla y devuelve los campos de la serie. Si la fecha elegida
+    no cumple la regla, la serie empieza en la primera fecha que sí la cumple
+    (conservando la duración)."""
+    try:
+        rule = rec.normalizar(rule)
+        span = _parse_date(end0) - _parse_date(date0)
+        primera = rec.primera(rule, date0, start_time)
+        if not primera:
+            raise rec.ReglaInvalida('La repetición no genera ninguna fecha')
+        if rec.choca_consigo(rule, primera, start_time, end_time, span.days):
+            raise rec.ReglaInvalida(
+                f'La actividad dura {span.days + 1} días y se repetiría antes de terminar. Cambiá la repetición.')
+    except rec.ReglaInvalida as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    fin = (_parse_date(primera) + span).isoformat()
+    return {'rrule': rule, 'date': primera, 'end_date': fin,
+            'serie_hasta': rec.serie_hasta(rule, primera, start_time, span.days)}
 
 
 @router.get('')
@@ -238,10 +273,8 @@ async def list_activities(start: str = None, end: str = None, category: str = No
     if start and end:
         # Toda actividad que TOQUE el rango: empieza antes de que termine el
         # rango y termina después de que empieza (incluye las de varios días
-        # que empezaron antes). Sin end_date (docs aún no migrados) = un día.
-        conds.append({'date': {'$lte': end}})
-        conds.append({'$or': [{'end_date': {'$gte': start}},
-                              {'end_date': {'$exists': False}, 'date': {'$gte': start}}]})
+        # que empezaron antes), más las series con RRULE que siguen vigentes.
+        conds.append(rec.filtro_rango(start, end))
     if category:
         query['category'] = category
     # Determine whose calendar we are reading.
@@ -260,8 +293,13 @@ async def list_activities(start: str = None, end: str = None, category: str = No
     conds.append({'$or': [{'created_by': target_id}, {'participants.user_id': target_id}]})
     query['$and'] = conds
     activities = await db.activities.find(query, {'_id': 0}).sort('date', 1).to_list(1000)
-    for a in activities:
-        a.setdefault('end_date', a.get('date'))
+    if start and end:
+        # cada serie se reemplaza por sus repeticiones dentro del rango
+        activities = rec.expandir(activities, start, end)
+        activities.sort(key=lambda a: (a['date'], a.get('start_time') or ''))
+    else:
+        for a in activities:
+            a.setdefault('end_date', a.get('date'))
     return serialize_doc(activities)
 
 
@@ -278,21 +316,23 @@ async def create_activity(data: ActivityInput, user=Depends(get_current_user)):
     date0, end0 = _rango(data)
     span = timedelta(days=(_parse_date(end0) - _parse_date(date0)).days)
     participants = await _build_participants(data.participant_ids)
-    recurrence = (data.recurrence or 'none')
-    dates = _gen_dates(date0, recurrence, data.recurrence_count)
-    _check_repeticion(dates, data.start_time, data.end_time, span.days)
+    serie = None
+    if data.rrule:
+        # Repetición con RRULE: UNA actividad con su regla; las repeticiones
+        # se generan al consultar.
+        serie = _serie(data.rrule, date0, end0, data.start_time, data.end_time)
+        date0 = serie['date']
+        recurrence, dates = 'rrule', [date0]
+    else:
+        # Clientes viejos: una actividad por fecha (daily/weekly/monthly).
+        recurrence = (data.recurrence or 'none')
+        dates = _gen_dates(date0, recurrence, data.recurrence_count)
+        _check_repeticion(dates, data.start_time, data.end_time, span.days)
     series_id = new_id() if len(dates) > 1 else None
 
-    # Pre-check ALL occurrences (and every day of each) before inserting
-    # anything, so a series never gets created "half-way" when one date clashes.
-    for dt in dates:
-        await _check_conflicts_rango(dt, (_parse_date(dt) + span).isoformat(), data.start_time, data.end_time,
-                                     data.participant_ids, user['id'], data.uses_meeting_room)
-
-    first_activity = None
-    for idx, dt in enumerate(dates):
+    def _doc(dt):
         end_dt = (_parse_date(dt) + span).isoformat()
-        activity = {
+        doc = {
             'id': new_id(), 'title': data.title, 'color': data.color,
             'date': dt, 'start_time': data.start_time, 'end_time': data.end_time,
             'end_date': end_dt,
@@ -306,11 +346,20 @@ async def create_activity(data: ActivityInput, user=Depends(get_current_user)):
             'created_by': user['id'], 'created_by_name': user['name'],
             'created_by_avatar': user.get('avatar_url'), 'created_at': now_iso(),
         }
+        if serie:
+            doc.update({'rrule': serie['rrule'], 'serie_hasta': serie['serie_hasta']})
+        return doc
+
+    docs = [_doc(dt) for dt in dates]
+    # Pre-check ALL occurrences (and every day of each) before inserting
+    # anything, so a series never gets created "half-way" when one date clashes.
+    await _check_conflicts([t for d in docs for t in _tramos(d)], data.uses_meeting_room)
+
+    for activity in docs:
         await db.activities.insert_one(activity)
         if data.uses_meeting_room:
             await _ensure_room_reservation(activity, user)
-        if idx == 0:
-            first_activity = activity
+    first_activity = docs[0]
 
     # Log once for the whole series.
     log_title = data.title + (f' (serie de {len(dates)})' if len(dates) > 1 else '')
@@ -338,10 +387,17 @@ async def update_activity(activity_id: str, data: ActivityInput, user=Depends(ge
         raise HTTPException(status_code=404, detail='Actividad no encontrada')
     date0, end0 = _rango(data, prev=a)
     participants = await _build_participants(data.participant_ids)
-    # Lunes y choques de sala en cada día del rango, excluyendo esta actividad.
-    await _check_conflicts_rango(date0, end0, data.start_time, data.end_time,
-                                 data.participant_ids, a.get('created_by'), data.uses_meeting_room,
-                                 exclude_activity_id=activity_id)
+    # Repetición: None = conservar la regla que tenía; "" = dejar de repetir.
+    # (Las series viejas, un documento por fecha, no se convierten.)
+    rule = a.get('rrule') if data.rrule is None else data.rrule
+    serie = None
+    if rule and not a.get('series_id'):
+        serie = _serie(rule, date0, end0, data.start_time, data.end_time)
+        date0, end0 = serie['date'], serie['end_date']
+    # Lunes y choques de sala en cada día (y cada repetición), excluyendo esta actividad.
+    nueva = {'date': date0, 'end_date': end0, 'start_time': data.start_time, 'end_time': data.end_time,
+             'rrule': serie['rrule'] if serie else None}
+    await _check_conflicts(_tramos(nueva), data.uses_meeting_room, exclude_activity_id=activity_id)
     # preserve existing response status
     prev = {p['user_id']: p['status'] for p in a.get('participants', [])}
     for p in participants:
@@ -362,13 +418,20 @@ async def update_activity(activity_id: str, data: ActivityInput, user=Depends(ge
         'participants': participants, 'uses_meeting_room': data.uses_meeting_room,
         'reminder_offsets': new_offsets,
     }
-    # Re-arm reminders whenever the schedule or the reminder set changes.
+    unset = {'reminder_minutes': '', 'reminder_sent': ''}
+    if serie:
+        updates.update({'rrule': serie['rrule'], 'serie_hasta': serie['serie_hasta'], 'recurrence': 'rrule'})
+    elif a.get('rrule'):
+        updates['recurrence'] = 'none'
+        unset.update({'rrule': '', 'serie_hasta': ''})
+    # Re-arm reminders whenever the schedule, the repetition or the reminder set changes.
     if (a.get('date') != date0 or a.get('start_time') != data.start_time
+            or a.get('rrule') != updates.get('rrule')
             or sorted(_existing_offsets) != sorted(new_offsets)):
         updates['reminders_sent'] = []
     await db.activities.update_one(
         {'id': activity_id},
-        {'$set': updates, '$unset': {'reminder_minutes': '', 'reminder_sent': ''}},
+        {'$set': updates, '$unset': unset},
     )
     saved = await db.activities.find_one({'id': activity_id}, {'_id': 0})
     # Reconcile the meeting-room reservation tied to this activity.

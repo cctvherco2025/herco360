@@ -99,8 +99,12 @@ class ActivityInput(BaseModel):
     location: Optional[str] = ''
     participant_ids: List[str] = []
     uses_meeting_room: bool = False
-    recurrence: Optional[str] = 'none'  # none | daily | weekly | monthly
+    recurrence: Optional[str] = 'none'  # none | daily | weekly | monthly (clientes viejos)
     recurrence_count: Optional[int] = None
+    # Repetición en formato RRULE (sin DTSTART), ej. "FREQ=WEEKLY;BYDAY=MO".
+    # Crea UNA actividad con la regla. Al editar: None = conservar la regla,
+    # "" = dejar de repetir.
+    rrule: Optional[str] = None
     # Reminders: list of "minutes before start_time" to notify at, e.g. [60, 15].
     # [] = no reminder. None (field omitted) = use the default set / keep as-is.
     reminder_offsets: Optional[List[int]] = None

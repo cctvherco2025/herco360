@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 
 from core import db, now_local, APP_UTC_OFFSET_HOURS
 from notifications import create_notification
+import recurrence as rec
 
 logger = logging.getLogger("reminders")
 
@@ -77,36 +78,67 @@ def _humanize(minutes: float) -> str:
     return "en 1 minuto" if m == 1 else f"en {m} minutos"
 
 
+def _pendientes(sueltas, series, now, horizon):
+    """(actividad, inicio, clave) de cada inicio próximo a revisar.
+
+    `clave(offset)` es lo que se guarda en `reminders_sent`: el offset (int) en
+    una actividad suelta, o "YYYY-MM-DD|offset" en una serie con RRULE, porque
+    cada repetición lleva sus propios recordatorios."""
+    for a in sueltas:
+        start = _start_dt(a)
+        if start:
+            yield a, start, (lambda off: off)
+    for a in series:
+        try:
+            dias = rec.fechas(a["rrule"], a["date"], a["start_time"], now.date(), horizon.date())
+            hh, mm = map(int, a["start_time"].split(":"))
+        except Exception as e:  # pragma: no cover
+            logger.warning(f"reminder: regla inválida en {a.get('id')}: {e}")
+            continue
+        for d in dias:
+            yield a, datetime(d.year, d.month, d.day, hh, mm), (lambda off, d=d: f"{d.isoformat()}|{off}")
+
+
 async def _scan_and_send() -> None:
     now = now_local()
     horizon = now + timedelta(minutes=MAX_LEAD_MINUTES)
-    query = {
-        "date": {"$gte": now.strftime("%Y-%m-%d"), "$lte": horizon.strftime("%Y-%m-%d")},
+    hoy, tope = now.strftime("%Y-%m-%d"), horizon.strftime("%Y-%m-%d")
+    sueltas = await db.activities.find({
+        "date": {"$gte": hoy, "$lte": tope},
+        "rrule": {"$exists": False},
         "is_vacation": {"$ne": True},
-    }
-    activities = await db.activities.find(query, {"_id": 0}).to_list(1000)
-    for a in activities:
+    }, {"_id": 0}).to_list(1000)
+    # Series con RRULE vigentes: sus repeticiones se calculan aquí.
+    series = await db.activities.find({
+        "rrule": {"$exists": True},
+        "date": {"$lte": tope},
+        "$or": [{"serie_hasta": None}, {"serie_hasta": {"$gte": hoy}}],
+        "is_vacation": {"$ne": True},
+    }, {"_id": 0}).to_list(1000)
+    for a in series:
+        # Limpia las marcas de repeticiones de días anteriores ("2026-09-29|60" < "2026-09-30").
+        if any(isinstance(x, str) and x < hoy for x in (a.get("reminders_sent") or [])):
+            await db.activities.update_one({"id": a["id"]}, {"$pull": {"reminders_sent": {"$lt": hoy}}})
+
+    for a, start, clave in _pendientes(sueltas, series, now, horizon):
         offsets = _effective_offsets(a)
         if not offsets:
-            continue
-        start = _start_dt(a)
-        if not start:
             continue
         delta_min = (start - now).total_seconds() / 60.0
         if delta_min < 0:
             continue
-        sent = {int(x) for x in (a.get("reminders_sent") or [])}
-        due = sorted(x for x in offsets if x not in sent and delta_min <= x)
+        sent = set(a.get("reminders_sent") or [])
+        due = sorted(x for x in offsets if clave(x) not in sent and delta_min <= x)
         if not due:
             continue
 
         # Claim every due offset in one atomic update so a slow tick can't
         # double-send. If another worker/tick already claimed the nearest one,
         # modified_count is 0 and we skip.
-        fire_for = due[0]  # smallest = most urgent / most accurate label
+        fire_for = clave(due[0])  # smallest = most urgent / most accurate label
         claimed = await db.activities.update_one(
             {"id": a["id"], "reminders_sent": {"$nin": [fire_for]}},
-            {"$addToSet": {"reminders_sent": {"$each": due}}},
+            {"$addToSet": {"reminders_sent": {"$each": [clave(x) for x in due]}}},
         )
         if claimed.modified_count == 0:
             continue

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Check, Trash2, AlertTriangle } from 'lucide-react';
 import api from '@/lib/api';
@@ -14,18 +14,11 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import ParticipantPicker from '@/components/ParticipantPicker';
 import RangeDatePicker from '@/components/RangeDatePicker';
-
-const RECURRENCE_OPTIONS = [
-  { value: 'none', label: 'No se repite' },
-  { value: 'daily', label: 'Cada día' },
-  { value: 'weekly', label: 'Cada semana' },
-  { value: 'monthly', label: 'Una vez al mes' },
-];
-const RECURRENCE_HINT = {
-  daily: 'Se crearán 30 actividades diarias.',
-  weekly: 'Se crearán 12 actividades semanales (mismo día de la semana).',
-  monthly: 'Se crearán 6 actividades mensuales (mismo día del mes).',
-};
+import RecurrenceDialog from '@/components/RecurrenceDialog';
+import {
+  opcionesRepeticion, describirRegla, fechasEnRango, proximasFechas,
+  repeticionChoca as chocaRepeticion,
+} from '@/lib/recurrence';
 
 const REMINDER_CHOICES = [
   { value: 1440, label: '1 día antes' },
@@ -55,7 +48,7 @@ const addHour = (t) => {
 const empty = (date, time) => ({
   title: '', color: DEFAULT_ACTIVITY_COLOR, date: date || ymd(new Date()), end_date: date || ymd(new Date()),
   start_time: time || '09:00', end_time: addHour(time || '09:00'), description: '', location: '',
-  participant_ids: [], uses_meeting_room: false, recurrence: 'none',
+  participant_ids: [], uses_meeting_room: false,
   reminder_offsets: [...DEFAULT_REMINDERS],
 });
 
@@ -75,21 +68,28 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
       api.get('/users?status=approved').then(({ data }) => setUsers(data.filter((u) => u.id !== user?.id))).catch(() => {});
       api.get('/groups').then(({ data }) => setGroups(data)).catch(() => setGroups([]));
       setAbrirRango(false);
+      setRecOpen(false);
       if (activity) {
-        const fin = activity.end_date || activity.date;
-        setVariosDias(fin !== activity.date);
+        // Una repetición de una serie se edita como la serie: su primer día.
+        const ini = activity.serie_date || activity.date;
+        const fin = activity.serie_end_date || activity.end_date || activity.date;
+        setVariosDias(fin !== ini);
+        const simple = activity.rrule && opcionesRepeticion(ini).find((o) => o.regla === activity.rrule);
+        setRepKey(!activity.rrule ? 'none' : simple ? simple.key : 'custom');
+        setReglaCustom(activity.rrule && !simple ? activity.rrule : '');
         setForm({
-          title: activity.title, color: activity.color || DEFAULT_ACTIVITY_COLOR, date: activity.date,
+          title: activity.title, color: activity.color || DEFAULT_ACTIVITY_COLOR, date: ini,
           end_date: fin,
           start_time: activity.start_time, end_time: activity.end_time,
           description: activity.description || '', location: activity.location || '',
           participant_ids: (activity.participants || []).map((p) => p.user_id),
           uses_meeting_room: activity.uses_meeting_room || false,
-          recurrence: 'none',
           reminder_offsets: readOffsets(activity),
         });
       } else {
         setVariosDias(false);
+        setRepKey('none');
+        setReglaCustom('');
         setForm(empty(defaultDate, defaultTime));
       }
     }
@@ -133,40 +133,76 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   })();
   const duracionDias = Math.max(0, diasDelRango.length - 1);
 
+  // ── Repetición (RRULE) ───────────────────────────────────────
+  // Opciones fijas: No se repite / Cada día / Cada semana / Una vez al mes.
+  // "Personalizado…" abre RecurrenceDialog y define la repetición solo de esta
+  // actividad (no queda como opción guardada). Las series viejas (un registro
+  // por fecha) no se pueden convertir.
+  const puedeRepetir = !isEdit || !activity?.series_id;
+  const [repKey, setRepKey] = useState('none');
+  const [reglaCustom, setReglaCustom] = useState('');
+  const [recOpen, setRecOpen] = useState(false);
+  const opciones = useMemo(() => opcionesRepeticion(form.date), [form.date]);
+  const reglaActual = repKey === 'custom' ? reglaCustom : (opciones.find((o) => o.key === repKey)?.regla || '');
+
+  const elegirRepeticion = (v) => {
+    if (v === 'custom') setRecOpen(true); // se aplica al tocar "Listo"
+    else setRepKey(v);
+  };
+  const aplicarPersonalizada = (regla) => {
+    setRecOpen(false);
+    const simple = opciones.find((o) => o.regla === regla);
+    setRepKey(simple ? simple.key : 'custom');
+    setReglaCustom(simple ? '' : regla);
+    // Si la fecha elegida no cumple la regla (miércoles con "cada lunes"), la
+    // actividad empieza en la primera fecha que sí la cumple (misma duración).
+    const [primera] = proximasFechas(regla, form.date, form.start_time, 1);
+    if (primera && primera !== form.date) {
+      const fin = aFecha(primera); fin.setDate(fin.getDate() + duracionDias);
+      setForm((x) => ({ ...x, date: primera, end_date: faltaUltimoDia ? '' : ymd(fin) }));
+    }
+  };
+
   // Una actividad de varios días que se repite no puede volver a empezar
   // antes de terminar (misma regla que valida el servidor).
-  const repeticionChoca = (() => {
-    if (isEdit || duracionDias === 0 || form.recurrence === 'none') return false;
-    const inicio = aFecha(form.date);
-    const siguiente = new Date(inicio);
-    if (form.recurrence === 'daily') siguiente.setDate(siguiente.getDate() + 1);
-    else if (form.recurrence === 'weekly') siguiente.setDate(siguiente.getDate() + 7);
-    else if (form.recurrence === 'monthly') siguiente.setMonth(siguiente.getMonth() + 1);
-    else return false;
-    const [hi, mi] = form.start_time.split(':').map(Number);
-    const [hf, mf] = form.end_time.split(':').map(Number);
-    const fin = new Date(inicio); fin.setDate(fin.getDate() + duracionDias); fin.setHours(hf, mf, 0, 0);
-    siguiente.setHours(hi, mi, 0, 0);
-    return siguiente < fin;
-  })();
+  const repeticionChoca = useMemo(
+    () => puedeRepetir && !faltaUltimoDia && chocaRepeticion(reglaActual, form.date, form.start_time, form.end_time, duracionDias),
+    [puedeRepetir, faltaUltimoDia, reglaActual, form.date, form.start_time, form.end_time, duracionDias]);
 
   // Mondays the meeting room is reserved for Dirección Comercial (en
-  // cualquiera de los días del rango).
+  // cualquiera de los días del rango y, si se repite, de las repeticiones de
+  // los próximos 12 meses: la sala se reserva hasta ese horizonte).
   const MONDAY_MSG = 'Los lunes la Sala de Juntas está reservada para Dirección Comercial';
   const isMondaySelected = diasDelRango.some((d) => d.getDay() === 1);
-  const roomBlocked = form.uses_meeting_room && isMondaySelected;
+  const repeticionEnLunes = useMemo(() => {
+    if (!form.uses_meeting_room || !reglaActual || !puedeRepetir) return false;
+    return fechasEnRango(reglaActual, form.date, form.start_time, 365).some((f) => {
+      const d = aFecha(f);
+      for (let i = 0; i <= duracionDias; i += 1) { if (d.getDay() === 1) return true; d.setDate(d.getDate() + 1); }
+      return false;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.uses_meeting_room, reglaActual, puedeRepetir, form.date, form.start_time, duracionDias]);
+  const roomBlocked = form.uses_meeting_room && (isMondaySelected || repeticionEnLunes);
   const bloqueado = roomBlocked || horaInvalida || faltaUltimoDia || repeticionChoca;
 
   const save = async () => {
     if (!form.title.trim()) { toast.error('Ingresa un título'); return; }
     if (bloqueado) return;
-    const payload = { ...form, end_date: endDate };
+    const payload = { ...form, end_date: endDate, recurrence: 'none' };
+    // "" = no se repite (al editar, deja de repetirse). Las series viejas no
+    // mandan el campo y conservan lo que tienen.
+    if (puedeRepetir) payload.rrule = reglaActual;
     setSaving(true);
     try {
-      if (isEdit) { await api.put(`/activities/${activity.id}`, payload); toast.success('Actividad actualizada'); }
-      else {
+      if (isEdit) {
+        await api.put(`/activities/${activity.id}`, payload);
+        toast.success(reglaActual ? 'Se actualizaron todas las repeticiones' : 'Actividad actualizada');
+      } else {
         const { data } = await api.post('/activities', payload);
-        toast.success(data?.series_count > 1 ? `Serie creada: ${data.series_count} actividades` : 'Actividad creada');
+        toast.success(data?.rrule
+          ? `Actividad creada: se repite ${describirRegla(data.rrule, { conFin: false })}`
+          : 'Actividad creada');
       }
       onOpenChange(false);
       onSaved?.();
@@ -178,7 +214,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   const remove = async () => {
     if (!isEdit) return;
     setSaving(true);
-    try { await api.delete(`/activities/${activity.id}`); toast.success('Actividad eliminada'); onOpenChange(false); onSaved?.(); }
+    try { await api.delete(`/activities/${activity.id}`); toast.success(activity.rrule ? 'Se eliminaron todas las repeticiones' : 'Actividad eliminada'); onOpenChange(false); onSaved?.(); }
     catch (err) { toast.error(err?.response?.data?.detail || 'Error al eliminar'); } finally { setSaving(false); }
   };
 
@@ -243,7 +279,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
             <div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div className="space-y-1.5 col-span-2 sm:col-span-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex h-5 items-center justify-between gap-2">
                     <Label>Fecha</Label>
                     {!readOnly && (
                       <button type="button" onClick={variosDias ? activarUnDia : activarVariosDias}
@@ -262,11 +298,11 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
                   )}
                 </div>
                 <div className="space-y-1.5 min-w-0">
-                  <Label>Inicio</Label>
+                  <Label className="flex h-5 items-center">Inicio</Label>
                   <Input type="time" value={form.start_time} onChange={(e) => set('start_time', e.target.value)} className="h-11" />
                 </div>
                 <div className="space-y-1.5 min-w-0">
-                  <Label>Fin</Label>
+                  <Label className="flex h-5 items-center">Fin</Label>
                   <Input type="time" value={form.end_time} onChange={(e) => set('end_time', e.target.value)} className="h-11" />
                 </div>
               </div>
@@ -300,25 +336,43 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
             {roomBlocked && (
               <div className="flex items-start gap-2 rounded-xl border border-[rgba(220,38,38,0.35)] bg-[rgba(220,38,38,0.08)] px-4 py-3" data-testid="activity-form-monday-warning">
                 <AlertTriangle className="h-4 w-4 text-[#dc2626] shrink-0 mt-0.5" />
-                <p className="text-xs text-[#dc2626]">{MONDAY_MSG}. Elige otro día o desactiva la reserva de sala.</p>
+                <p className="text-xs text-[#dc2626]">
+                  {isMondaySelected
+                    ? `${MONDAY_MSG}. Elige otro día o desactiva la reserva de sala.`
+                    : `${MONDAY_MSG} y alguna repetición cae en lunes. Cambiá la repetición o desactiva la reserva de sala.`}
+                </p>
               </div>
             )}
 
-            {!isEdit && (
+            {puedeRepetir && (
               <div className="space-y-1.5">
                 <Label>Repetición</Label>
-                <Select value={form.recurrence} onValueChange={(v) => set('recurrence', v)}>
-                  <SelectTrigger className="h-11" data-testid="activity-form-recurrence-select"><SelectValue /></SelectTrigger>
+                <Select value={repKey} onValueChange={elegirRepeticion}>
+                  <SelectTrigger className="h-11 [&>span]:truncate" data-testid="activity-form-recurrence-select"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {RECURRENCE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                    {opciones.map((o) => <SelectItem key={o.key} value={o.key}>{o.label}</SelectItem>)}
+                    {/* Si ya estaba en "Personalizado…", elegirlo otra vez no
+                        dispara onValueChange: se abre la ventana desde el ítem
+                        (mouse, toque o teclado) para poder editar la regla. */}
+                    <SelectItem value="custom"
+                      onPointerUp={() => setRecOpen(true)}
+                      onClick={() => setRecOpen(true)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setRecOpen(true); }}>
+                      Personalizado…
+                    </SelectItem>
                   </SelectContent>
                 </Select>
+                {/* Una sola línea y solo cuando aporta algo: regla personalizada
+                    (con su fin; tocarla la vuelve a abrir) o un conflicto en rojo. */}
                 {repeticionChoca ? (
                   <p className="text-xs text-[#dc2626]" data-testid="activity-form-recurrence-error">
                     La actividad dura {duracionDias + 1} días y se repetiría antes de terminar. Cambiá la repetición.
                   </p>
-                ) : RECURRENCE_HINT[form.recurrence] && (
-                  <p className="text-xs text-muted-foreground">{RECURRENCE_HINT[form.recurrence]}</p>
+                ) : repKey === 'custom' && reglaCustom && (
+                  <button type="button" onClick={() => setRecOpen(true)} title="Cambiar la repetición"
+                    className="block w-full text-left text-xs text-muted-foreground truncate hover:underline" data-testid="activity-form-recurrence-hint">
+                    Se repite {describirRegla(reglaCustom)}
+                  </button>
                 )}
               </div>
             )}
@@ -362,7 +416,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
         <DialogFooter className="px-6 py-4 border-t gap-2 sm:gap-2">
           {isEdit && isOwner && (
             <Button variant="ghost" onClick={remove} disabled={saving} className="text-[#dc2626] hover:text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)] mr-auto" data-testid="activity-form-delete">
-              <Trash2 className="h-4 w-4 mr-1" /> Eliminar
+              <Trash2 className="h-4 w-4 mr-1" /> {activity?.rrule ? 'Eliminar serie' : 'Eliminar'}
             </Button>
           )}
           {readOnly ? (
@@ -390,6 +444,8 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
           )}
         </DialogFooter>
       </DialogContent>
+      <RecurrenceDialog open={recOpen} onOpenChange={setRecOpen} fecha={form.date} horaInicio={form.start_time}
+        regla={reglaActual} onListo={aplicarPersonalizada} />
     </Dialog>
   );
 }

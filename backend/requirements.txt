@@ -14,6 +14,9 @@ pydantic>=2.6,<3
 email-validator>=2.1
 python-dotenv>=1.0
 
+# Repetición de actividades (RRULE, RFC 5545)
+python-dateutil>=2.8.2,<3
+
 # Seguridad
 PyJWT>=2.8,<3
 bcrypt>=4.1,<5

@@ -121,7 +121,8 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
   // Las de varios días se pintan en cada día que duran; no se arrastran (moverlas
   // un día cambiaría todo el rango) y muestran su rango de fechas.
   const variosDias = esVariosDias(ev);
-  const canDrag = draggable && !ev.foreign && !ev.is_vacation && !variosDias;
+  // Tampoco las repeticiones de una serie con RRULE: moverlas movería la serie.
+  const canDrag = draggable && !ev.foreign && !ev.is_vacation && !variosDias && !ev.rrule;
 
   return (
     <button
@@ -142,7 +143,7 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
           className="block text-[11px] font-semibold leading-[14px] break-words whitespace-normal"
           style={{ color: solid, ...clampStyle(titleLines) }}
         >
-          {ev.title}
+          {seRepite(ev) && <IconoRepite />}{ev.title}
         </span>
         {variosDias && (
           <span className="block text-[9px] font-medium leading-[14px] truncate opacity-80" style={{ color: solid }}>
@@ -170,6 +171,9 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
    actividad sigue en otra semana, en cada semana se ve su tramo: así se "parte
    en dos barras". Los extremos que continúan fuera de la fila van rectos. */
 export const esVariosDias = (a) => !!a.end_date && a.end_date !== a.date;
+// Actividad que se repite (serie con RRULE o serie vieja de un registro por fecha)
+export const seRepite = (a) => !!(a.rrule || a.series_id);
+const IconoRepite = () => <span className="font-normal opacity-70" aria-label="Se repite" title="Se repite">↻ </span>;
 // ¿La actividad ocupa el día `ds` (YYYY-MM-DD)? Incluye cada día de las de varios días.
 const ocupaDia = (a, ds) => (esVariosDias(a) ? a.date <= ds && ds <= a.end_date : a.date === ds);
 const LANE_H = 22; // alto de cada carril de barras (px)
@@ -215,7 +219,7 @@ function BarraVariosDias({ seg, isDark, onClick, style }) {
       style={{ ...style, height: LANE_H - 4, background: tint, borderColor: solid, color: solid, borderStyle: ev.pending ? 'dashed' : 'solid' }}
       data-testid="calendar-multiday-bar">
       {seg.abreIzq && <span className="opacity-60">‹</span>}
-      <span className="truncate">{ev.title}</span>
+      <span className="truncate">{seRepite(ev) && <IconoRepite />}{ev.title}</span>
       <span className="shrink-0 font-normal opacity-70">{rangoCortoCal(ev)}</span>
       {ev.owner_name && <span className="truncate font-medium opacity-70">· {ev.owner_name}</span>}
       {seg.abreDer && <span className="ml-auto opacity-60">›</span>}
@@ -492,13 +496,13 @@ export function MonthView({ anchor, activities, onEventClick, onSlotClick, onEve
                   const { solid, tint } = evStyle(ev, isDark);
                   return (
                     <button key={ev.id}
-                      draggable={!!onEventMove}
-                      onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; setDragEv(ev); }}
+                      draggable={!!onEventMove && !ev.rrule}
+                      onDragStart={(e) => { if (ev.rrule) return; e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; setDragEv(ev); }}
                       onDragEnd={() => setDragEv(null)}
                       onClick={(e) => { e.stopPropagation(); onEventClick?.(ev); }}
                       className={`w-full flex items-center gap-1 rounded-md px-1.5 py-0.5 text-left hover:opacity-90 ${onEventMove ? 'cursor-grab active:cursor-grabbing' : ''}`} style={{ background: tint, border: ev.pending ? `1px dashed ${solid}` : 'none' }}>
                       <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: solid }} />
-                      <span className="text-[10px] font-medium truncate" style={{ color: solid }}>{ev.start_time} {ev.title}</span>
+                      <span className="text-[10px] font-medium truncate" style={{ color: solid }}>{ev.start_time} {seRepite(ev) && <IconoRepite />}{ev.title}</span>
                     </button>
                   );
                 })}

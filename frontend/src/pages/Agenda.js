@@ -92,6 +92,7 @@ export default function Agenda() {
     if (ev.created_by !== user?.id && user?.role !== 'admin') {
       toast.error('Solo el creador puede mover esta actividad'); return;
     }
+    if (ev.rrule) { toast.error('Para mover una actividad que se repite, ábrela y cambia su fecha'); return; }
     if (ev.date === newDate && ev.start_time === newStart) return;
     const dur = Math.max(30, toMin(ev.end_time) - toMin(ev.start_time));
     let endM = Math.min(toMin(newStart) + dur, 20 * 60);
@@ -220,7 +221,7 @@ export default function Agenda() {
                 const solid = a.color || '#00a5df';
                 const invite = myInvite(a);
                 return (
-                  <div key={a.id} onClick={() => openEvent(a)} className="rounded-xl border p-3 cursor-pointer hover:shadow-card transition-shadow" style={{ borderLeft: `3px solid ${solid}` }}>
+                  <div key={`${a.id}-${a.date}`} onClick={() => openEvent(a)} className="rounded-xl border p-3 cursor-pointer hover:shadow-card transition-shadow" style={{ borderLeft: `3px solid ${solid}` }}>
                     <div className="flex items-center gap-2">
                       <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: solid }} />
                       <span className="text-sm font-medium truncate">{a.title}</span>

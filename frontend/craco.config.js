@@ -98,6 +98,13 @@ let webpackConfig = {
         ],
       };
 
+      // rrule publica sus source maps sin los .ts originales: el aviso
+      // "Failed to parse source map" de esa librería no sirve de nada.
+      webpackConfig.ignoreWarnings = [
+        ...(webpackConfig.ignoreWarnings || []),
+        { module: /node_modules[\\/]rrule[\\/]/, message: /Failed to parse source map/ },
+      ];
+
       // Add health check plugin to webpack if enabled
       if (config.enableHealthCheck && healthPluginInstance) {
         webpackConfig.plugins.push(healthPluginInstance);
