@@ -8,6 +8,7 @@ from core import (db, get_current_user, require_admin, serialize_doc, now_iso,
                   can_access_vacaciones, can_admin_promos)
 from models import ProfileUpdate, RoleUpdate, AdminUserCreate, AdminUserUpdate, ModuleAccessUpdate
 from notifications import create_notification, log_activity
+from routes_groups import quitar_de_grupos
 
 router = APIRouter(prefix='/users', tags=['users'])
 
@@ -174,6 +175,7 @@ async def reject_user(user_id: str, admin=Depends(require_admin)):
     if not target:
         raise HTTPException(status_code=404, detail='Usuario no encontrado')
     await db.users.update_one({'id': user_id}, {'$set': {'status': 'rejected'}})
+    await quitar_de_grupos(user_id)
     await log_activity(admin['id'], admin['name'], admin.get('avatar_url'),
                        'rechazó un usuario', target['name'], 'user')
     return {'message': 'Usuario rechazado'}
@@ -221,6 +223,9 @@ async def update_user(user_id: str, data: AdminUserUpdate, admin=Depends(require
         updates['sucursal'] = 'Casa Matriz'
     if updates:
         await db.users.update_one({'id': user_id}, {'$set': updates})
+    # desactivado (estado distinto de aprobado): sale de los grupos de Agenda
+    if 'status' in updates and updates['status'] != 'approved':
+        await quitar_de_grupos(user_id)
     updated = await db.users.find_one({'id': user_id}, {'_id': 0, 'password_hash': 0})
     await log_activity(admin['id'], admin['name'], admin.get('avatar_url'),
                        'editó un usuario', updated['name'], 'user')
@@ -235,6 +240,7 @@ async def delete_user(user_id: str, admin=Depends(require_admin)):
     if not target:
         raise HTTPException(status_code=404, detail='Usuario no encontrado')
     await db.users.delete_one({'id': user_id})
+    await quitar_de_grupos(user_id)
     await log_activity(admin['id'], admin['name'], admin.get('avatar_url'),
                        'eliminó un usuario', target['name'], 'user')
     return {'message': 'Usuario eliminado'}

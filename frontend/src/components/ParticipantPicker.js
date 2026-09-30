@@ -1,21 +1,27 @@
 // Selector de participantes con buscador (modal "Nueva actividad" de Agenda).
 //
 // - Campo con lupa; las personas elegidas van como chips dentro del campo.
-// - Al enfocar se abre la lista agrupada por departamento (encabezados fijos).
-// - Búsqueda en tiempo real en nombre, puesto y departamento: ignora
-//   mayúsculas y tildes, y varias palabras deben coincidir todas, en
-//   cualquier orden. Lo que coincide se resalta.
-// - Teclado: ↑/↓ recorren la lista, Enter marca/desmarca, Escape cierra,
-//   Backspace con el campo vacío quita el último chip.
+// - Al enfocar se abre la lista: primero GRUPOS (atajo para agregar varias
+//   personas) y luego las personas agrupadas por departamento (encabezados
+//   fijos).
+// - Búsqueda en tiempo real: personas por nombre, puesto y departamento;
+//   grupos por nombre y descripción. Ignora mayúsculas y tildes; varias
+//   palabras deben coincidir todas, en cualquier orden. Se resalta lo que
+//   coincide.
+// - Un grupo agrega a sus integrantes como participantes INDIVIDUALES (no
+//   hay chip de grupo), sin duplicar; si ya están todos, los quita.
+// - Teclado: ↑/↓ recorren grupos y personas, Enter marca/desmarca, Escape
+//   cierra, Backspace con el campo vacío quita el último chip.
 //
 // La lista NO es un Popover de Radix (se llevaría el foco del campo): es un
 // panel absoluto dentro de la zona con scroll del modal, así nunca tapa los
 // botones del pie. `onOpenChange` avisa al modal si está abierta para que
 // Escape cierre solo la lista y no el modal completo.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, X, Check } from 'lucide-react';
+import { toast } from 'sonner';
+import { Search, X, Check, Users } from 'lucide-react';
 
-const SIN_AREA = 'Sin área';
+export const SIN_AREA = 'Sin área';
 
 // minúsculas y sin tildes, carácter por carácter, guardando a qué posición del
 // texto original corresponde cada carácter (para poder resaltar el original)
@@ -28,10 +34,12 @@ function normalizarConMapa(texto) {
   });
   return { norm, mapa };
 }
-const normalizar = (t) => normalizarConMapa(t).norm;
+export const normalizar = (t) => normalizarConMapa(t).norm;
+export const palabrasDe = (q) => normalizar(q).split(/\s+/).filter(Boolean);
+export const coincide = (texto, palabras) => { const t = normalizar(texto); return palabras.every((p) => t.includes(p)); };
 
 // Resalta en `texto` todas las apariciones de cada palabra buscada.
-function Resaltado({ texto, palabras }) {
+export function Resaltado({ texto, palabras }) {
   if (!texto || !palabras.length) return <>{texto}</>;
   const chars = [...texto];
   const { norm, mapa } = normalizarConMapa(texto);
@@ -56,21 +64,29 @@ function Resaltado({ texto, palabras }) {
   );
 }
 
-const iniciales = (nombre) => (nombre || '').trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('');
-const dosNombres = (nombre) => (nombre || '').trim().split(/\s+/).slice(0, 2).join(' ');
+export const iniciales = (nombre) => (nombre || '').trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('');
+export const dosNombres = (nombre) => (nombre || '').trim().split(/\s+/).slice(0, 2).join(' ');
 
-function AvatarIniciales({ nombre, className = '' }) {
+export function AvatarIniciales({ nombre, className = '', title }) {
   return (
-    <span className={`shrink-0 grid place-items-center rounded-full bg-[#1e395e] text-white font-semibold ${className}`}>
+    <span title={title} className={`shrink-0 grid place-items-center rounded-full bg-[#1e395e] text-white font-semibold ${className}`}>
       {iniciales(nombre)}
     </span>
   );
 }
 
-export default function ParticipantPicker({ users, value, onChange, disabled = false, onOpenChange }) {
+// "N integrantes · Ana López, Luis Pérez, Carla Díaz y 4 más"
+function resumenIntegrantes(personas) {
+  const nombres = personas.slice(0, 3).map((u) => dosNombres(u.name));
+  const resto = personas.length - nombres.length;
+  const lista = resto > 0 ? `${nombres.join(', ')} y ${resto} más` : nombres.join(', ');
+  return `${personas.length} integrante${personas.length === 1 ? '' : 's'} · ${lista}`;
+}
+
+export default function ParticipantPicker({ users, groups = [], value, onChange, disabled = false, onOpenChange }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
-  const [activo, setActivo] = useState(-1); // índice en la lista visible (teclado)
+  const [activo, setActivo] = useState(-1); // índice en la lista navegable (teclado)
   const wrapRef = useRef(null);
   const inputRef = useRef(null);
   const filasRef = useRef({});
@@ -90,17 +106,26 @@ export default function ParticipantPicker({ users, value, onChange, disabled = f
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => () => onOpenChange?.(false), []);
 
-  const palabras = useMemo(() => normalizar(query).split(/\s+/).filter(Boolean), [query]);
+  const palabras = useMemo(() => palabrasDe(query), [query]);
+  const usersById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
+
+  // Grupos que se pueden usar aquí: solo con integrantes que están en la lista
+  // de participantes posibles (un grupo vacío no se muestra). Filtrados por
+  // nombre y descripción.
+  const gruposVisibles = useMemo(() => groups
+    .map((g) => ({ ...g, personas: (g.miembros || []).map((id) => usersById.get(id)).filter(Boolean) }))
+    .filter((g) => g.personas.length > 0)
+    .filter((g) => !palabras.length || coincide(`${g.nombre} ${g.descripcion || ''}`, palabras)),
+  [groups, usersById, palabras]);
 
   // Departamentos (A→Z) con sus personas (A→Z) que cumplen TODAS las palabras
   // en nombre + puesto + departamento. Si se escribe el nombre de un
   // departamento, calza con todas sus personas.
-  const grupos = useMemo(() => {
+  const departamentos = useMemo(() => {
     const porArea = new Map();
     users.forEach((u) => {
       const area = (u.area || '').trim() || SIN_AREA;
-      const texto = normalizar(`${u.name || ''} ${u.position || ''} ${area}`);
-      if (palabras.length && !palabras.every((p) => texto.includes(p))) return;
+      if (palabras.length && !coincide(`${u.name || ''} ${u.position || ''} ${area}`, palabras)) return;
       if (!porArea.has(area)) porArea.set(area, []);
       porArea.get(area).push(u);
     });
@@ -109,24 +134,46 @@ export default function ParticipantPicker({ users, value, onChange, disabled = f
       .map(([area, lista]) => ({ area, personas: lista.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es')) }));
   }, [users, palabras]);
 
-  const visibles = useMemo(() => grupos.flatMap((g) => g.personas), [grupos]);
-  const seleccionados = useMemo(() => value.map((id) => users.find((u) => u.id === id)).filter(Boolean), [value, users]);
+  // Lista que recorre el teclado: grupos primero, luego personas.
+  const navegables = useMemo(() => [
+    ...gruposVisibles.map((g) => ({ key: `g:${g.id}`, tipo: 'grupo', g })),
+    ...departamentos.flatMap((d) => d.personas.map((u) => ({ key: u.id, tipo: 'persona', u }))),
+  ], [gruposVisibles, departamentos]);
+
+  const seleccionados = useMemo(() => value.map((id) => usersById.get(id)).filter(Boolean), [value, usersById]);
 
   // al cambiar la búsqueda, la fila activa vuelve a la primera
-  useEffect(() => { setActivo(visibles.length ? 0 : -1); }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setActivo(navegables.length ? 0 : -1); }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
   // la fila activa siempre a la vista
   useEffect(() => {
-    const u = visibles[activo];
-    if (open && u) filasRef.current[u.id]?.scrollIntoView({ block: 'nearest' });
-  }, [activo, open, visibles]);
+    const it = navegables[activo];
+    if (open && it) filasRef.current[it.key]?.scrollIntoView({ block: 'nearest' });
+  }, [activo, open, navegables]);
+
+  const despuesDeElegir = () => { setQuery(''); inputRef.current?.focus(); };
 
   const toggle = (id) => {
     // Set: nunca se agrega a la misma persona dos veces
     onChange(value.includes(id) ? value.filter((x) => x !== id) : [...new Set([...value, id])]);
-    setQuery('');
-    inputRef.current?.focus();
+    despuesDeElegir();
   };
   const quitar = (id) => onChange(value.filter((x) => x !== id));
+
+  // Grupo: agrega a los integrantes que faltan (individuales, sin duplicar);
+  // si ya estaban todos, los quita a todos.
+  const toggleGrupo = (g) => {
+    const ids = g.personas.map((u) => u.id);
+    const faltan = ids.filter((id) => !value.includes(id));
+    if (faltan.length === 0) {
+      onChange(value.filter((id) => !ids.includes(id)));
+      toast(`Se quitaron los integrantes de "${g.nombre}"`);
+    } else {
+      onChange([...new Set([...value, ...faltan])]);
+      toast.success(`Se agregaron ${faltan.length} participante${faltan.length === 1 ? '' : 's'} de "${g.nombre}"`);
+    }
+    despuesDeElegir();
+  };
+
   // "Seleccionar todos" / "Quitar todos" solo sobre las personas VISIBLES del departamento
   const toggleArea = (personas) => {
     const ids = personas.map((u) => u.id);
@@ -139,20 +186,24 @@ export default function ParticipantPicker({ users, value, onChange, disabled = f
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       if (!open) { cambiarAbierto(true); return; }
-      setActivo((i) => Math.min(visibles.length - 1, i + 1));
+      setActivo((i) => Math.min(navegables.length - 1, i + 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActivo((i) => Math.max(0, i - 1));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const u = visibles[activo];
-      if (open && u) toggle(u.id);
+      const it = navegables[activo];
+      if (!open || !it) return;
+      if (it.tipo === 'grupo') toggleGrupo(it.g); else toggle(it.u.id);
     } else if (e.key === 'Escape') {
       if (open) { e.preventDefault(); e.stopPropagation(); cambiarAbierto(false); }
     } else if (e.key === 'Backspace' && !query && value.length) {
       quitar(value[value.length - 1]);
     }
   };
+
+  const esActivo = (key) => navegables[activo]?.key === key;
+  const activar = (key) => setActivo(navegables.findIndex((it) => it.key === key));
 
   return (
     <div ref={wrapRef} className="relative">
@@ -183,7 +234,7 @@ export default function ParticipantPicker({ users, value, onChange, disabled = f
             onChange={(e) => { setQuery(e.target.value); if (!open) cambiarAbierto(true); }}
             onFocus={() => cambiarAbierto(true)}
             onKeyDown={onKeyDown}
-            placeholder={value.length ? 'Agregar más...' : 'Buscar por nombre, puesto o departamento...'}
+            placeholder={value.length ? 'Agregar más...' : 'Buscar grupo, persona, puesto o departamento...'}
             // 16 px en celular: con menos, el iPhone hace zoom al enfocar
             className="w-full bg-transparent outline-none text-base sm:text-sm py-1 pr-6 placeholder:text-muted-foreground"
             role="combobox" aria-expanded={open} aria-autocomplete="list"
@@ -210,31 +261,68 @@ export default function ParticipantPicker({ users, value, onChange, disabled = f
         <div role="listbox"
           className="absolute left-0 right-0 z-30 mt-1.5 max-h-[260px] overflow-y-auto overscroll-contain rounded-2xl border bg-popover shadow-lg p-1.5"
           data-testid="participants-list">
-          {grupos.map((g) => {
-            const todas = g.personas.every((u) => value.includes(u.id));
-            const selCount = g.personas.filter((u) => value.includes(u.id)).length;
+
+          {/* ── GRUPOS (se oculta si no hay grupos que coincidan) ── */}
+          {gruposVisibles.length > 0 && (
+            <div className="mb-1.5">
+              <div className="px-2 py-1.5 sticky top-0 bg-popover/95 backdrop-blur z-10">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Grupos</span>
+              </div>
+              {gruposVisibles.map((g) => {
+                const agregados = g.personas.filter((u) => value.includes(u.id)).length;
+                const faltan = g.personas.length - agregados;
+                const todos = faltan === 0;
+                const key = `g:${g.id}`;
+                return (
+                  <button key={key} type="button" role="option" aria-selected={todos}
+                    ref={(el) => { filasRef.current[key] = el; }}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseEnter={() => activar(key)}
+                    onClick={() => toggleGrupo(g)}
+                    className={`w-full flex items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ${esActivo(key) ? 'bg-muted' : ''}`}
+                    data-testid="participants-group">
+                    <span className="h-7 w-7 shrink-0 rounded-lg grid place-items-center text-white" style={{ background: g.color || '#00a5df' }}>
+                      <Users className="h-4 w-4" />
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-medium truncate"><Resaltado texto={g.nombre} palabras={palabras} /></span>
+                      <span className="block text-xs text-muted-foreground truncate">{resumenIntegrantes(g.personas)}</span>
+                    </span>
+                    <span className={`shrink-0 text-[11px] font-semibold rounded-full px-2 py-1 whitespace-nowrap ${
+                      todos ? 'bg-[rgba(22,163,74,0.14)] text-[#16a34a]' : 'bg-[rgba(0,165,223,0.12)] text-[#00a5df]'}`}>
+                      {todos ? '✓ Agregado' : agregados > 0 ? `Agregar ${faltan} más` : `Agregar ${g.personas.length}`}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Personas por departamento ── */}
+          {departamentos.map((d) => {
+            const todas = d.personas.every((u) => value.includes(u.id));
+            const selCount = d.personas.filter((u) => value.includes(u.id)).length;
             return (
-              <div key={g.area} className="mb-1.5 last:mb-0">
+              <div key={d.area} className="mb-1.5 last:mb-0">
                 <div className="flex items-center justify-between gap-2 px-2 py-1.5 sticky top-0 bg-popover/95 backdrop-blur z-10">
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground truncate">
-                    <Resaltado texto={g.area} palabras={palabras} />
+                    <Resaltado texto={d.area} palabras={palabras} />
                     {selCount > 0 && <span className="text-[#00a5df] normal-case"> · {selCount}</span>}
                   </span>
-                  <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => toggleArea(g.personas)}
+                  <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => toggleArea(d.personas)}
                     className="text-[11px] font-medium text-[#00a5df] hover:underline shrink-0" data-testid="participants-area-toggle">
                     {todas ? 'Quitar todos' : 'Seleccionar todos'}
                   </button>
                 </div>
-                {g.personas.map((u) => {
+                {d.personas.map((u) => {
                   const sel = value.includes(u.id);
-                  const esActiva = visibles[activo]?.id === u.id;
                   return (
                     <button key={u.id} type="button" role="option" aria-selected={sel}
                       ref={(el) => { filasRef.current[u.id] = el; }}
                       onMouseDown={(e) => e.preventDefault()} // el campo no pierde el foco
-                      onMouseEnter={() => setActivo(visibles.indexOf(u))}
+                      onMouseEnter={() => activar(u.id)}
                       onClick={() => toggle(u.id)}
-                      className={`w-full flex items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ${esActiva ? 'bg-muted' : ''}`}
+                      className={`w-full flex items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ${esActivo(u.id) ? 'bg-muted' : ''}`}
                       data-testid="participants-option">
                       <AvatarIniciales nombre={u.name} className="h-7 w-7 text-[11px]" />
                       <span className="flex-1 min-w-0">
@@ -251,7 +339,7 @@ export default function ParticipantPicker({ users, value, onChange, disabled = f
               </div>
             );
           })}
-          {visibles.length === 0 && (
+          {navegables.length === 0 && (
             <p className="text-sm text-muted-foreground text-center py-6" data-testid="participants-empty">
               {users.length === 0 ? 'Sin usuarios' : 'No se encontraron personas'}
             </p>

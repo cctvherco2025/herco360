@@ -62,6 +62,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   const { user } = useAuth();
   const [form, setForm] = useState(empty(defaultDate, defaultTime));
   const [users, setUsers] = useState([]);
+  const [groups, setGroups] = useState([]); // grupos de usuarios: atajo para agregar participantes
   const [saving, setSaving] = useState(false);
   const isEdit = !!activity;
   const isOwner = activity ? (activity.created_by === user?.id || user?.role === 'admin') : true;
@@ -71,6 +72,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   useEffect(() => {
     if (open) {
       api.get('/users?status=approved').then(({ data }) => setUsers(data.filter((u) => u.id !== user?.id))).catch(() => {});
+      api.get('/groups').then(({ data }) => setGroups(data)).catch(() => setGroups([]));
       if (activity) {
         setForm({
           title: activity.title, color: activity.color || DEFAULT_ACTIVITY_COLOR, date: activity.date,
@@ -204,6 +206,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
                   que se envía igual que antes al crear/editar la actividad. */}
               <ParticipantPicker
                 users={users}
+                groups={groups}
                 value={form.participant_ids}
                 onChange={(ids) => set('participant_ids', ids)}
                 disabled={readOnly}

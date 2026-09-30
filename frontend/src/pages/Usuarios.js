@@ -17,6 +17,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { GruposSection, GrupoDialog, GrupoPills, CrearGrupoButton } from '@/components/GruposUsuarios';
 
 const emptyForm = { name: '', email: '', password: '', position: '', area: '', sucursal: '', role: 'user' };
 
@@ -37,6 +38,15 @@ export default function Usuarios() {
     try { const { data } = await api.get('/users'); setUsers(data); } catch (e) {}
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // Grupos de usuarios (atajo para agregar participantes en la Agenda)
+  const [grupos, setGrupos] = useState([]);
+  const [grupoDialog, setGrupoDialog] = useState({ open: false, grupo: null });
+  const loadGrupos = useCallback(async () => {
+    try { const { data } = await api.get('/groups'); setGrupos(data); } catch (e) {}
+  }, []);
+  useEffect(() => { loadGrupos(); }, [loadGrupos]);
+  const abrirGrupo = (grupo = null) => setGrupoDialog({ open: true, grupo });
 
   const pending = users.filter((u) => u.status === 'pending');
   const approved = users.filter((u) => u.status === 'approved');
@@ -119,9 +129,12 @@ export default function Usuarios() {
           <p className="text-muted-foreground text-sm mt-0.5">{isAdmin ? 'Crea, aprueba y administra el equipo' : 'Directorio del equipo HERCO'}</p>
         </div>
         {isAdmin && (
-          <Button onClick={openCreate} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="create-user-button">
-            <Plus className="h-4 w-4 mr-1.5" /> Crear usuario
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <CrearGrupoButton onClick={() => abrirGrupo()} />
+            <Button onClick={openCreate} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="create-user-button">
+              <Plus className="h-4 w-4 mr-1.5" /> Crear usuario
+            </Button>
+          </div>
         )}
       </div>
 
@@ -153,6 +166,12 @@ export default function Usuarios() {
             </div>
           )}
         </motion.div>
+      )}
+
+      {/* Grupos: entre Solicitudes pendientes y Equipo (solo quien administra usuarios) */}
+      {isAdmin && (
+        <GruposSection grupos={grupos} usuarios={approved}
+          onNuevo={() => abrirGrupo()} onEditar={(g) => abrirGrupo(g)} onEliminado={loadGrupos} />
       )}
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.06 }}
@@ -192,6 +211,7 @@ export default function Usuarios() {
         : <span className="rounded-full bg-muted text-muted-foreground text-[11px] font-medium px-2 py-0.5 shrink-0">Usuario</span>}
     </div>
     <p className="text-xs text-muted-foreground truncate">{u.position}{u.area ? ` · ${u.area}` : ''}</p>
+    <GrupoPills userId={u.id} grupos={grupos} />
   </div>
 </div>
               <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t">
@@ -220,6 +240,11 @@ export default function Usuarios() {
           ))}
         </div>
       </motion.div>
+
+      {isAdmin && (
+        <GrupoDialog open={grupoDialog.open} grupo={grupoDialog.grupo} usuarios={approved} grupos={grupos}
+          onOpenChange={(o) => setGrupoDialog((s) => ({ ...s, open: o }))} onSaved={loadGrupos} />
+      )}
 
       {/* Create / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
