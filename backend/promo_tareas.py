@@ -27,6 +27,7 @@ from core import (db, get_current_user, serialize_doc, new_id, now_iso, PROMO_TI
                   JEFE_TIENDA, tienda_promos, es_revisor_tienda, es_coordinador_tienda,
                   require_promociones_mes_access, can_admin_promos)
 from notifications import create_notification, notify_admins
+import promo_plazos
 import tickets
 
 router = APIRouter(prefix='/promo-tareas', tags=['promo-tareas'])
@@ -88,6 +89,8 @@ async def sincronizar_tareas(form: dict) -> list:
         return []
     revisores = await revisores_por_tienda()
     cats = categorias_de(form)
+    plazos = form.get('plazos')
+    vence = promo_plazos.mas(form.get('publicada_at'), plazos['responder_dias'] * 24) if plazos else None
     existentes = {(t['tienda'], t['categoria']): t
                   for t in await db.promo_tareas.find({'form_id': form['id']}, {'_id': 0}).to_list(500)}
     creadas = []
@@ -104,6 +107,8 @@ async def sincronizar_tareas(form: dict) -> list:
                 'revisor_ids': [r['id'] for r in revisores.get(tienda, [])],
                 'estado': 'pendiente', 'coordinador_id': None, 'coordinador_name': None,
                 'respuesta_id': None, 'enviada_at': None, 'created_at': now_iso(),
+                'vence_respuesta': vence, 'vence_revision': None,
+                'recordar_horas': (plazos or {}).get('recordar_horas'),
             }
             await db.promo_tareas.insert_one(doc)
             doc.pop('_id', None)
@@ -150,11 +155,16 @@ async def tomar_tarea(form: dict, tienda: str, categoria: str, user: dict) -> tu
     t = await db.promo_tareas.find_one({'form_id': form['id'], 'tienda': tienda, 'categoria': categoria}, {'_id': 0})
     if not t or t['estado'] == 'cancelada':
         raise HTTPException(status_code=400, detail=f'{categoria} no está en esta publicación para {tienda}')
-    previo = {k: t.get(k) for k in ('estado', 'coordinador_id', 'coordinador_name', 'enviada_at', 'revision')}
+    previo = {k: t.get(k) for k in ('estado', 'coordinador_id', 'coordinador_name', 'enviada_at', 'revision',
+                                     'vence_revision', 'aviso_revision', 'tarde')}
+    plazos = form.get('plazos')
+    vence_rev = promo_plazos.desde_ahora(plazos['revisar_dias'] * 24) if plazos else None
+    tarde = bool(t.get('vence_respuesta') and promo_plazos.iso(promo_plazos.now_local()) > t['vence_respuesta'])
     r = await db.promo_tareas.update_one(
         {'id': t['id'], '$or': [{'estado': 'pendiente'}, {'estado': 'enviada', 'coordinador_id': user['id']}]},
         {'$set': {'estado': 'enviada', 'coordinador_id': user['id'], 'coordinador_name': user['name'],
-                  'enviada_at': now_iso(), 'revision': None}})
+                  'enviada_at': now_iso(), 'revision': None, 'vence_revision': vence_rev,
+                  'aviso_revision': None, 'tarde': tarde}})
     if r.matched_count == 0:
         actual = await db.promo_tareas.find_one({'id': t['id']}, {'_id': 0})
         if actual and actual.get('coordinador_id') == user['id']:
@@ -199,7 +209,8 @@ def puede_ver(user: dict, tarea: dict) -> bool:
 # --------------------------------------------------------------------------- #
 _PUBLICO = {'_id': 0, 'id': 1, 'form_id': 1, 'tienda': 1, 'categoria': 1, 'estado': 1,
             'coordinador_id': 1, 'coordinador_name': 1, 'enviada_at': 1, 'revision': 1,
-            'validada_por_name': 1, 'validada_at': 1, 'ticket_id': 1}
+            'validada_por_name': 1, 'validada_at': 1, 'ticket_id': 1,
+            'vence_respuesta': 1, 'vence_revision': 1, 'vencida': 1, 'tarde': 1}
 
 
 def _sin_revision_ajena(tareas: list, user: dict) -> list:
@@ -244,11 +255,37 @@ async def mis_tareas(user=Depends(get_current_user)):
             pendientes = sum(1 for t in tareas if t['estado'] == 'pendiente')
             if not (mias or pendientes):
                 continue
-            out.append({**f, 'pendientes': pendientes, 'tareas': mias})
+            vences = [t['vence_respuesta'] for t in tareas if t['estado'] == 'pendiente' and t.get('vence_respuesta')]
+            out.append({**f, 'pendientes': pendientes, 'tareas': mias, 'vence_respuesta': min(vences) if vences else None})
         else:
             por_revisar = sum(1 for t in tareas if t['estado'] == 'enviada' and t.get('coordinador_id') != user['id'])
-            out.append({**f, 'tienda': tienda_promos(user), 'tareas': tareas, 'por_revisar': por_revisar})
+            vences = [t['vence_revision'] for t in tareas
+                      if t['estado'] == 'enviada' and t.get('coordinador_id') != user['id'] and t.get('vence_revision')]
+            out.append({**f, 'tienda': tienda_promos(user), 'tareas': tareas, 'por_revisar': por_revisar,
+                        'vence_revision': min(vences) if vences else None})
     return serialize_doc({'rol': rol, 'publicaciones': out})
+
+
+# --------------------------------------------------------------------------- #
+#  Plazos por defecto (los definen los admins de Promociones)
+# --------------------------------------------------------------------------- #
+class PlazosInput(BaseModel):
+    responder_dias: int
+    revisar_dias: int
+    corregir_horas: int
+    recordar_horas: int
+
+
+@router.get('/plazos')
+async def ver_plazos(user=Depends(require_promociones_mes_access)):
+    return {**await promo_plazos.config(), 'limites': promo_plazos.LIMITES}
+
+
+@router.put('/plazos')
+async def cambiar_plazos(data: PlazosInput, user=Depends(get_current_user)):
+    if not can_admin_promos(user):
+        raise HTTPException(status_code=403, detail='Solo quien administra Promociones del mes cambia los plazos')
+    return await promo_plazos.guardar_config(data.model_dump(), user)
 
 
 # --------------------------------------------------------------------------- #

@@ -23,6 +23,7 @@ from pymongo import ReturnDocument
 from core import (db, get_current_user, serialize_doc, new_id, now_iso, es_revisor_tienda,
                   tienda_promos, can_admin_promos)
 from notifications import create_notification
+import promo_plazos
 import storage
 
 router = APIRouter(prefix='/tickets', tags=['tickets'])
@@ -113,6 +114,8 @@ async def crear_ticket_promo(tarea: dict, lineas: list, revisor: dict, mes: str)
     inconsistencias: [{'item_id', 'titulo', 'tipo', 'comentario'}]."""
     n = await db.counters.find_one_and_update({'_id': 'tickets_promo'}, {'$inc': {'n': 1}},
                                               upsert=True, return_document=ReturnDocument.AFTER)
+    form = await db.custom_forms.find_one({'id': tarea['form_id']}, {'_id': 0, 'plazos': 1}) or {}
+    plazos = form.get('plazos')
     t = {
         'id': new_id(), 'numero': f"PROMO-{n['n']:04d}",
         'origen': {'tipo': 'promociones', 'tarea_id': tarea['id'], 'form_id': tarea['form_id'],
@@ -127,6 +130,10 @@ async def crear_ticket_promo(tarea: dict, lineas: list, revisor: dict, mes: str)
                               f"línea{'s' if len(lineas) != 1 else ''} por corregir.")],
         'created_at': now_iso(), 'updated_at': now_iso(),
         'cerrado_por': None, 'cerrado_at': None,
+        # plazos copiados de la publicación: abierto -> corregir; corregido -> validar
+        'plazos': plazos, 'recordar_horas': (plazos or {}).get('recordar_horas'),
+        'vence': promo_plazos.desde_ahora(plazos['corregir_horas']) if plazos else None,
+        'aviso': None, 'vencido': False,
     }
     await db.tickets.insert_one(t)
     t.pop('_id', None)
@@ -150,7 +157,7 @@ async def cancelar_de_tareas(tarea_ids: list):
 # --------------------------------------------------------------------------- #
 _LISTA = {'_id': 0, 'id': 1, 'numero': 1, 'titulo': 1, 'tienda': 1, 'categoria': 1, 'estado': 1,
           'origen': 1, 'abierto_por': 1, 'asignado_a': 1, 'reaperturas': 1, 'created_at': 1,
-          'updated_at': 1, 'lineas.corregida': 1}
+          'updated_at': 1, 'lineas.corregida': 1, 'vence': 1, 'vencido': 1}
 
 
 def _filtro(user: dict) -> dict:
@@ -273,8 +280,10 @@ async def enviar_correccion(ticket_id: str, texto: str = Form(''), user=Depends(
         raise HTTPException(status_code=400, detail=f'Marca como corregida y sube la foto de: {", ".join(faltan[:3])}'
                                                     + ('…' if len(faltan) > 3 else ''))
     texto = (texto or '').strip()[:2000] or 'Corregido en piso. Adjunté las fotos.'
+    plazos = t.get('plazos')
     r = await db.tickets.update_one({'id': t['id'], 'estado': 'abierto'}, {
-        '$set': {'estado': 'corregido', 'updated_at': now_iso()},
+        '$set': {'estado': 'corregido', 'updated_at': now_iso(), 'aviso': None, 'vencido': False,
+                 'vence': promo_plazos.desde_ahora(plazos['revisar_dias'] * 24) if plazos else None},
         '$push': {'mensajes': _mensaje(user, texto, 'coordinador')}})
     if r.matched_count == 0:
         raise HTTPException(status_code=409, detail='El ticket cambió; vuelve a abrirlo')
@@ -296,7 +305,7 @@ async def cerrar(ticket_id: str, texto: str = Form(''), user=Depends(get_current
         [_sistema(f"{user['name']} validó en piso y cerró el ticket.")]
     r = await db.tickets.update_one({'id': t['id'], 'estado': t['estado']}, {
         '$set': {'estado': 'cerrado', 'cerrado_por': {'id': user['id'], 'name': user['name']},
-                 'cerrado_at': ahora, 'updated_at': ahora},
+                 'cerrado_at': ahora, 'updated_at': ahora, 'vence': None},
         '$push': {'mensajes': {'$each': msgs}}})
     if r.matched_count == 0:
         raise HTTPException(status_code=409, detail='El ticket cambió; vuelve a abrirlo')
@@ -320,7 +329,10 @@ async def reabrir(ticket_id: str, texto: str = Form(''), user=Depends(get_curren
     texto = (texto or '').strip()[:2000]
     if not texto:
         raise HTTPException(status_code=400, detail='Escribe qué sigue mal para reabrirlo')
-    sets = {'estado': 'abierto', 'reaperturas': (t.get('reaperturas') or 0) + 1, 'updated_at': now_iso()}
+    plazos = t.get('plazos')
+    sets = {'estado': 'abierto', 'reaperturas': (t.get('reaperturas') or 0) + 1, 'updated_at': now_iso(),
+            'aviso': None, 'vencido': False,
+            'vence': promo_plazos.desde_ahora(plazos['corregir_horas']) if plazos else None}
     for i in range(len(t.get('lineas', []))):
         sets[f'lineas.{i}.corregida'] = False
     r = await db.tickets.update_one({'id': t['id'], 'estado': 'corregido'}, {

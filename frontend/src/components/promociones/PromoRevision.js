@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { canAdminPromos, tiendaPromos, PROMO_TIENDAS } from '@/lib/constants';
 import { ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
 import { timeAgoEs } from '@/lib/time';
+import { PlazoChip } from '@/lib/promoPlazos';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -18,7 +19,11 @@ export const ESTADO_TAREA = {
   enviada: { label: 'Por revisar', cls: 'bg-[rgba(0,165,223,0.12)] text-[#1e395e] dark:text-[#3cbef6]' },
   con_observaciones: { label: 'Con observaciones', cls: 'bg-[rgba(236,144,50,0.16)] text-[#b45309] dark:text-[#fbbf24]' },
   validada: { label: 'Validada', cls: 'bg-[rgba(22,163,74,0.14)] text-[#16a34a]' },
+  vencida: { label: 'Vencida', cls: 'bg-[rgba(220,38,38,0.1)] text-[#dc2626]' },
 };
+
+// Sin contestar y fuera de plazo: "Vencida" (todavía se puede contestar).
+export const estadoVisible = (t) => (t.estado === 'pendiente' && t.vencida ? 'vencida' : t.estado);
 
 export function EstadoTarea({ estado }) {
   const e = ESTADO_TAREA[estado] || ESTADO_TAREA.pendiente;
@@ -71,9 +76,12 @@ export default function PromoRevision({ schema }) {
                       {t.coordinador_name ? `Contestó ${t.coordinador_name}` : 'Nadie la ha contestado'}
                       {t.estado === 'enviada' && t.revision?.revisor_name ? ` · en revisión por ${t.revision.revisor_name}` : ''}
                       {t.estado === 'validada' && t.validada_por_name ? ` · validó ${t.validada_por_name}` : ''}
+                      {t.tarde ? ' · contestada fuera de plazo' : ''}
                     </p>
+                    {t.estado === 'pendiente' && !t.vencida && <PlazoChip vence={t.vence_respuesta} prefijo="Contestar: " />}
+                    {t.estado === 'enviada' && !propia && <PlazoChip vence={t.vence_revision} prefijo="Revisar: " />}
                   </div>
-                  <EstadoTarea estado={t.estado} />
+                  <EstadoTarea estado={estadoVisible(t)} />
                   {t.estado === 'con_observaciones' && t.ticket_id && (
                     <Button asChild size="sm" variant="outline" className="rounded-xl" data-testid="promo-revision-ticket">
                       <Link to={`/formularios/tickets/${t.ticket_id}`}>Ver ticket</Link>

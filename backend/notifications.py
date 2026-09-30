@@ -62,6 +62,8 @@ NOTIFICATION_META = {
     'ticket_cerrado': {'title': 'Ticket cerrado', 'icon': 'ClipboardCheck', 'color': '#16a34a'},
     'ticket_reabierto': {'title': 'Ticket reabierto', 'icon': 'ClipboardCheck', 'color': '#dc2626'},
     'ticket_mensaje': {'title': 'Mensaje en ticket', 'icon': 'Bell', 'color': '#00a5df'},
+    'promo_recordatorio': {'title': 'Plazo por vencer', 'icon': 'Clock', 'color': '#ec9032'},
+    'promo_vencida': {'title': 'Plazo vencido', 'icon': 'Clock', 'color': '#dc2626'},
 }
 
 

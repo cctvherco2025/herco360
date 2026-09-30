@@ -13,7 +13,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { periodoLabel } from '@/pages/PromocionesHome';
-import { ESTADO_TAREA } from '@/components/promociones/PromoRevision';
+import { ESTADO_TAREA, estadoVisible } from '@/components/promociones/PromoRevision';
+import { PlazoChip } from '@/lib/promoPlazos';
 
 // Promociones del mes en Inicio: al coordinador de tienda, lo que falta por
 // contestar y lo que ya contestó; al jefe y al gerente de tienda (revisan),
@@ -61,11 +62,13 @@ function PromosPendientes() {
                     ? `${p.tareas.length - p.tareas.filter((t) => t.estado === 'pendiente').length} de ${p.tareas.length} categorías contestadas${p.por_revisar ? ` · ${p.por_revisar} por revisar` : ''}`
                     : p.pendientes ? `${p.pendientes} categoría${p.pendientes === 1 ? '' : 's'} sin contestar entre las tiendas` : 'Todas las categorías tienen respuesta'}
                 </p>
+                {jefe ? (p.por_revisar > 0 && <PlazoChip vence={p.vence_revision} prefijo="Revisar: " />)
+                  : (p.pendientes > 0 && <PlazoChip vence={p.vence_respuesta} prefijo="Contestar: " />)}
                 {p.tareas.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {p.tareas.map((t) => (
-                      <span key={`${t.tienda}-${t.categoria}`} className={`text-[11px] font-medium rounded-full px-2 py-0.5 ${(ESTADO_TAREA[t.estado] || ESTADO_TAREA.pendiente).cls}`}>
-                        {jefe ? t.categoria : `${t.tienda} · ${t.categoria}`} · {(ESTADO_TAREA[t.estado] || ESTADO_TAREA.pendiente).label}
+                      <span key={`${t.tienda}-${t.categoria}`} className={`text-[11px] font-medium rounded-full px-2 py-0.5 ${(ESTADO_TAREA[estadoVisible(t)] || ESTADO_TAREA.pendiente).cls}`}>
+                        {jefe ? t.categoria : `${t.tienda} · ${t.categoria}`} · {(ESTADO_TAREA[estadoVisible(t)] || ESTADO_TAREA.pendiente).label}
                       </span>
                     ))}
                   </div>

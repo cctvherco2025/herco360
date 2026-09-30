@@ -5,8 +5,10 @@ import { toast } from 'sonner';
 import { Percent, ArrowLeft, Plus, ChevronRight, Calendar, Users as UsersIcon } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { canManagePromos, canAccessPromocionesMes } from '@/lib/constants';
+import { canManagePromos, canAccessPromocionesMes, canAdminPromos } from '@/lib/constants';
+import { PLAZOS_CAMPOS } from '@/lib/promoPlazos';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
@@ -19,6 +21,49 @@ export function periodoLabel(periodo) {
   const nombre = MESES[idx];
   if (!nombre) return periodo;
   return `${nombre[0].toUpperCase()}${nombre.slice(1)} ${m[1]}`;
+}
+
+// Plazos por defecto de cada mes (los copia cada publicación y se pueden
+// ajustar al publicar). Solo quien administra Promociones los cambia.
+function PlazosPorDefecto() {
+  const [plazos, setPlazos] = useState(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { api.get('/promo-tareas/plazos').then(({ data }) => setPlazos(data)).catch(() => {}); }, []);
+  if (!plazos) return null;
+  const guardar = async () => {
+    setSaving(true);
+    try {
+      const body = Object.fromEntries(PLAZOS_CAMPOS.map((c) => [c.key, Number(plazos[c.key]) || 0]));
+      const { data } = await api.put('/promo-tareas/plazos', body);
+      setPlazos((p) => ({ ...p, ...data }));
+      toast.success('Plazos guardados');
+    } catch (e) { toast.error(e?.response?.data?.detail || 'No se pudieron guardar los plazos'); }
+    finally { setSaving(false); }
+  };
+  return (
+    <div className="rounded-[18px] bg-card border shadow-card p-5 mb-5" data-testid="promos-plazos">
+      <h2 className="font-heading font-semibold">Plazos por defecto</h2>
+      <p className="text-xs text-muted-foreground mb-3">Se copian a cada publicación y se pueden ajustar al publicar. Cuentan horas corridas.</p>
+      <div className="grid sm:grid-cols-2 gap-3">
+        {PLAZOS_CAMPOS.map((c) => (
+          <label key={c.key} className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2">
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">{c.label}</span>
+              <span className="block text-[11px] text-muted-foreground">{c.ayuda}</span>
+            </span>
+            <Input type="number" min={plazos.limites?.[c.key]?.[0] || 1} max={plazos.limites?.[c.key]?.[1] || 999}
+              value={plazos[c.key]} onChange={(e) => setPlazos((p) => ({ ...p, [c.key]: e.target.value }))}
+              className="h-9 w-20 text-right" data-testid={`promos-plazo-${c.key}`} />
+          </label>
+        ))}
+      </div>
+      <div className="flex justify-end mt-3">
+        <Button size="sm" className="rounded-xl" onClick={guardar} disabled={saving} data-testid="promos-plazos-guardar">
+          {saving ? 'Guardando…' : 'Guardar plazos'}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export default function PromocionesHome() {
@@ -60,6 +105,8 @@ export default function PromocionesHome() {
           </Button>
         )}
       </div>
+
+      {canAdminPromos(user) && <PlazosPorDefecto />}
 
       {loading && <p className="text-sm text-muted-foreground text-center py-10">Cargando…</p>}
 

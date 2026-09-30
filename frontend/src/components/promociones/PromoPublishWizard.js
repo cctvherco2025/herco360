@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { periodoLabel } from '@/pages/PromocionesHome';
 import { detectarEstrategia, etiquetaDeGrupo, ESTRATEGIA_LABEL, ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
+import { PLAZOS_CAMPOS } from '@/lib/promoPlazos';
 
 const STEP_LABELS = ['Cargar Excel', 'Detectar columnas', 'Categorizar', 'Configurar', 'Publicar'];
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -195,6 +196,9 @@ export default function PromoPublishWizard() {
 
   // Tiendas que participan, con sus jefes y cuántos coordinadores contestan.
   const [tiendas, setTiendas] = useState([]);
+  // Plazos de este mes: arrancan con los de por defecto y se pueden ajustar.
+  const [plazos, setPlazos] = useState(null);
+  useEffect(() => { api.get('/promo-tareas/plazos').then(({ data }) => setPlazos(data)).catch(() => {}); }, []);
   useEffect(() => {
     api.get('/formularios-custom/promociones/meta')
       .then(({ data }) => {
@@ -407,6 +411,7 @@ export default function PromoPublishWizard() {
         kind: 'promociones', periodo, serie_key: 'promociones-mes', status: 'publicado',
         // la fija el servidor: coordinadores de las tiendas que participan
         audiencia: { todos: false, areas: ['Tienda'], cargos: ['Coordinador'], user_ids: [] },
+        ...(plazos ? { plazos: Object.fromEntries(PLAZOS_CAMPOS.map((c) => [c.key, Number(plazos[c.key]) || 0])) } : {}),
         items: preguntas.map(({ localIds, ...q }) => q),
       };
       const { data } = await api.post('/formularios-custom', payload);
@@ -768,6 +773,22 @@ export default function PromoPublishWizard() {
                 <p className="text-xs text-muted-foreground">Coordinadores de otros departamentos no reciben este formulario.</p>
               </div>
 
+              {plazos && (
+                <div className="rounded-[18px] bg-card border shadow-card p-6 sm:p-8 space-y-3" data-testid="promo-plazos-mes">
+                  <h2 className="font-heading text-lg font-semibold">Plazos de este mes</h2>
+                  <p className="text-sm text-muted-foreground -mt-1">Vienen de los plazos por defecto; cámbialos solo para esta publicación si hace falta.</p>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {PLAZOS_CAMPOS.map((c) => (
+                      <label key={c.key} className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2">
+                        <span className="text-sm">{c.label}</span>
+                        <Input type="number" min={1} value={plazos[c.key]} onChange={(e) => setPlazos((p) => ({ ...p, [c.key]: e.target.value }))}
+                          className="h-9 w-20 text-right" data-testid={`promo-plazo-${c.key}`} />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-between">
                 <Button variant="outline" onClick={() => setStep(2)} className="rounded-xl"><ChevronLeft className="h-4 w-4 mr-1" /> Anterior</Button>
                 <Button onClick={() => setStep(4)} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="promo-step4-next">
@@ -796,6 +817,11 @@ export default function PromoPublishWizard() {
                     ))}
                   </div>
                 </div>
+                {plazos && (
+                  <div className="flex justify-between border-b pb-2"><span className="text-muted-foreground">Plazos</span>
+                    <span className="font-medium text-right">contestar {plazos.responder_dias} d · revisar {plazos.revisar_dias} d · corregir {plazos.corregir_horas} h</span>
+                  </div>
+                )}
                 <div className="flex justify-between"><span className="text-muted-foreground">Tiendas</span>
                   <span className="font-medium text-right">{tiendas.map((t) => t.tienda).join(' y ') || '—'}</span>
                 </div>

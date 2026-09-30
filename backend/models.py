@@ -233,6 +233,9 @@ class CustomFormInput(BaseModel):
     status: Optional[str] = 'publicado'  # 'borrador' | 'publicado'
     audiencia: CustomFormAudience
     items: List[CustomFormItem]
+    # Promociones del mes: plazos de esta publicación (días para contestar y
+    # revisar, horas para corregir y para el recordatorio). None = por defecto.
+    plazos: Optional[dict] = None
 
 
 # ---- Rutina Operativa — esquema editable (secciones/preguntas/puntajes) ----

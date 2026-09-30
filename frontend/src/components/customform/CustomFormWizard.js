@@ -11,6 +11,7 @@ import { generateCustomFormPdf } from '@/lib/customFormPdf';
 import { ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
 import { Link } from 'react-router-dom';
 import { EstadoTarea } from '@/components/promociones/PromoRevision';
+import { PlazoChip } from '@/lib/promoPlazos';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -97,6 +98,13 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
   };
   const esMia = (tienda, cat) => { const t = tareaDe(tienda, cat); return !!t && t.estado === 'enviada' && t.coordinador_id === user?.id; };
   const catActual = eligeCategoria ? categoria : promoCategorias[0];
+  // Plazo para contestar: el de la tienda y categoría elegidas, o el más próximo.
+  const venceContestar = (() => {
+    const t = sucursal && catActual ? tareaDe(sucursal, catActual) : null;
+    if (t) return t.estado === 'pendiente' ? t.vence_respuesta : null;
+    const vs = tareas.filter((x) => x.estado === 'pendiente' && x.vence_respuesta).map((x) => x.vence_respuesta).sort();
+    return vs[0] || null;
+  })();
   const bloqueadaPor = conTareas && sucursal && catActual ? ocupadaPor(sucursal, catActual) : null;
 
   const pickGeneralPhoto = async (fileList) => {
@@ -342,6 +350,9 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
           {schema.has_scoring ? ' · con puntaje' : ''}
         </p>
 
+        {conTareas && venceContestar && (
+          <p className="mb-4 -mt-2"><PlazoChip vence={venceContestar} prefijo="Plazo para contestar: " /></p>
+        )}
         {hasDraft && (
           <div className="flex items-center gap-2 rounded-xl bg-[rgba(0,165,223,0.1)] text-[#1e395e] dark:text-[#3cbef6] text-xs px-3 py-2 mb-4">
             <Info className="h-3.5 w-3.5 shrink-0" /> Tienes respuestas guardadas en este dispositivo.

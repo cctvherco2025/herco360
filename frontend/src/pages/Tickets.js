@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Ticket } from 'lucide-react';
 import api from '@/lib/api';
 import { timeAgoEs } from '@/lib/time';
+import { PlazoChip } from '@/lib/promoPlazos';
 
 export const ESTADO_TICKET = {
   abierto: { label: 'Abierto', cls: 'bg-[rgba(220,38,38,0.1)] text-[#dc2626]' },
@@ -92,6 +93,7 @@ export default function Tickets() {
                 </span>
               </span>
               <span className="text-xs text-muted-foreground">{hechas}/{total} corregidas</span>
+              {(t.estado === 'abierto' || t.estado === 'corregido') && t.vence && <PlazoChip vence={t.vence} />}
               <EstadoTicket estado={t.estado} />
               <span className="text-xs text-muted-foreground w-[90px] text-right">{timeAgoEs(t.updated_at)}</span>
             </button>

@@ -38,6 +38,7 @@ from core import (db, get_current_user, serialize_doc, new_id, now_iso, can_mana
 from models import CustomFormInput
 from notifications import create_notification
 import promo_tareas
+import promo_plazos
 import storage
 
 router = APIRouter(prefix='/formularios-custom', tags=['formularios-custom'])
@@ -536,7 +537,10 @@ async def create_form(data: CustomFormInput, user=Depends(require_builder_access
 
     periodo = (data.periodo or '').strip() or None
     serie_key = (data.serie_key or '').strip() or None
+    plazos = None
     if flujo:
+        # Plazos del mes: los que se ajustaron al publicar, o los de por defecto.
+        plazos = promo_plazos.limpiar(data.plazos) if data.plazos else await promo_plazos.config()
         # Promociones del mes: lo contestan los coordinadores y jefes de las
         # tiendas que participan (una tarea por tienda × categoría). La
         # audiencia queda fija.
@@ -558,6 +562,8 @@ async def create_form(data: CustomFormInput, user=Depends(require_builder_access
         'audiencia': audiencia_dict,
         'audiencia_resueltos': resueltos,
         'flujo_tareas': flujo,
+        'plazos': plazos,
+        'publicada_at': promo_plazos.iso(promo_plazos.now_local()) if flujo and status == 'publicado' else None,
         'items': items,
         'has_scoring': total_max > 0,
         'total_max': total_max,
@@ -662,6 +668,8 @@ async def update_form(form_id: str, data: CustomFormInput, user=Depends(get_curr
     }
     if audiencia_dict != (form.get('audiencia') or {}):
         update['audiencia_resueltos'] = await _resolve_audience_users(audiencia_dict)
+    if flujo and status == 'publicado' and not form.get('publicada_at'):
+        update['publicada_at'] = promo_plazos.iso(promo_plazos.now_local())  # los plazos corren desde hoy
 
     await db.custom_forms.update_one({'id': form_id}, {'$set': update})
     if is_promo_form:
@@ -1074,6 +1082,7 @@ async def _reporte_por_tareas(form: dict) -> dict:
         yes, no = conteo([r] if r else [])
         malas = sum(1 for ln in ((t.get('revision') or {}).get('lineas') or {}).values() if ln.get('v') == 'mal')
         matriz.append({'id': t['id'], 'tienda': t['tienda'], 'categoria': t['categoria'], 'estado': t['estado'],
+                       'vencida': bool(t.get('vencida')) and t['estado'] == 'pendiente', 'tarde': bool(t.get('tarde')),
                        'coordinador_name': t.get('coordinador_name'), 'validada_por_name': t.get('validada_por_name'),
                        'inconsistencias': malas if t['estado'] == 'con_observaciones' else 0,
                        'cumplimiento': round(yes / (yes + no) * 100) if (yes + no) else None})
@@ -1106,6 +1115,8 @@ async def _reporte_por_tareas(form: dict) -> dict:
         'pendientes': sum(1 for t in tareas if t['estado'] == 'pendiente'),
         'validadas': sum(1 for t in tareas if t['estado'] == 'validada'),
         'con_observaciones': sum(1 for t in tareas if t['estado'] == 'con_observaciones'),
+        'vencidas': sum(1 for t in tareas if t['estado'] == 'pendiente' and t.get('vencida')),
+        'tarde': sum(1 for t in tareas if t.get('tarde')),
     }
     return {'flujo_tareas': True, 'kpis': kpis, 'por_promocion': por_promocion, 'por_sucursal': por_sucursal,
             'matriz': matriz, 'categorias': sorted({t['categoria'] for t in tareas}),

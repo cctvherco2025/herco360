@@ -4,7 +4,7 @@ import { CheckCircle2, Store, ListChecks, Clock, Lock } from 'lucide-react';
 import api from '@/lib/api';
 import { ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { EstadoTarea } from '@/components/promociones/PromoRevision';
+import { EstadoTarea, estadoVisible } from '@/components/promociones/PromoRevision';
 
 // Publicaciones con tareas: cada celda es una tienda × categoría con su estado.
 function Matriz({ report }) {
@@ -15,6 +15,7 @@ function Matriz({ report }) {
         <h3 className="font-heading font-semibold">Tienda × categoría</h3>
         <span className="text-xs text-muted-foreground">
           {report.kpis.validadas} validadas · {report.kpis.con_observaciones} con observaciones · {report.kpis.pendientes} sin contestar
+          {report.kpis.vencidas ? ` (${report.kpis.vencidas} vencidas)` : ''}{report.kpis.tarde ? ` · ${report.kpis.tarde} fuera de plazo` : ''}
         </span>
       </div>
       <div className="overflow-x-auto">
@@ -35,9 +36,9 @@ function Matriz({ report }) {
                     <td key={c} className="py-2.5 pr-3">
                       {m ? (
                         <div className="space-y-0.5">
-                          <EstadoTarea estado={m.estado} />
+                          <EstadoTarea estado={estadoVisible(m)} />
                           <p className="text-[11px] text-muted-foreground">
-                            {m.coordinador_name || '—'}{m.cumplimiento !== null && m.cumplimiento !== undefined ? ` · ${m.cumplimiento}%` : ''}
+                            {m.coordinador_name || '—'}{m.cumplimiento !== null && m.cumplimiento !== undefined ? ` · ${m.cumplimiento}%` : ''}{m.tarde ? ' · tarde' : ''}
                           </p>
                         </div>
                       ) : <span className="text-xs text-muted-foreground">—</span>}

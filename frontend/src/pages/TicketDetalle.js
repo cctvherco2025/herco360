@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { AuthedImg } from '@/components/customform/CustomFormHistorial';
 import PhotoZoomDialog, { ZOOM_IMG_CLASS } from '@/components/PhotoZoomDialog';
 import { EstadoTicket } from '@/pages/Tickets';
+import { PlazoChip } from '@/lib/promoPlazos';
 
 // Una o varias fotos elegidas -> FormData con 'fotos' (comprimidas como el resto de la app).
 async function fotosAFormData(fd, files) {
@@ -93,6 +94,9 @@ export default function TicketDetalle() {
           <span className="font-mono text-xs text-muted-foreground">{t.numero}</span>
           <EstadoTicket estado={t.estado} />
           {t.reaperturas > 0 && <span className="text-xs text-muted-foreground">reabierto {t.reaperturas} vez{t.reaperturas === 1 ? '' : 'es'}</span>}
+          {(t.estado === 'abierto' || t.estado === 'corregido') && t.vence && (
+            <PlazoChip vence={t.vence} prefijo={t.estado === 'abierto' ? 'Corregir: ' : 'Validar: '} />
+          )}
         </div>
         <h1 className="font-heading text-2xl font-semibold">{t.titulo}</h1>
         <p className="text-sm text-muted-foreground">
