@@ -52,7 +52,9 @@ function NavItem({ item, onNavigate }) {
 
 // Item de navegación con subitems plegables (ej. "Formulario" -> Formularios /
 // Evaluación FLOS). Se abre solo si uno de sus hijos está activo, y se puede
-// desplegar/plegar a mano con la flecha.
+// desplegar/plegar a mano con la flecha. Los subitems van con el mismo estilo
+// que el resto de la barra (sin tarjeta), colgando de una línea guía, y solo
+// el subitem activo se resalta.
 function NavGroup({ item, onNavigate }) {
   const location = useLocation();
   const childActive = item.children.some((c) => location.pathname === c.to || location.pathname.startsWith(`${c.to}/`));
@@ -67,14 +69,9 @@ function NavGroup({ item, onNavigate }) {
         onClick={() => setOpen((o) => !o)}
         data-testid={item.testid}
         aria-expanded={open}
-        className={`group relative w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
-          childActive
-            ? 'bg-[rgba(0,165,223,0.12)] text-[#1e395e] dark:text-[#3cbef6]'
-            : 'text-muted-foreground hover:bg-[rgba(60,190,246,0.08)] hover:text-foreground'
+        className={`group relative w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors hover:bg-[rgba(60,190,246,0.08)] ${
+          childActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
         }`}>
-        {childActive && (
-          <motion.span layoutId="sidebar-active" className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-full bg-[#00a5df]" />
-        )}
         <item.icon className="h-[18px] w-[18px] shrink-0" />
         <span className="flex-1 text-left">{item.label}</span>
         <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${open ? '' : '-rotate-90'}`} />
@@ -84,18 +81,26 @@ function NavGroup({ item, onNavigate }) {
           <motion.div
             initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }} className="overflow-hidden">
-            <div className="mt-1 mb-1 space-y-1 rounded-xl bg-card border p-1.5 shadow-card">
+            <div className="ml-[22px] mt-0.5 mb-1 space-y-0.5 border-l border-border pl-2">
               {item.children.map((c) => (
                 <NavLink key={c.to} to={c.to} data-testid={c.testid} onClick={() => onNavigate?.()}
                   className={({ isActive }) =>
-                    `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+                    `relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
                       isActive
-                        ? 'bg-[rgba(0,165,223,0.12)] text-[#1e395e] dark:text-[#3cbef6] font-medium'
-                        : 'text-muted-foreground hover:bg-muted'
+                        ? 'bg-[rgba(0,165,223,0.12)] text-[#1e395e] dark:text-[#3cbef6]'
+                        : 'text-muted-foreground hover:bg-[rgba(60,190,246,0.08)] hover:text-foreground'
                     }`
                   }>
-                  <c.icon className="h-4 w-4 shrink-0" />
-                  {c.label}
+                  {({ isActive }) => (
+                    <>
+                      {/* la marca celeste del item activo, sobre la línea guía */}
+                      {isActive && (
+                        <motion.span layoutId="sidebar-active" className="absolute -left-[10.5px] top-1/2 -translate-y-1/2 h-6 w-1 rounded-full bg-[#00a5df]" />
+                      )}
+                      <c.icon className="h-4 w-4 shrink-0" />
+                      {c.label}
+                    </>
+                  )}
                 </NavLink>
               ))}
             </div>

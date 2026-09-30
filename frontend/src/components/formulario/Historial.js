@@ -120,8 +120,6 @@ function mesDeAuditoria(r) {
   return Number.isNaN(d.getTime()) ? 'sin-fecha' : mesKeyDeFecha(d);
 }
 
-const mesActualKey = () => mesKeyDeFecha(new Date());
-
 function mesLabel(key) {
   const m = /^(\d{4})-(\d{2})$/.exec(key);
   if (!m) return 'Sin fecha';
@@ -336,10 +334,10 @@ export default function Historial({ refreshKey }) {
   });
   const grupos = agruparPorMes(filtered);
 
-  // Meses abiertos: por defecto solo el mes actual. Se guarda por mes (no se
+  // Meses abiertos: al entrar todos plegados. Se guarda por mes (no se
   // reinicia al cambiar filtros): si un mes desaparece por un filtro y vuelve,
   // recupera cómo estaba.
-  const [abiertos, setAbiertos] = useState(() => new Set([mesActualKey()]));
+  const [abiertos, setAbiertos] = useState(() => new Set());
   const toggleMes = (key) => setAbiertos((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const expandirTodo = () => setAbiertos((s) => new Set([...s, ...grupos.map((g) => g.key)]));
   const colapsarTodo = () => setAbiertos(new Set());
