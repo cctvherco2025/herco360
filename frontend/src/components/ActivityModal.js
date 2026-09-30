@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import ParticipantPicker from '@/components/ParticipantPicker';
 import RangeDatePicker from '@/components/RangeDatePicker';
 import RecurrenceDialog from '@/components/RecurrenceDialog';
+import AlcanceDialog from '@/components/AlcanceDialog';
 import {
   opcionesRepeticion, describirRegla, fechasEnRango, proximasFechas,
   repeticionChoca as chocaRepeticion,
@@ -69,10 +70,13 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
       api.get('/groups').then(({ data }) => setGroups(data)).catch(() => setGroups([]));
       setAbrirRango(false);
       setRecOpen(false);
+      setAlcance(null);
+      setRepTocada(false);
       if (activity) {
-        // Una repetición de una serie se edita como la serie: su primer día.
-        const ini = activity.serie_date || activity.date;
-        const fin = activity.serie_end_date || activity.end_date || activity.date;
+        // Una repetición se abre con SU fecha; al guardar se elige si el
+        // cambio aplica solo a esta, a esta y las siguientes o a todas.
+        const ini = activity.date;
+        const fin = activity.end_date || activity.date;
         setVariosDias(fin !== ini);
         const simple = activity.rrule && opcionesRepeticion(ini).find((o) => o.regla === activity.rrule);
         setRepKey(!activity.rrule ? 'none' : simple ? simple.key : 'custom');
@@ -137,20 +141,26 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   // Opciones fijas: No se repite / Cada día / Cada semana / Una vez al mes.
   // "Personalizado…" abre RecurrenceDialog y define la repetición solo de esta
   // actividad (no queda como opción guardada). Las series viejas (un registro
-  // por fecha) no se pueden convertir.
-  const puedeRepetir = !isEdit || !activity?.series_id;
+  // por fecha) y las repeticiones editadas aparte no cambian su repetición.
+  const puedeRepetir = !isEdit || !(activity?.series_id || activity?.serie_madre);
   const [repKey, setRepKey] = useState('none');
   const [reglaCustom, setReglaCustom] = useState('');
   const [recOpen, setRecOpen] = useState(false);
+  const [repTocada, setRepTocada] = useState(false); // el usuario cambió la repetición
+  // Actividad de una serie con RRULE (una repetición o una editada aparte):
+  // guardar / eliminar pregunta el alcance.
+  const esSerie = isEdit && !!(activity?.rrule || activity?.serie_madre);
+  const [alcance, setAlcance] = useState(null); // null | 'guardar' | 'eliminar'
   const opciones = useMemo(() => opcionesRepeticion(form.date), [form.date]);
   const reglaActual = repKey === 'custom' ? reglaCustom : (opciones.find((o) => o.key === repKey)?.regla || '');
 
   const elegirRepeticion = (v) => {
     if (v === 'custom') setRecOpen(true); // se aplica al tocar "Listo"
-    else setRepKey(v);
+    else { setRepKey(v); setRepTocada(true); }
   };
   const aplicarPersonalizada = (regla) => {
     setRecOpen(false);
+    setRepTocada(true);
     const simple = opciones.find((o) => o.regla === regla);
     setRepKey(simple ? simple.key : 'custom');
     setReglaCustom(simple ? '' : regla);
@@ -186,36 +196,72 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   const roomBlocked = form.uses_meeting_room && (isMondaySelected || repeticionEnLunes);
   const bloqueado = roomBlocked || horaInvalida || faltaUltimoDia || repeticionChoca;
 
-  const save = async () => {
-    if (!form.title.trim()) { toast.error('Ingresa un título'); return; }
-    if (bloqueado) return;
+  // Regla que se manda al guardar. Al editar una serie sin tocar la
+  // repetición ni la fecha no se manda (el servidor conserva la regla exacta,
+  // p. ej. "día 31" en un mes de 30).
+  const reglaAEnviar = () => {
+    if (!puedeRepetir) return undefined;
+    if (isEdit && activity?.rrule && !repTocada && form.date === activity.date) return undefined;
+    return reglaActual;
+  };
+  const reglaCambio = esSerie && !!activity?.rrule && (() => {
+    const r = reglaAEnviar();
+    return r !== undefined && r !== activity.rrule;
+  })();
+  // En una serie: la repetición abierta (su fecha original) y el alcance elegido.
+  const paramsAlcance = (a) => (a ? { alcance: a, ...(activity.serie_madre ? {} : { ocurrencia: activity.date }) } : undefined);
+
+  const MENSAJES = {
+    esta: 'Se actualizó esta actividad', siguientes: 'Se actualizaron esta y las siguientes', todas: 'Se actualizaron todas las repeticiones',
+  };
+  const guardar = async (alc) => {
     const payload = { ...form, end_date: endDate, recurrence: 'none' };
-    // "" = no se repite (al editar, deja de repetirse). Las series viejas no
-    // mandan el campo y conservan lo que tienen.
-    if (puedeRepetir) payload.rrule = reglaActual;
+    // "" = no se repite (al editar, deja de repetirse); sin el campo se
+    // conserva lo que tenía.
+    const regla = reglaAEnviar();
+    if (regla !== undefined) payload.rrule = regla;
     setSaving(true);
     try {
       if (isEdit) {
-        await api.put(`/activities/${activity.id}`, payload);
-        toast.success(reglaActual ? 'Se actualizaron todas las repeticiones' : 'Actividad actualizada');
+        await api.put(`/activities/${activity.id}`, payload, { params: paramsAlcance(alc) });
+        toast.success(alc ? MENSAJES[alc] : 'Actividad actualizada');
       } else {
         const { data } = await api.post('/activities', payload);
         toast.success(data?.rrule
           ? `Actividad creada: se repite ${describirRegla(data.rrule, { conFin: false })}`
           : 'Actividad creada');
       }
+      setAlcance(null);
       onOpenChange(false);
       onSaved?.();
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Error al guardar');
     } finally { setSaving(false); }
   };
+  const save = () => {
+    if (!form.title.trim()) { toast.error('Ingresa un título'); return; }
+    if (bloqueado) return;
+    if (esSerie) setAlcance('guardar'); // pregunta: solo esta / siguientes / todas
+    else guardar(null);
+  };
 
-  const remove = async () => {
-    if (!isEdit) return;
+  const ELIMINADAS = {
+    esta: 'Se eliminó esta actividad', siguientes: 'Se eliminaron esta y las siguientes', todas: 'Se eliminó toda la serie',
+  };
+  const eliminar = async (alc) => {
     setSaving(true);
-    try { await api.delete(`/activities/${activity.id}`); toast.success(activity.rrule ? 'Se eliminaron todas las repeticiones' : 'Actividad eliminada'); onOpenChange(false); onSaved?.(); }
-    catch (err) { toast.error(err?.response?.data?.detail || 'Error al eliminar'); } finally { setSaving(false); }
+    try {
+      await api.delete(`/activities/${activity.id}`, { params: paramsAlcance(alc) });
+      toast.success(alc ? ELIMINADAS[alc] : 'Actividad eliminada');
+      setAlcance(null);
+      onOpenChange(false);
+      onSaved?.();
+    } catch (err) { toast.error(err?.response?.data?.detail || 'Error al eliminar'); } finally { setSaving(false); }
+  };
+  const remove = () => {
+    if (!isEdit) return;
+    if (esSerie) setAlcance('eliminar');
+    else eliminar(null);
   };
 
   const respond = async (response) => {
@@ -416,7 +462,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
         <DialogFooter className="px-6 py-4 border-t gap-2 sm:gap-2">
           {isEdit && isOwner && (
             <Button variant="ghost" onClick={remove} disabled={saving} className="text-[#dc2626] hover:text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)] mr-auto" data-testid="activity-form-delete">
-              <Trash2 className="h-4 w-4 mr-1" /> {activity?.rrule ? 'Eliminar serie' : 'Eliminar'}
+              <Trash2 className="h-4 w-4 mr-1" /> Eliminar
             </Button>
           )}
           {readOnly ? (
@@ -446,6 +492,9 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
       </DialogContent>
       <RecurrenceDialog open={recOpen} onOpenChange={setRecOpen} fecha={form.date} horaInicio={form.start_time}
         regla={reglaActual} onListo={aplicarPersonalizada} />
+      <AlcanceDialog open={!!alcance} onOpenChange={(o) => { if (!o) setAlcance(null); }} accion={alcance || 'guardar'}
+        soloEstaDeshabilitada={alcance === 'guardar' && reglaCambio} ocupado={saving}
+        onAceptar={(alc) => (alcance === 'eliminar' ? eliminar(alc) : guardar(alc))} />
     </Dialog>
   );
 }

@@ -8,6 +8,8 @@ import { useAuth } from '@/context/AuthContext';
 import { canAccessVacaciones } from '@/lib/constants';
 import { fullDateEs, capitalize, ymd, MESES, MESES_CORTO } from '@/lib/time';
 import ActivityModal from '@/components/ActivityModal';
+import AlcanceDialog from '@/components/AlcanceDialog';
+import { opcionesRepeticion } from '@/lib/recurrence';
 import { WeekView, DayView, MonthView, startOfWeek, addDays, esVariosDias, rangoCortoCal } from '@/components/CalendarViews';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -26,6 +28,7 @@ export default function Agenda() {
   const [team, setTeam] = useState([]);
   const [visible, setVisible] = useState({});
   const [teamEvents, setTeamEvents] = useState({});
+  const [moviendo, setMoviendo] = useState(null); // repetición arrastrada: { ev, newDate, newStart }
 
   const TEAM_COLORS = ['#0d9488', '#712146', '#ec9032', '#64748b', '#16a34a', '#dc2626', '#3cbef6', '#1e395e'];
   const colorFor = useCallback((id) => {
@@ -92,22 +95,37 @@ export default function Agenda() {
     if (ev.created_by !== user?.id && user?.role !== 'admin') {
       toast.error('Solo el creador puede mover esta actividad'); return;
     }
-    if (ev.rrule) { toast.error('Para mover una actividad que se repite, ábrela y cambia su fecha'); return; }
     if (ev.date === newDate && ev.start_time === newStart) return;
+    // Repetición de una serie: primero se pregunta si mueve solo esta,
+    // esta y las siguientes o todas.
+    if (ev.rrule || ev.serie_madre) { setMoviendo({ ev, newDate, newStart }); return; }
+    await mover(ev, newDate, newStart, null);
+  };
+  const mover = async (ev, newDate, newStart, alcance) => {
     const dur = Math.max(30, toMin(ev.end_time) - toMin(ev.start_time));
     let endM = Math.min(toMin(newStart) + dur, 20 * 60);
+    const payload = {
+      title: ev.title, color: ev.color, date: newDate,
+      start_time: newStart, end_time: minToTime(endM),
+      description: ev.description || '', location: ev.location || '',
+      participant_ids: (ev.participants || []).map((p) => p.user_id),
+      uses_meeting_room: ev.uses_meeting_room || false,
+      reminder_offsets: Array.isArray(ev.reminder_offsets)
+        ? ev.reminder_offsets
+        : (ev.reminder_minutes != null ? (ev.reminder_minutes > 0 ? [ev.reminder_minutes] : []) : [60, 15]),
+    };
+    // "Cada semana" / "Una vez al mes" siguen al nuevo día al mover la serie
+    // (o esta y las siguientes); una regla personalizada se conserva.
+    if (alcance && alcance !== 'esta' && ev.rrule) {
+      const op = opcionesRepeticion(ev.date).find((o) => o.regla === ev.rrule);
+      const nueva = op && opcionesRepeticion(newDate).find((o) => o.key === op.key);
+      if (nueva) payload.rrule = nueva.regla;
+    }
+    const params = alcance ? { alcance, ...(ev.serie_madre ? {} : { ocurrencia: ev.date }) } : undefined;
     try {
-      await api.put(`/activities/${ev.id}`, {
-        title: ev.title, color: ev.color, date: newDate,
-        start_time: newStart, end_time: minToTime(endM),
-        description: ev.description || '', location: ev.location || '',
-        participant_ids: (ev.participants || []).map((p) => p.user_id),
-        uses_meeting_room: ev.uses_meeting_room || false,
-        reminder_offsets: Array.isArray(ev.reminder_offsets)
-          ? ev.reminder_offsets
-          : (ev.reminder_minutes != null ? (ev.reminder_minutes > 0 ? [ev.reminder_minutes] : []) : [60, 15]),
-      });
+      await api.put(`/activities/${ev.id}`, payload, { params });
       toast.success('Actividad movida');
+      setMoviendo(null);
       load();
     } catch (err) { toast.error(err?.response?.data?.detail || 'No se pudo mover'); }
   };
@@ -244,6 +262,8 @@ export default function Agenda() {
       </div>
 
       <ActivityModal open={modalOpen} onOpenChange={setModalOpen} activity={editing} defaultDate={pendingDate} defaultTime={pendingTime} onSaved={load} />
+      <AlcanceDialog open={!!moviendo} onOpenChange={(o) => { if (!o) setMoviendo(null); }} accion="mover"
+        onAceptar={(alc) => mover(moviendo.ev, moviendo.newDate, moviendo.newStart, alc)} />
     </div>
   );
 }

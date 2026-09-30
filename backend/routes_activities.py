@@ -163,7 +163,8 @@ def _tramos(activity: dict) -> list:
     span = _parse_date(activity.get('end_date') or activity['date']) - d0
     hasta = max(d0, now_local().date()) + timedelta(days=SALA_HORIZONTE_DIAS)
     out = []
-    for f in rec.fechas(activity['rrule'], activity['date'], activity['start_time'], d0, hasta):
+    for f in rec.fechas(activity['rrule'], activity['date'], activity['start_time'], d0, hasta,
+                        excluir=activity.get('exdates')):
         out.extend(_dias(f.isoformat(), (f + span).isoformat(), activity['start_time'], activity['end_time']))
     return out
 
@@ -173,8 +174,12 @@ def _dia_corto(d: str) -> str:
     return f'{dd}/{m}/{y}'
 
 
-async def _check_conflicts(tramos: list, uses_meeting_room: bool, exclude_activity_id: str = None):
+async def _check_conflicts(tramos: list, uses_meeting_room: bool, exclude_activity_id: str = None,
+                           ignorar=None):
     """Raise 409 si algún tramo choca con la Sala de Juntas (lunes o reserva).
+
+    - `ignorar(reserva) -> bool`: reservas que no cuentan (las de la misma
+      serie que se van a liberar al guardar).
 
     - Una sola consulta para todos los días (una serie puede tener cientos).
     - Vacation markers (is_vacation=True) never block a slot.
@@ -193,7 +198,7 @@ async def _check_conflicts(tramos: list, uses_meeting_room: bool, exclude_activi
         res_query['activity_id'] = {'$ne': exclude_activity_id}
     por_dia = defaultdict(list)
     async for r in db.reservations.find(res_query, {'_id': 0}):
-        if r.get('status') not in ('Cancelada', 'Finalizada'):
+        if r.get('status') not in ('Cancelada', 'Finalizada') and not (ignorar and ignorar(r)):
             por_dia[r.get('date')].append(r)
     for dia, desde, hasta in tramos:
         for r in por_dia.get(dia, []):
@@ -380,35 +385,63 @@ async def create_activity(data: ActivityInput, user=Depends(get_current_user)):
     return result
 
 
-@router.put('/{activity_id}')
-async def update_activity(activity_id: str, data: ActivityInput, user=Depends(get_current_user)):
-    a = await db.activities.find_one({'id': activity_id}, {'_id': 0})
-    if not a:
-        raise HTTPException(status_code=404, detail='Actividad no encontrada')
-    date0, end0 = _rango(data, prev=a)
-    participants = await _build_participants(data.participant_ids)
-    # Repetición: None = conservar la regla que tenía; "" = dejar de repetir.
-    # (Las series viejas, un documento por fecha, no se convierten.)
-    rule = a.get('rrule') if data.rrule is None else data.rrule
-    serie = None
-    if rule and not a.get('series_id'):
-        serie = _serie(rule, date0, end0, data.start_time, data.end_time)
-        date0, end0 = serie['date'], serie['end_date']
-    # Lunes y choques de sala en cada día (y cada repetición), excluyendo esta actividad.
-    nueva = {'date': date0, 'end_date': end0, 'start_time': data.start_time, 'end_time': data.end_time,
-             'rrule': serie['rrule'] if serie else None}
-    await _check_conflicts(_tramos(nueva), data.uses_meeting_room, exclude_activity_id=activity_id)
-    # preserve existing response status
-    prev = {p['user_id']: p['status'] for p in a.get('participants', [])}
-    for p in participants:
-        if p['user_id'] in prev:
-            p['status'] = prev[p['user_id']]
-    # Field omitted (older cached client) -> keep whatever the activity already had.
-    _existing_offsets = a.get('reminder_offsets')
-    if not isinstance(_existing_offsets, list):
-        _existing_offsets = _norm_offsets(None, a.get('reminder_minutes'), DEFAULT_REMINDER_OFFSETS)
-    new_offsets = _norm_offsets(data.reminder_offsets, data.reminder_minutes, _existing_offsets)
-    updates = {
+# ── Series con RRULE: editar / eliminar por alcance ─────────────────────────
+# Al editar o eliminar una repetición se elige el alcance:
+#   esta        -> solo esa repetición. Se agrega su fecha a `exdates` de la
+#                  serie y, si se editó, se crea una actividad propia con
+#                  `serie_madre` (id de la serie) y `ocurrencia_original`.
+#   siguientes  -> la serie termina el día anterior y desde esa repetición
+#                  nace una serie nueva con los cambios.
+#   todas       -> toda la serie (si cambia el día o la regla, se descartan
+#                  las repeticiones editadas o eliminadas por separado).
+# `ocurrencia` es la fecha (YYYY-MM-DD) de la repetición que se abrió.
+ALCANCES = ('esta', 'siguientes', 'todas')
+
+
+def _alcance(alcance: str) -> str:
+    if alcance not in ALCANCES:
+        raise HTTPException(status_code=400, detail='Alcance inválido')
+    return alcance
+
+
+async def _serie_de(a: dict, ocurrencia: str = None):
+    """(serie, fecha de la repetición) si `a` pertenece a una serie con RRULE
+    (la serie misma o una repetición editada aparte); si no, (None, None)."""
+    if a.get('rrule'):
+        if not ocurrencia:  # clientes de la fase 2: la serie completa
+            return a, a['date']
+        if not rec.es_ocurrencia(a, ocurrencia):
+            raise HTTPException(status_code=404, detail='Esa repetición no existe')
+        return a, ocurrencia
+    if a.get('serie_madre'):
+        madre = await db.activities.find_one({'id': a['serie_madre']}, {'_id': 0})
+        if madre and madre.get('rrule'):
+            return madre, a['ocurrencia_original']
+    return None, None
+
+
+def _ocurrencia(madre: dict, dia: str) -> dict:
+    span = _parse_date(madre.get('end_date') or madre['date']) - _parse_date(madre['date'])
+    return {'date': dia, 'end_date': (_parse_date(dia) + span).isoformat(),
+            'start_time': madre['start_time'], 'end_time': madre['end_time']}
+
+
+def _con_estados(participants: list, previos: list) -> list:
+    """Conserva la respuesta (aceptada/rechazada) de quienes ya estaban."""
+    prev = {p['user_id']: p['status'] for p in previos or []}
+    return [{**p, 'status': prev.get(p['user_id'], p['status'])} for p in participants]
+
+
+def _offsets_de(a: dict, data) -> tuple:
+    """(recordatorios que tenía, recordatorios nuevos)."""
+    existentes = a.get('reminder_offsets')
+    if not isinstance(existentes, list):
+        existentes = _norm_offsets(None, a.get('reminder_minutes'), DEFAULT_REMINDER_OFFSETS)
+    return existentes, _norm_offsets(data.reminder_offsets, data.reminder_minutes, existentes)
+
+
+def _campos(data, date0: str, end0: str, participants: list, offsets: list) -> dict:
+    return {
         'title': data.title, 'color': data.color, 'date': date0,
         'start_time': data.start_time, 'end_time': data.end_time,
         'end_date': end0,
@@ -416,38 +449,260 @@ async def update_activity(activity_id: str, data: ActivityInput, user=Depends(ge
         'fecha_hora_fin': _fecha_hora(end0, data.end_time),
         'description': data.description or '', 'location': data.location or '',
         'participants': participants, 'uses_meeting_room': data.uses_meeting_room,
-        'reminder_offsets': new_offsets,
+        'reminder_offsets': offsets,
     }
+
+
+def _creador(madre: dict) -> dict:
+    return {'created_by': madre['created_by'], 'created_by_name': madre.get('created_by_name'),
+            'created_by_avatar': madre.get('created_by_avatar'), 'created_at': now_iso()}
+
+
+async def _borrar(ids) -> None:
+    ids = list(ids)
+    if ids:
+        await db.activities.delete_many({'id': {'$in': ids}})
+        await db.reservations.delete_many({'activity_id': {'$in': ids}})
+
+
+async def _cortar_serie(madre: dict, dia: str) -> None:
+    """La serie termina el día anterior a `dia`: regla con UNTIL, sin las
+    excepciones de ahí en adelante y sin sus reservas de sala desde `dia`."""
+    try:
+        regla = rec.cortar(madre['rrule'], (_parse_date(dia) - timedelta(days=1)).isoformat())
+    except rec.ReglaInvalida as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    span = (_parse_date(madre.get('end_date') or madre['date']) - _parse_date(madre['date'])).days
+    await db.activities.update_one({'id': madre['id']}, {'$set': {
+        'rrule': regla,
+        'serie_hasta': rec.serie_hasta(regla, madre['date'], madre['start_time'], span),
+        'exdates': [x for x in madre.get('exdates') or [] if x < dia],
+    }})
+    await db.reservations.delete_many({'activity_id': madre['id'], 'date': {'$gte': dia}})
+
+
+async def _editar_una(madre: dict, dia: str, data, user):
+    """Solo esta repetición: pasa a ser una actividad propia de la serie."""
+    occ = _ocurrencia(madre, dia)
+    date0, end0 = _rango(data, prev=occ)
+    dias_occ = {d for d, _, _ in _dias(occ['date'], occ['end_date'], occ['start_time'], occ['end_time'])}
+    # sus días de sala se liberan al guardar: no cuentan como choque
+    await _check_conflicts(_dias(date0, end0, data.start_time, data.end_time), data.uses_meeting_room,
+                           ignorar=lambda r: r.get('activity_id') == madre['id'] and r.get('date') in dias_occ)
+    participants = _con_estados(await _build_participants(data.participant_ids), madre.get('participants'))
+    existentes, offsets = _offsets_de(madre, data)
+    # Si no cambió la hora, los recordatorios ya enviados de esa repetición no se repiten.
+    enviados = []
+    if date0 == dia and data.start_time == madre['start_time'] and sorted(existentes) == sorted(offsets):
+        enviados = [int(k.split('|')[1]) for k in madre.get('reminders_sent') or []
+                    if isinstance(k, str) and k.startswith(f'{dia}|')]
+    doc = {'id': new_id(), **_campos(data, date0, end0, participants, offsets),
+           'recurrence': 'none', 'series_id': None,
+           'serie_madre': madre['id'], 'ocurrencia_original': dia,
+           'reminders_sent': enviados, **_creador(madre)}
+    await db.activities.insert_one(doc)
+    await db.activities.update_one({'id': madre['id']}, {'$addToSet': {'exdates': dia}})
+    await db.reservations.delete_many({'activity_id': madre['id'], 'date': {'$in': sorted(dias_occ)}})
+    if data.uses_meeting_room:
+        await _ensure_room_reservation(doc, user)
+    return serialize_doc(await db.activities.find_one({'id': doc['id']}, {'_id': 0}))
+
+
+async def _editar_todas(madre: dict, dia: str, visto: dict, data, user):
+    """Toda la serie. Si se movió de día la repetición abierta (`visto`: como
+    la veía el usuario), la serie se corre los mismos días."""
+    date_n, end_n = _rango(data, prev=visto)
+    corrimiento = _parse_date(date_n) - _parse_date(visto['date'])
+    span = _parse_date(end_n) - _parse_date(date_n)
+    inicio = (_parse_date(madre['date']) + corrimiento).isoformat()
+    fin = (_parse_date(inicio) + span).isoformat()
+    regla = madre['rrule'] if data.rrule is None else data.rrule
+    serie = _serie(regla, inicio, fin, data.start_time, data.end_time) if regla else None
+    if serie:
+        inicio, fin = serie['date'], serie['end_date']
+    excepciones = await db.activities.find({'serie_madre': madre['id']}, {'_id': 0}).to_list(1000)
+    ids_exc = {e['id'] for e in excepciones}
+    # Cambió el día o la regla: las repeticiones sueltas ya no corresponden.
+    reinicia = corrimiento.days != 0 or not serie or serie['rrule'] != madre['rrule']
+    exdates = [] if reinicia else list(madre.get('exdates') or [])
+    nueva = {'date': inicio, 'end_date': fin, 'start_time': data.start_time, 'end_time': data.end_time,
+             'rrule': serie['rrule'] if serie else None, 'exdates': exdates}
+    ignorados = {madre['id']} | (ids_exc if reinicia else set())
+    await _check_conflicts(_tramos(nueva), data.uses_meeting_room,
+                           ignorar=lambda r: r.get('activity_id') in ignorados)
+
+    participants = _con_estados(await _build_participants(data.participant_ids), madre.get('participants'))
+    existentes, offsets = _offsets_de(madre, data)
+    updates = _campos(data, inicio, fin, participants, offsets)
+    unset = {'reminder_minutes': '', 'reminder_sent': ''}
+    if serie:
+        updates.update({'rrule': serie['rrule'], 'serie_hasta': serie['serie_hasta'],
+                        'recurrence': 'rrule', 'exdates': exdates})
+    else:
+        updates['recurrence'] = 'none'
+        unset.update({'rrule': '', 'serie_hasta': '', 'exdates': ''})
+    if (madre['date'] != inicio or madre['start_time'] != data.start_time or reinicia
+            or sorted(existentes) != sorted(offsets)):
+        updates['reminders_sent'] = []
+    await db.activities.update_one({'id': madre['id']}, {'$set': updates, '$unset': unset})
+
+    if reinicia:
+        await _borrar(ids_exc)
+    else:
+        # Las repeticiones editadas aparte conservan su día y hora, pero toman
+        # los demás cambios.
+        for e in excepciones:
+            await db.activities.update_one({'id': e['id']}, {'$set': {
+                'title': data.title, 'color': data.color,
+                'description': data.description or '', 'location': data.location or '',
+                'participants': participants, 'reminder_offsets': offsets,
+            }})
+    saved = await db.activities.find_one({'id': madre['id']}, {'_id': 0})
+    await db.reservations.delete_many({'activity_id': madre['id']})
+    if data.uses_meeting_room:
+        await _ensure_room_reservation(saved, user)
+    return serialize_doc(saved)
+
+
+async def _editar_siguientes(madre: dict, dia: str, visto: dict, data, user):
+    """Esta y las siguientes: la serie termina el día anterior y desde esta
+    repetición nace una serie nueva con los cambios. Si se movió de día la
+    repetición abierta (`visto`), la serie nueva se corre los mismos días."""
+    date_v, end_v = _rango(data, prev=visto)
+    corrimiento = _parse_date(date_v) - _parse_date(visto['date'])
+    date_n = (_parse_date(dia) + corrimiento).isoformat()
+    end_n = (_parse_date(date_n) + (_parse_date(end_v) - _parse_date(date_v))).isoformat()
+    try:
+        misma = data.rrule is None or (bool(data.rrule) and rec.normalizar(data.rrule) == madre['rrule'])
+    except rec.ReglaInvalida as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    regla = madre['rrule'] if data.rrule is None else data.rrule
+    if regla and misma and rec.veces(madre['rrule']):
+        # "Después de N veces": la serie nueva lleva las que faltaban.
+        hechas = rec.contar_antes(madre['rrule'], madre['date'], madre['start_time'], dia)
+        regla = rec.con_veces(madre['rrule'], rec.veces(madre['rrule']) - hechas)
+    serie = _serie(regla, date_n, end_n, data.start_time, data.end_time) if regla else None
+    inicio, fin = (serie['date'], serie['end_date']) if serie else (date_n, end_n)
+    reinicia = corrimiento.days != 0 or not misma or not serie
+    excepciones = await db.activities.find(
+        {'serie_madre': madre['id'], 'ocurrencia_original': {'$gte': dia}}, {'_id': 0}).to_list(1000)
+    ids_exc = {e['id'] for e in excepciones}
+    exdates = [] if reinicia else [x for x in madre.get('exdates') or [] if x >= dia]
+    nueva = {'date': inicio, 'end_date': fin, 'start_time': data.start_time, 'end_time': data.end_time,
+             'rrule': serie['rrule'] if serie else None, 'exdates': exdates}
+    ignorados = {madre['id']} | (ids_exc if reinicia else set())
+    await _check_conflicts(_tramos(nueva), data.uses_meeting_room,
+                           ignorar=lambda r: r.get('activity_id') in ignorados)
+
+    participants = _con_estados(await _build_participants(data.participant_ids), madre.get('participants'))
+    _, offsets = _offsets_de(madre, data)
+    doc = {'id': new_id(), **_campos(data, inicio, fin, participants, offsets),
+           'recurrence': 'rrule' if serie else 'none', 'series_id': None,
+           'reminders_sent': [], **_creador(madre)}
+    if serie:
+        doc.update({'rrule': serie['rrule'], 'serie_hasta': serie['serie_hasta'], 'exdates': exdates})
+
+    await _cortar_serie(madre, dia)
+    await db.activities.insert_one(doc)
+    if reinicia:
+        await _borrar(ids_exc)
+    elif ids_exc:
+        await db.activities.update_many({'id': {'$in': list(ids_exc)}}, {'$set': {'serie_madre': doc['id']}})
+    if data.uses_meeting_room:
+        await _ensure_room_reservation(doc, user)
+    return serialize_doc(await db.activities.find_one({'id': doc['id']}, {'_id': 0}))
+
+
+async def _actualizar(a: dict, data, user):
+    """Actividad suelta, repetición editada aparte o documento de una serie vieja."""
+    date0, end0 = _rango(data, prev=a)
+    participants = await _build_participants(data.participant_ids)
+    # Repetición: None = conservar la regla que tenía; "" = dejar de repetir.
+    # (Las series viejas y las repeticiones editadas aparte no se convierten.)
+    rule = a.get('rrule') if data.rrule is None else data.rrule
+    serie = None
+    if rule and not a.get('series_id') and not a.get('serie_madre'):
+        serie = _serie(rule, date0, end0, data.start_time, data.end_time)
+        date0, end0 = serie['date'], serie['end_date']
+    # Lunes y choques de sala en cada día (y cada repetición), excluyendo esta actividad.
+    nueva = {'date': date0, 'end_date': end0, 'start_time': data.start_time, 'end_time': data.end_time,
+             'rrule': serie['rrule'] if serie else None}
+    await _check_conflicts(_tramos(nueva), data.uses_meeting_room, exclude_activity_id=a['id'])
+    # preserve existing response status
+    participants = _con_estados(participants, a.get('participants'))
+    # Field omitted (older cached client) -> keep whatever the activity already had.
+    _existing_offsets, new_offsets = _offsets_de(a, data)
+    updates = _campos(data, date0, end0, participants, new_offsets)
     unset = {'reminder_minutes': '', 'reminder_sent': ''}
     if serie:
         updates.update({'rrule': serie['rrule'], 'serie_hasta': serie['serie_hasta'], 'recurrence': 'rrule'})
     elif a.get('rrule'):
         updates['recurrence'] = 'none'
-        unset.update({'rrule': '', 'serie_hasta': ''})
+        unset.update({'rrule': '', 'serie_hasta': '', 'exdates': ''})
     # Re-arm reminders whenever the schedule, the repetition or the reminder set changes.
     if (a.get('date') != date0 or a.get('start_time') != data.start_time
             or a.get('rrule') != updates.get('rrule')
             or sorted(_existing_offsets) != sorted(new_offsets)):
         updates['reminders_sent'] = []
     await db.activities.update_one(
-        {'id': activity_id},
+        {'id': a['id']},
         {'$set': updates, '$unset': unset},
     )
-    saved = await db.activities.find_one({'id': activity_id}, {'_id': 0})
+    saved = await db.activities.find_one({'id': a['id']}, {'_id': 0})
     # Reconcile the meeting-room reservation tied to this activity.
-    await db.reservations.delete_many({'activity_id': activity_id})
+    await db.reservations.delete_many({'activity_id': a['id']})
     if data.uses_meeting_room:
         await _ensure_room_reservation(saved, user)
     return serialize_doc(saved)
 
 
-@router.delete('/{activity_id}')
-async def delete_activity(activity_id: str, user=Depends(get_current_user)):
+@router.put('/{activity_id}')
+async def update_activity(activity_id: str, data: ActivityInput, user=Depends(get_current_user),
+                          alcance: str = 'todas', ocurrencia: str = None):
     a = await db.activities.find_one({'id': activity_id}, {'_id': 0})
     if not a:
         raise HTTPException(status_code=404, detail='Actividad no encontrada')
-    await db.activities.delete_one({'id': activity_id})
-    await db.reservations.delete_many({'activity_id': activity_id})
+    _alcance(alcance)
+    madre, dia = await _serie_de(a, ocurrencia)
+    if not madre or (alcance == 'esta' and a.get('serie_madre')):
+        return await _actualizar(a, data, user)
+    if alcance == 'esta':
+        return await _editar_una(madre, dia, data, user)
+    # Lo que el usuario tenía abierto: la repetición editada aparte (con su día
+    # actual) o la repetición de la serie.
+    visto = a if a.get('serie_madre') else _ocurrencia(madre, dia)
+    if alcance == 'siguientes' and dia > madre['date']:
+        return await _editar_siguientes(madre, dia, visto, data, user)
+    return await _editar_todas(madre, dia, visto, data, user)
+
+
+@router.delete('/{activity_id}')
+async def delete_activity(activity_id: str, user=Depends(get_current_user),
+                          alcance: str = 'todas', ocurrencia: str = None):
+    a = await db.activities.find_one({'id': activity_id}, {'_id': 0})
+    if not a:
+        raise HTTPException(status_code=404, detail='Actividad no encontrada')
+    _alcance(alcance)
+    madre, dia = await _serie_de(a, ocurrencia)
+    if not madre:
+        await _borrar([activity_id])
+    elif alcance == 'esta':
+        if a.get('serie_madre'):
+            # repetición editada aparte: su fecha sigue excluida de la serie
+            await _borrar([activity_id])
+        else:
+            occ = _ocurrencia(madre, dia)
+            dias = [d for d, _, _ in _dias(occ['date'], occ['end_date'], occ['start_time'], occ['end_time'])]
+            await db.activities.update_one({'id': madre['id']}, {'$addToSet': {'exdates': dia}})
+            await db.reservations.delete_many({'activity_id': madre['id'], 'date': {'$in': dias}})
+    elif alcance == 'siguientes' and dia > madre['date']:
+        await _cortar_serie(madre, dia)
+        siguientes = await db.activities.find(
+            {'serie_madre': madre['id'], 'ocurrencia_original': {'$gte': dia}}, {'_id': 0, 'id': 1}).to_list(1000)
+        await _borrar(e['id'] for e in siguientes)
+    else:
+        todas = await db.activities.find({'serie_madre': madre['id']}, {'_id': 0, 'id': 1}).to_list(1000)
+        await _borrar([madre['id']] + [e['id'] for e in todas])
     return {'message': 'Actividad eliminada'}
 
 
@@ -458,14 +713,23 @@ async def respond_participation(activity_id: str, data: RespondInput, user=Depen
         raise HTTPException(status_code=404, detail='Actividad no encontrada')
     if data.response not in ('accepted', 'rejected'):
         raise HTTPException(status_code=400, detail='Respuesta inválida')
-    found = False
-    for p in a.get('participants', []):
-        if p['user_id'] == user['id']:
-            p['status'] = data.response
-            found = True
-    if not found:
+    if not any(p['user_id'] == user['id'] for p in a.get('participants', [])):
         raise HTTPException(status_code=403, detail='No eres participante de esta actividad')
-    await db.activities.update_one({'id': activity_id}, {'$set': {'participants': a['participants']}})
+    # En una serie con RRULE la respuesta aplica a toda la serie, incluidas
+    # las repeticiones editadas aparte.
+    madre_id = a['id'] if a.get('rrule') else a.get('serie_madre')
+    docs = [a]
+    if madre_id:
+        docs = await db.activities.find({'$or': [{'id': madre_id}, {'serie_madre': madre_id}]},
+                                        {'_id': 0}).to_list(1000)
+    for d in docs:
+        parts = d.get('participants', [])
+        if not any(p['user_id'] == user['id'] for p in parts):
+            continue
+        for p in parts:
+            if p['user_id'] == user['id']:
+                p['status'] = data.response
+        await db.activities.update_one({'id': d['id']}, {'$set': {'participants': parts}})
     if data.response == 'rejected':
         await create_notification(a['created_by'], 'participacion_rechazada',
                                   f"{user['name']} rechazó su participación en '{a['title']}'",

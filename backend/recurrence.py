@@ -105,17 +105,65 @@ def serie_hasta(rule: str, date: str, start_time: str, span_days: int):
     return (ultima.date() + timedelta(days=span_days)).isoformat()
 
 
-def fechas(rule: str, date: str, start_time: str, desde: date_cls, hasta: date_cls, limite: int = 1000) -> list:
-    """Fechas de inicio (date) de las repeticiones que empiezan entre desde y hasta."""
+def fechas(rule: str, date: str, start_time: str, desde: date_cls, hasta: date_cls,
+           limite: int = 1000, excluir=None) -> list:
+    """Fechas de inicio (date) de las repeticiones que empiezan entre desde y
+    hasta, sin las de `excluir` (exdates: repeticiones eliminadas o editadas
+    por separado)."""
     rr = regla(rule, date, start_time)
     a = datetime.combine(desde, datetime.min.time())
     b = datetime.combine(hasta, datetime.max.time())
+    fuera = set(excluir or ())
     out = []
     for d in rr.xafter(a, inc=True):
         if d > b or len(out) >= limite:
             break
-        out.append(d.date())
+        if d.date().isoformat() not in fuera:
+            out.append(d.date())
     return out
+
+
+def es_ocurrencia(activity: dict, dia: str) -> bool:
+    """¿`dia` (YYYY-MM-DD) es una repetición vigente de la serie?"""
+    try:
+        d = datetime.strptime(dia, '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return False
+    return bool(fechas(activity['rrule'], activity['date'], activity['start_time'], d, d,
+                       excluir=activity.get('exdates')))
+
+
+def contar_antes(rule: str, date: str, start_time: str, dia: str) -> int:
+    """Cuántas repeticiones de la regla empiezan antes de `dia` (para COUNT)."""
+    limite = datetime.strptime(dia, '%Y-%m-%d')
+    n = 0
+    for d in regla(rule, date, start_time):
+        if d >= limite:
+            break
+        n += 1
+    return n
+
+
+def veces(rule: str):
+    """COUNT de la regla (int) o None si termina por fecha o no termina."""
+    c = _partes(rule).get('COUNT')
+    return int(c) if c else None
+
+
+def cortar(rule: str, hasta: str) -> str:
+    """La regla terminando el día `hasta` (YYYY-MM-DD) inclusive."""
+    p = _partes(rule)
+    p.pop('COUNT', None)
+    p['UNTIL'] = hasta.replace('-', '') + 'T235959'
+    return normalizar(';'.join(f'{k}={v}' for k, v in p.items()))
+
+
+def con_veces(rule: str, veces: int) -> str:
+    """La regla con COUNT=veces (mínimo 1)."""
+    p = _partes(rule)
+    p.pop('UNTIL', None)
+    p['COUNT'] = str(max(1, veces))
+    return normalizar(';'.join(f'{k}={v}' for k, v in p.items()))
 
 
 def choca_consigo(rule: str, date: str, start_time: str, end_time: str, span_days: int) -> bool:
@@ -137,7 +185,7 @@ def choca_consigo(rule: str, date: str, start_time: str, end_time: str, span_day
 
 def ocurrencias(activity: dict, desde: str, hasta: str) -> list:
     """Repeticiones de una actividad con `rrule` que tocan [desde, hasta]
-    (YYYY-MM-DD). Cada una es una copia del documento con sus propias fechas;
+    (YYYY-MM-DD), sin las de `exdates`. Cada una es una copia del documento con sus propias fechas;
     `id` sigue siendo el de la serie y `serie_date`/`serie_end_date` guardan el
     rango de la primera repetición (para editar la serie)."""
     d0 = datetime.strptime(activity['date'], '%Y-%m-%d').date()
@@ -146,7 +194,8 @@ def ocurrencias(activity: dict, desde: str, hasta: str) -> list:
     a = datetime.strptime(desde, '%Y-%m-%d').date()
     b = datetime.strptime(hasta, '%Y-%m-%d').date()
     out = []
-    for f in fechas(activity['rrule'], activity['date'], activity['start_time'], a - span, b):
+    for f in fechas(activity['rrule'], activity['date'], activity['start_time'], a - span, b,
+                    excluir=activity.get('exdates')):
         fin = f + span
         occ = dict(activity)
         occ.update({

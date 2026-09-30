@@ -90,7 +90,9 @@ def _pendientes(sueltas, series, now, horizon):
             yield a, start, (lambda off: off)
     for a in series:
         try:
-            dias = rec.fechas(a["rrule"], a["date"], a["start_time"], now.date(), horizon.date())
+            # sin las repeticiones eliminadas o editadas aparte (esas avisan por su cuenta)
+            dias = rec.fechas(a["rrule"], a["date"], a["start_time"], now.date(), horizon.date(),
+                              excluir=a.get("exdates"))
             hh, mm = map(int, a["start_time"].split(":"))
         except Exception as e:  # pragma: no cover
             logger.warning(f"reminder: regla inválida en {a.get('id')}: {e}")
