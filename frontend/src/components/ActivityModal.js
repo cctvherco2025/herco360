@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Check, Trash2, Users as UsersIcon, AlertTriangle } from 'lucide-react';
+import { Check, Trash2, AlertTriangle } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { ACTIVITY_COLORS, DEFAULT_ACTIVITY_COLOR } from '@/lib/constants';
@@ -12,8 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import ParticipantPicker from '@/components/ParticipantPicker';
 
 const RECURRENCE_OPTIONS = [
   { value: 'none', label: 'No se repite' },
@@ -89,25 +88,10 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   }, [open, activity, defaultDate, defaultTime, user]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const toggleParticipant = (id) => set('participant_ids', form.participant_ids.includes(id)
-    ? form.participant_ids.filter((x) => x !== id) : [...form.participant_ids, id]);
 
-  // Group selectable users by área so a whole team can be added at once.
-  const groupedUsers = users.reduce((acc, u) => {
-    const area = (u.area || '').trim() || 'Sin área';
-    (acc[area] = acc[area] || []).push(u);
-    return acc;
-  }, {});
-  const areaIds = (area) => groupedUsers[area].map((u) => u.id);
-  const areaAllSelected = (area) => groupedUsers[area].every((u) => form.participant_ids.includes(u.id));
-  const toggleArea = (area) => {
-    const ids = areaIds(area);
-    if (areaAllSelected(area)) {
-      set('participant_ids', form.participant_ids.filter((id) => !ids.includes(id)));
-    } else {
-      set('participant_ids', Array.from(new Set([...form.participant_ids, ...ids])));
-    }
-  };
+  // ¿Está abierta la lista del buscador de participantes? Si lo está, Escape
+  // solo la cierra (no cierra el modal completo).
+  const participantsOpenRef = useRef(false);
 
   // Mondays the meeting room is reserved for Dirección Comercial.
   const MONDAY_MSG = 'Los lunes la Sala de Juntas está reservada para Dirección Comercial';
@@ -156,11 +140,11 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
     } finally { setSaving(false); }
   };
 
-  const selectedUsers = users.filter((u) => form.participant_ids.includes(u.id));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[540px] rounded-[22px] p-0 overflow-hidden max-h-[92vh] flex flex-col">
+      <DialogContent className="sm:max-w-[540px] rounded-[22px] p-0 overflow-hidden max-h-[92vh] flex flex-col"
+        onEscapeKeyDown={(e) => { if (participantsOpenRef.current) e.preventDefault(); }}>
         <DialogHeader className="px-6 pt-6 pb-2">
           <DialogTitle className="font-heading text-xl">{!isEdit ? 'Nueva actividad' : (readOnly ? 'Detalle de actividad' : 'Editar actividad')}</DialogTitle>
         </DialogHeader>
@@ -216,61 +200,15 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
 
             <div className="space-y-1.5">
               <Label>Participantes</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button type="button" data-testid="activity-form-participants" className="w-full min-h-11 flex items-center gap-2 flex-wrap rounded-xl border bg-card px-3 py-2 text-sm text-left hover:bg-muted/50">
-                    <UsersIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                    {selectedUsers.length === 0 && <span className="text-muted-foreground">Añadir participantes</span>}
-                    {selectedUsers.map((u) => (
-                      <span key={u.id} className="inline-flex items-center gap-1 rounded-full bg-[rgba(0,165,223,0.12)] text-[#1e395e] dark:text-[#3cbef6] px-2 py-0.5 text-xs">
-                        {u.name}
-                      </span>
-                    ))}
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  side="bottom"
-                  sideOffset={6}
-                  onWheel={(e) => e.stopPropagation()}
-                  onTouchMove={(e) => e.stopPropagation()}
-                  className="w-[--radix-popover-trigger-width] max-h-[300px] overflow-y-auto overscroll-contain touch-pan-y p-1.5 rounded-2xl"
-                >
-                  {Object.keys(groupedUsers).sort((a, b) => a.localeCompare(b)).map((area) => {
-                    const allSel = areaAllSelected(area);
-                    const selCount = groupedUsers[area].filter((u) => form.participant_ids.includes(u.id)).length;
-                    return (
-                      <div key={area} className="mb-1.5 last:mb-0">
-                        <div className="flex items-center justify-between gap-2 px-2 py-1.5 sticky top-0 bg-popover/95 backdrop-blur z-10">
-                          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground truncate">
-                            {area}{selCount > 0 && <span className="text-[#00a5df] normal-case"> · {selCount}</span>}
-                          </span>
-                          <button type="button" onClick={() => toggleArea(area)}
-                            className="text-[11px] font-medium text-[#00a5df] hover:underline shrink-0"
-                            data-testid="participants-area-toggle">
-                            {allSel ? 'Quitar todos' : 'Seleccionar todos'}
-                          </button>
-                        </div>
-                        {groupedUsers[area].map((u) => {
-                          const active = form.participant_ids.includes(u.id);
-                          return (
-                            <button key={u.id} type="button" onClick={() => toggleParticipant(u.id)}
-                              className="w-full flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-muted text-left">
-                              <Avatar className="h-7 w-7"><AvatarImage src={u.avatar_url} /><AvatarFallback>{u.name?.[0]}</AvatarFallback></Avatar>
-                              <span className="flex-1 min-w-0">
-                                <span className="block text-sm truncate">{u.name}</span>
-                                <span className="block text-xs text-muted-foreground truncate">{u.position}</span>
-                              </span>
-                              {active && <Check className="h-4 w-4 text-[#00a5df]" />}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                  {users.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin usuarios</p>}
-                </PopoverContent>
-              </Popover>
+              {/* Buscador de participantes: el valor sigue siendo form.participant_ids,
+                  que se envía igual que antes al crear/editar la actividad. */}
+              <ParticipantPicker
+                users={users}
+                value={form.participant_ids}
+                onChange={(ids) => set('participant_ids', ids)}
+                disabled={readOnly}
+                onOpenChange={(o) => { participantsOpenRef.current = o; }}
+              />
             </div>
 
             <div className="flex items-center justify-between rounded-xl border bg-card px-4 py-3">
