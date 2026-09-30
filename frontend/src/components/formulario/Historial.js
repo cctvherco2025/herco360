@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { Search, Eye, Store, Calendar, User as UserIcon, ClipboardList, Download, Loader2, Trash2 } from 'lucide-react';
+import {
+  Search, Eye, Store, Calendar, User as UserIcon, ClipboardList, Download, Loader2, Trash2,
+  ChevronDown, ChevronsUpDown, ChevronsDownUp,
+} from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { ymd, fullDateEs, capitalize } from '@/lib/time';
+import { ymd, fullDateEs, capitalize, parseApiDate, MESES } from '@/lib/time';
+import { Button } from '@/components/ui/button';
 import { FLOS_SUCURSALES, flosTone, FLOS_TONE_COLOR, summaryFromAudit } from '@/lib/flosSchema';
 import { generateFlosPdf } from '@/lib/flosPdf';
 import { Input } from '@/components/ui/input';
@@ -95,6 +99,77 @@ function AuthedImg({ url, className, onClick }) {
   }
   if (!src) return <div className={`${className} bg-muted animate-pulse`} />;
   return <img src={src} alt="Evidencia" className={className} onClick={onClick} />;
+}
+
+/* ─────────── Agrupación del historial: Mes → Tienda → auditorías ───────────
+   Mes de una auditoría: su `fecha` ya es el día de calendario que eligió el
+   auditor ("2026-09-30"), sin hora, así que sus primeros 7 caracteres son el
+   mes exacto y una auditoría de fin de mes nunca cae en el mes siguiente.
+   Solo si faltara `fecha` se usa la hora de creación convertida a la hora de
+   Honduras. */
+const TZ_HN = 'America/Tegucigalpa';
+
+function mesKeyDeFecha(date) {
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: TZ_HN, year: 'numeric', month: '2-digit' }).formatToParts(date);
+  return `${p.find((x) => x.type === 'year').value}-${p.find((x) => x.type === 'month').value}`;
+}
+
+function mesDeAuditoria(r) {
+  if (/^\d{4}-\d{2}/.test(r.fecha || '')) return r.fecha.slice(0, 7);
+  const d = parseApiDate(r.created_at);
+  return Number.isNaN(d.getTime()) ? 'sin-fecha' : mesKeyDeFecha(d);
+}
+
+const mesActualKey = () => mesKeyDeFecha(new Date());
+
+function mesLabel(key) {
+  const m = /^(\d{4})-(\d{2})$/.exec(key);
+  if (!m) return 'Sin fecha';
+  return `${capitalize(MESES[parseInt(m[2], 10) - 1])} ${m[1]}`;
+}
+
+const promedio = (list) => Math.round(list.reduce((s, r) => s + (Number(r.percent) || 0), 0) / list.length);
+// fecha descendente; mismo día: la registrada más tarde primero
+const porFechaDesc = (a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.created_at || '').localeCompare(a.created_at || '');
+
+// [{ key, label, total, promedio, tiendas: [{ nombre, auditorias, promedio }] }]
+// Meses del más reciente al más antiguo; tiendas en orden alfabético;
+// auditorías de cada tienda por fecha descendente.
+function agruparPorMes(rows) {
+  const meses = new Map();
+  rows.forEach((r) => {
+    const k = mesDeAuditoria(r);
+    if (!meses.has(k)) meses.set(k, []);
+    meses.get(k).push(r);
+  });
+  return [...meses.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([key, list]) => {
+      const tiendas = new Map();
+      list.forEach((r) => {
+        const t = (r.sucursal || '').trim() || 'Sin sucursal';
+        if (!tiendas.has(t)) tiendas.set(t, []);
+        tiendas.get(t).push(r);
+      });
+      return {
+        key, label: mesLabel(key), total: list.length, promedio: promedio(list),
+        tiendas: [...tiendas.entries()]
+          .sort((a, b) => a[0].localeCompare(b[0], 'es'))
+          .map(([nombre, auditorias]) => ({ nombre, auditorias: [...auditorias].sort(porFechaDesc), promedio: promedio(auditorias) })),
+      };
+    });
+}
+
+// Badge de promedio con el mismo color que los porcentajes: verde ≥90,
+// naranja 75–89, rojo <75 (flosTone).
+function PromedioChip({ pct, prefix = 'Prom.', className = '' }) {
+  const t = flosTone(pct);
+  return (
+    <span className={`text-xs font-bold rounded-full px-2 py-0.5 whitespace-nowrap ${className}`}
+      style={{ color: FLOS_TONE_COLOR[t], background: `${FLOS_TONE_COLOR[t]}1f` }}>
+      {prefix} {pct}%
+    </span>
+  );
 }
 
 function PercentChip({ pct }) {
@@ -252,11 +327,67 @@ export default function Historial({ refreshKey }) {
 
   useEffect(() => { load(); }, [load, refreshKey]);
 
+  // Los filtros (Desde/Hasta/Sucursal en el servidor, búsqueda aquí) se
+  // aplican ANTES de agrupar: meses o tiendas sin resultados no aparecen.
   const filtered = rows.filter((r) => {
     const s = q.trim().toLowerCase();
     if (!s) return true;
     return [r.sucursal, r.linea, r.auditor_name].filter(Boolean).some((v) => v.toLowerCase().includes(s));
   });
+  const grupos = agruparPorMes(filtered);
+
+  // Meses abiertos: por defecto solo el mes actual. Se guarda por mes (no se
+  // reinicia al cambiar filtros): si un mes desaparece por un filtro y vuelve,
+  // recupera cómo estaba.
+  const [abiertos, setAbiertos] = useState(() => new Set([mesActualKey()]));
+  const toggleMes = (key) => setAbiertos((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  const expandirTodo = () => setAbiertos((s) => new Set([...s, ...grupos.map((g) => g.key)]));
+  const colapsarTodo = () => setAbiertos(new Set());
+
+  // Tarjeta de una auditoría: igual que antes, pero como la tienda ya está en
+  // el subtítulo del bloque, aquí solo va la línea.
+  const renderAuditoria = (r) => (
+    <motion.div key={r.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+      role="button" tabIndex={0} onClick={() => setOpenId(r.id)} data-testid="flos-history-row"
+      className="w-full flex items-center gap-2 sm:gap-3 rounded-[16px] bg-card border shadow-card p-3 sm:p-4 text-left hover:shadow-cardmd transition-shadow cursor-pointer">
+      <span className="shrink-0"><PercentChip pct={r.percent} /></span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">{r.linea || 'Sin línea'}</p>
+        {/* en celular la fecha va corta (29/09/2026) y los datos bajan de línea si no caben */}
+        <p className="text-xs text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+          <span className="flex items-center gap-1 whitespace-nowrap">
+            <Calendar className="h-3 w-3" />
+            <span className="sm:hidden">{(r.fecha || '').split('-').reverse().join('/')}</span>
+            <span className="hidden sm:inline">{capitalize(fullDateEs(r.fecha))}</span>
+          </span>
+          <span className="flex items-center gap-1 min-w-0"><UserIcon className="h-3 w-3 shrink-0" /><span className="truncate">{r.auditor_name}</span></span>
+        </p>
+      </div>
+      <span className="text-sm text-muted-foreground shrink-0 hidden sm:inline">{r.total_score}/{r.total_max} pts</span>
+      {/* Acciones en el mismo orden en todos los tamaños: descargar,
+          eliminar, ver. Área táctil de 36×36 px (h-9 w-9). */}
+      <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+        <button onClick={(e) => quickDownload(e, r.id)} disabled={exportingId === r.id} title="Descargar PDF" aria-label="Descargar PDF"
+          data-testid="flos-history-quick-download"
+          className="h-9 w-9 grid place-items-center rounded-lg hover:bg-muted text-muted-foreground disabled:opacity-50">
+          {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+        </button>
+        {canDelete(r) && (
+          <button onClick={(e) => { e.stopPropagation(); setConfirmDel(r); }} disabled={deletingId === r.id} title="Eliminar auditoría" aria-label="Eliminar auditoría"
+            data-testid="flos-history-delete-row"
+            className="h-9 w-9 grid place-items-center rounded-lg hover:bg-[rgba(220,38,38,0.08)] text-muted-foreground hover:text-[#dc2626] disabled:opacity-50 transition-colors">
+            {deletingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          </button>
+        )}
+        {/* mismo detalle que al tocar la fila */}
+        <button onClick={(e) => { e.stopPropagation(); setOpenId(r.id); }} title="Ver auditoría" aria-label="Ver auditoría"
+          data-testid="flos-history-view"
+          className="h-9 w-9 grid place-items-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground">
+          <Eye className="h-4 w-4" />
+        </button>
+      </div>
+    </motion.div>
+  );
 
   return (
     <div>
@@ -299,53 +430,74 @@ export default function Historial({ refreshKey }) {
         </div>
       )}
 
-      <div className="space-y-2">
-        {filtered.map((r) => (
-          <motion.div key={r.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-            role="button" tabIndex={0} onClick={() => setOpenId(r.id)} data-testid="flos-history-row"
-            className="w-full flex items-center gap-2 sm:gap-3 rounded-[16px] bg-card border shadow-card p-3 sm:p-4 text-left hover:shadow-cardmd transition-shadow cursor-pointer">
-            <span className="shrink-0"><PercentChip pct={r.percent} /></span>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium flex items-center gap-1.5 min-w-0">
-                <Store className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                <span className="truncate">{r.sucursal} <span className="text-muted-foreground">· {r.linea}</span></span>
-              </p>
-              {/* en celular la fecha va corta (29/09/2026) y los datos bajan de línea si no caben */}
-              <p className="text-xs text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                <span className="flex items-center gap-1 whitespace-nowrap">
-                  <Calendar className="h-3 w-3" />
-                  <span className="sm:hidden">{(r.fecha || '').split('-').reverse().join('/')}</span>
-                  <span className="hidden sm:inline">{capitalize(fullDateEs(r.fecha))}</span>
-                </span>
-                <span className="flex items-center gap-1 min-w-0"><UserIcon className="h-3 w-3 shrink-0" /><span className="truncate">{r.auditor_name}</span></span>
-              </p>
+      {/* ── Historial agrupado: Mes (desplegable) → Tienda (subtítulo fijo) → auditorías ── */}
+      {!loading && grupos.length > 0 && (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <p className="text-sm text-muted-foreground" data-testid="flos-history-total">
+              <span className="font-semibold text-foreground">{filtered.length}</span> auditoría{filtered.length === 1 ? '' : 's'}
+            </p>
+            <div className="flex items-center gap-1">
+              <Button type="button" variant="ghost" size="sm" className="h-8 rounded-lg text-muted-foreground" onClick={expandirTodo} data-testid="flos-history-expand-all">
+                <ChevronsUpDown className="h-3.5 w-3.5 mr-1.5" /> Expandir todo
+              </Button>
+              <Button type="button" variant="ghost" size="sm" className="h-8 rounded-lg text-muted-foreground" onClick={colapsarTodo} data-testid="flos-history-collapse-all">
+                <ChevronsDownUp className="h-3.5 w-3.5 mr-1.5" /> Colapsar todo
+              </Button>
             </div>
-            <span className="text-sm text-muted-foreground shrink-0 hidden sm:inline">{r.total_score}/{r.total_max} pts</span>
-            {/* Acciones en el mismo orden en todos los tamaños: descargar,
-                eliminar, ver. Área táctil de 36×36 px (h-9 w-9). */}
-            <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
-              <button onClick={(e) => quickDownload(e, r.id)} disabled={exportingId === r.id} title="Descargar PDF" aria-label="Descargar PDF"
-                data-testid="flos-history-quick-download"
-                className="h-9 w-9 grid place-items-center rounded-lg hover:bg-muted text-muted-foreground disabled:opacity-50">
-                {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              </button>
-              {canDelete(r) && (
-                <button onClick={(e) => { e.stopPropagation(); setConfirmDel(r); }} disabled={deletingId === r.id} title="Eliminar auditoría" aria-label="Eliminar auditoría"
-                  data-testid="flos-history-delete-row"
-                  className="h-9 w-9 grid place-items-center rounded-lg hover:bg-[rgba(220,38,38,0.08)] text-muted-foreground hover:text-[#dc2626] disabled:opacity-50 transition-colors">
-                  {deletingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                </button>
-              )}
-              {/* mismo detalle que al tocar la fila */}
-              <button onClick={(e) => { e.stopPropagation(); setOpenId(r.id); }} title="Ver auditoría" aria-label="Ver auditoría"
-                data-testid="flos-history-view"
-                className="h-9 w-9 grid place-items-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground">
-                <Eye className="h-4 w-4" />
-              </button>
-            </div>
-          </motion.div>
-        ))}
-      </div>
+          </div>
+
+          <div className="space-y-3">
+            {grupos.map((g) => {
+              const abierto = abiertos.has(g.key);
+              return (
+                <section key={g.key} className="rounded-[18px] bg-card border shadow-card overflow-hidden" data-testid="flos-history-month">
+                  {/* Encabezado del mes: fondo suave, texto grande, flecha que rota */}
+                  <button type="button" onClick={() => toggleMes(g.key)} aria-expanded={abierto}
+                    className="w-full flex items-center gap-3 px-4 sm:px-5 py-3.5 text-left bg-[rgba(0,165,223,0.07)] dark:bg-[rgba(60,190,246,0.10)] hover:bg-[rgba(0,165,223,0.12)] dark:hover:bg-[rgba(60,190,246,0.15)] transition-colors"
+                    data-testid="flos-history-month-toggle">
+                    <motion.span animate={{ rotate: abierto ? 180 : 0 }} transition={{ duration: 0.2 }} className="shrink-0 text-[#00a5df]">
+                      <ChevronDown className="h-5 w-5" />
+                    </motion.span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block font-heading text-base sm:text-lg font-semibold leading-tight">{g.label}</span>
+                      <span className="block text-xs text-muted-foreground mt-0.5">
+                        {g.total} auditoría{g.total === 1 ? '' : 's'} · {g.tiendas.length} tienda{g.tiendas.length === 1 ? '' : 's'}
+                      </span>
+                    </span>
+                    <PromedioChip pct={g.promedio} className="shrink-0 text-sm px-2.5 py-1" />
+                  </button>
+
+                  <AnimatePresence initial={false}>
+                    {abierto && (
+                      <motion.div key="contenido"
+                        initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25, ease: 'easeInOut' }} className="overflow-hidden">
+                        <div className="p-3 sm:p-4 space-y-3">
+                          {g.tiendas.map((t) => (
+                            // Bloque de tienda: barra lateral celeste y fondo gris muy claro
+                            <div key={t.nombre} className="rounded-[14px] border-l-4 border-l-[#00a5df] bg-muted/40 dark:bg-muted/25 p-2.5 sm:p-3" data-testid="flos-history-store">
+                              <div className="flex items-center gap-2 px-1 pb-2.5">
+                                <Store className="h-4 w-4 text-[#00a5df] shrink-0" />
+                                <span className="font-semibold text-sm truncate">{t.nombre}</span>
+                                <span className="text-xs text-muted-foreground shrink-0">
+                                  · {t.auditorias.length} auditoría{t.auditorias.length === 1 ? '' : 's'}
+                                </span>
+                                <PromedioChip pct={t.promedio} className="ml-auto shrink-0" />
+                              </div>
+                              <div className="space-y-2">{t.auditorias.map(renderAuditoria)}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </section>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       <DetailDialog id={openId} onClose={() => setOpenId(null)} />
 
