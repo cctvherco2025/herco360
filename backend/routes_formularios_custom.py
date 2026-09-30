@@ -36,6 +36,7 @@ from core import (db, get_current_user, serialize_doc, new_id, now_iso, can_mana
                   es_jefe_tienda, es_gerente_tienda, es_coordinador_tienda, es_revisor_tienda,
                   tienda_promos)
 from models import CustomFormInput
+import promo_analisis
 from notifications import create_notification
 import promo_tareas
 import promo_plazos
@@ -903,8 +904,19 @@ async def get_report(form_id: str, user=Depends(get_current_user)):
     form = await _get_form_or_404(form_id)
     if not _sees_all_responses(user, form):
         raise HTTPException(status_code=403, detail='No tienes acceso al reporte de este formulario')
+    reporte = await _construir_reporte(form)
+    # "¿Cómo vamos?": resumen, comparación con el mes anterior, rankings y calidad
+    if (form.get('kind') or 'generic') == 'promociones':
+        reporte['analisis'] = await promo_analisis.analisis(form, reporte, _construir_reporte)
+    return reporte
+
+
+async def _construir_reporte(form: dict) -> dict:
+    """Reporte de una publicación (con tareas o del flujo viejo). Separado del
+    endpoint para poder calcular también el del mes anterior."""
     if form.get('flujo_tareas'):
         return await _reporte_por_tareas(form)
+    form_id = form['id']
 
     assigned_ids = list(dict.fromkeys(form.get('audiencia_resueltos') or []))
     assigned_users = []

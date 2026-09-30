@@ -5,6 +5,7 @@ import api from '@/lib/api';
 import { ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { EstadoTarea, estadoVisible } from '@/components/promociones/PromoRevision';
+import PromoComoVamos from '@/components/promociones/PromoComoVamos';
 
 // Publicaciones con tareas: cada celda es una tienda × categoría con su estado.
 function Matriz({ report }) {
@@ -122,6 +123,8 @@ export default function PromoResultados({ formId }) {
 
   return (
     <div className="space-y-4">
+      <PromoComoVamos analisis={report.analisis} />
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Kpi icon={CheckCircle2} label="Cumplimiento general" value={kpis.cumplimiento_general !== null ? `${kpis.cumplimiento_general}%` : '—'}
           sub={report.flujo_tareas ? `${kpis.respondieron}/${kpis.asignados} categorías contestadas` : `${kpis.respondieron}/${kpis.asignados} respondieron`}
