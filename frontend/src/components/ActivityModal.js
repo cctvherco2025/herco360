@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import ParticipantPicker from '@/components/ParticipantPicker';
 import RangeDatePicker from '@/components/RangeDatePicker';
@@ -39,6 +40,8 @@ function readOffsets(activity) {
   }
   return [...DEFAULT_REMINDERS];
 }
+
+const TODO_EL_DIA = { start: '08:00', end: '18:00' };
 
 const addHour = (t) => {
   const [h, m] = (t || '09:00').split(':').map(Number);
@@ -78,6 +81,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
         const ini = activity.date;
         const fin = activity.end_date || activity.date;
         setVariosDias(fin !== ini);
+        setTodoElDia(activity.start_time === TODO_EL_DIA.start && activity.end_time === TODO_EL_DIA.end);
         const simple = activity.rrule && opcionesRepeticion(ini).find((o) => o.regla === activity.rrule);
         setRepKey(!activity.rrule ? 'none' : simple ? simple.key : 'custom');
         setReglaCustom(activity.rrule && !simple ? activity.rrule : '');
@@ -92,6 +96,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
         });
       } else {
         setVariosDias(false);
+        setTodoElDia(false);
         setRepKey('none');
         setReglaCustom('');
         setForm(empty(defaultDate, defaultTime));
@@ -110,6 +115,13 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   // En modo varios días "Inicio" es la hora del primer día y "Fin" la del
   // último. Una sola actividad con su rango (date → end_date).
   const [variosDias, setVariosDias] = useState(false);
+  // "Todo el día": de 8:00 a 18:00 (en varios días, 8:00 del primero a 18:00
+  // del último); las horas quedan fijas mientras esté marcado.
+  const [todoElDia, setTodoElDia] = useState(false);
+  const marcarTodoElDia = (v) => {
+    setTodoElDia(v);
+    if (v) setForm((f) => ({ ...f, start_time: TODO_EL_DIA.start, end_time: TODO_EL_DIA.end }));
+  };
   const [abrirRango, setAbrirRango] = useState(false);
   const activarVariosDias = () => {
     setVariosDias(true);
@@ -345,13 +357,19 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
                 </div>
                 <div className="space-y-1.5 min-w-0">
                   <Label className="flex h-5 items-center">Inicio</Label>
-                  <Input type="time" value={form.start_time} onChange={(e) => set('start_time', e.target.value)} className="h-11" />
+                  <Input type="time" value={form.start_time} onChange={(e) => set('start_time', e.target.value)} disabled={todoElDia} className="h-11" />
                 </div>
                 <div className="space-y-1.5 min-w-0">
                   <Label className="flex h-5 items-center">Fin</Label>
-                  <Input type="time" value={form.end_time} onChange={(e) => set('end_time', e.target.value)} className="h-11" />
+                  <Input type="time" value={form.end_time} onChange={(e) => set('end_time', e.target.value)} disabled={todoElDia} className="h-11" />
                 </div>
               </div>
+              {!readOnly && (
+                <label className="mt-2.5 inline-flex items-center gap-2 text-sm cursor-pointer select-none" data-testid="activity-form-allday">
+                  <Checkbox checked={todoElDia} onCheckedChange={(v) => marcarTodoElDia(!!v)} />
+                  Todo el día <span className="text-xs text-muted-foreground">(8:00 a. m. a 6:00 p. m.)</span>
+                </label>
+              )}
               {horaInvalida && (
                 <p className="text-xs text-[#dc2626] mt-1.5" data-testid="activity-form-time-error">La hora de fin debe ser mayor a la de inicio</p>
               )}
