@@ -80,6 +80,8 @@ function GrupoCard({ grupo, usersById, onEdit, onDelete }) {
       </div>
       <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-t">
         <span className="text-xs text-muted-foreground">{integrantes.length} integrante{integrantes.length === 1 ? '' : 's'}</span>
+        {/* Editar / Eliminar: solo quien lo creó y admins (lo decide el servidor) */}
+        {grupo.puede_editar && (
         <div className="flex items-center gap-1">
           <button onClick={() => onEdit(grupo)} title="Editar grupo" aria-label="Editar grupo"
             className="h-8 w-8 grid place-items-center rounded-lg text-muted-foreground hover:text-[#1e395e] dark:hover:text-[#3cbef6] hover:bg-muted" data-testid="group-edit">
@@ -90,12 +92,15 @@ function GrupoCard({ grupo, usersById, onEdit, onDelete }) {
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
+        )}
       </div>
     </div>
   );
 }
 
-// Sección "Grupos (N)" de la pantalla Usuarios (solo quien administra usuarios)
+// Sección "Grupos (N)" de la pantalla Usuarios. Cada usuario ve solo los
+// grupos donde es integrante, los que creó (o todos si es admin): el servidor
+// ya los filtra.
 export function GruposSection({ grupos, usuarios, onNuevo, onEditar, onEliminado }) {
   const usersById = useMemo(() => new Map(usuarios.map((u) => [u.id, u])), [usuarios]);
   const [aEliminar, setAEliminar] = useState(null);

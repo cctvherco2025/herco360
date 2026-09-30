@@ -128,14 +128,15 @@ export default function Usuarios() {
           <h1 className="font-heading text-2xl sm:text-3xl font-semibold">Usuarios</h1>
           <p className="text-muted-foreground text-sm mt-0.5">{isAdmin ? 'Crea, aprueba y administra el equipo' : 'Directorio del equipo HERCO'}</p>
         </div>
-        {isAdmin && (
-          <div className="flex flex-wrap items-center gap-2">
-            <CrearGrupoButton onClick={() => abrirGrupo()} />
+        {/* Crear grupo: cualquier usuario. Crear usuario: solo admin. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <CrearGrupoButton onClick={() => abrirGrupo()} />
+          {isAdmin && (
             <Button onClick={openCreate} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="create-user-button">
               <Plus className="h-4 w-4 mr-1.5" /> Crear usuario
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {isAdmin && (
@@ -168,11 +169,10 @@ export default function Usuarios() {
         </motion.div>
       )}
 
-      {/* Grupos: entre Solicitudes pendientes y Equipo (solo quien administra usuarios) */}
-      {isAdmin && (
-        <GruposSection grupos={grupos} usuarios={approved}
-          onNuevo={() => abrirGrupo()} onEditar={(g) => abrirGrupo(g)} onEliminado={loadGrupos} />
-      )}
+      {/* Grupos: entre Solicitudes pendientes y Equipo. Cada quien ve los suyos
+          (integrante o creador; admin ve todos). */}
+      <GruposSection grupos={grupos} usuarios={approved}
+        onNuevo={() => abrirGrupo()} onEditar={(g) => abrirGrupo(g)} onEliminado={loadGrupos} />
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.06 }}
         className="rounded-[18px] bg-card border shadow-card p-5">
@@ -241,10 +241,8 @@ export default function Usuarios() {
         </div>
       </motion.div>
 
-      {isAdmin && (
-        <GrupoDialog open={grupoDialog.open} grupo={grupoDialog.grupo} usuarios={approved} grupos={grupos}
-          onOpenChange={(o) => setGrupoDialog((s) => ({ ...s, open: o }))} onSaved={loadGrupos} />
-      )}
+      <GrupoDialog open={grupoDialog.open} grupo={grupoDialog.grupo} usuarios={approved} grupos={grupos}
+        onOpenChange={(o) => setGrupoDialog((s) => ({ ...s, open: o }))} onSaved={loadGrupos} />
 
       {/* Create / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
