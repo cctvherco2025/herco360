@@ -209,6 +209,13 @@ export function esRevisorTienda(user) {
   return !!tiendaPromos(user) && (cargo === 'Jefe de tienda' || (cargo === 'Gerente' && area === 'Tienda'));
 }
 
+// Contesta Promociones del mes: coordinador del área Tienda de una tienda que participa.
+export function esCoordinadorTienda(user) {
+  return !!tiendaPromos(user) && (user?.position || '').trim() === 'Coordinador' && (user?.area || '').trim() === 'Tienda';
+}
+// Formulario → Tickets: quien contesta, quien revisa o quien administra Promociones.
+export const puedeVerTickets = (user) => esCoordinadorTienda(user) || esRevisorTienda(user) || canAdminPromos(user);
+
 export function canAdminPromos(user) {
   if (!user) return false;
   if (user.role === 'admin') return true;

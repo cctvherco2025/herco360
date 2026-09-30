@@ -34,6 +34,8 @@ const RutinaOperativa = lazyWithRetry(() => import('@/pages/RutinaOperativa'), '
 const CustomFormBuilderPage = lazyWithRetry(() => import('@/pages/CustomFormBuilderPage'), 'CustomFormBuilderPage');
 const CustomFormPage = lazyWithRetry(() => import('@/pages/CustomFormPage'), 'CustomFormPage');
 const PromoPublishWizardPage = lazyWithRetry(() => import('@/pages/PromoPublishWizardPage'), 'PromoPublishWizardPage');
+const Tickets = lazyWithRetry(() => import('@/pages/Tickets'), 'Tickets');
+const TicketDetalle = lazyWithRetry(() => import('@/pages/TicketDetalle'), 'TicketDetalle');
 
 const PageFallback = () => (
   <div className="p-10 text-center text-sm text-muted-foreground">Cargando…</div>
@@ -67,6 +69,8 @@ function App() {
               <Route path="/formularios/nuevo" element={<Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense>} />
               <Route path="/formularios/custom/:id/editar" element={<Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense>} />
               <Route path="/formularios/custom/:id" element={<Suspense fallback={<PageFallback />}><CustomFormPage /></Suspense>} />
+              <Route path="/formularios/tickets" element={<Suspense fallback={<PageFallback />}><Tickets /></Suspense>} />
+              <Route path="/formularios/tickets/:id" element={<Suspense fallback={<PageFallback />}><TicketDetalle /></Suspense>} />
               <Route path="/usuarios" element={<Usuarios />} />
               <Route path="/organigrama" element={<Organigrama />} />
               <Route path="/configuracion" element={<Configuracion />} />

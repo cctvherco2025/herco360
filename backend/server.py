@@ -11,6 +11,7 @@ from seed import (seed_if_needed, migrate_activity_colors, seed_inventory, boots
                   migrate_room_info, migrate_activity_reminders, migrate_activity_ranges)
 import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard, routes_inventory, routes_reports, routes_public, routes_vacations, routes_push, routes_cams, routes_formulario, routes_rutina, routes_formularios_custom, routes_diagnostico, routes_groups
 import promo_tareas
+import tickets
 import storage
 import reminders
 import push
@@ -74,6 +75,7 @@ api_router.include_router(routes_formularios_custom.router)
 api_router.include_router(routes_diagnostico.router)
 api_router.include_router(routes_groups.router)
 api_router.include_router(promo_tareas.router)
+api_router.include_router(tickets.router)
 
 app.include_router(api_router)
 

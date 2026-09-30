@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { ArrowLeft, Check, AlertTriangle, Loader2 } from 'lucide-react';
 import api from '@/lib/api';
@@ -61,7 +62,7 @@ export default function PromoRevision({ schema }) {
             {ts.length === 0 && <p className="text-sm text-muted-foreground py-4">Sin categorías en esta publicación.</p>}
             {ts.map((t) => {
               const propia = t.coordinador_id === user?.id;
-              const revisable = !propia && (t.estado === 'enviada' || t.estado === 'con_observaciones');
+              const revisable = !propia && t.estado === 'enviada';
               return (
                 <div key={t.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5 border-t first:border-t-0">
                   <div className="flex-1 min-w-[160px]">
@@ -73,6 +74,11 @@ export default function PromoRevision({ schema }) {
                     </p>
                   </div>
                   <EstadoTarea estado={t.estado} />
+                  {t.estado === 'con_observaciones' && t.ticket_id && (
+                    <Button asChild size="sm" variant="outline" className="rounded-xl" data-testid="promo-revision-ticket">
+                      <Link to={`/formularios/tickets/${t.ticket_id}`}>Ver ticket</Link>
+                    </Button>
+                  )}
                   {t.estado !== 'pendiente' && (
                     <Button size="sm" variant={revisable ? 'default' : 'outline'} onClick={() => setAbierta(t.id)}
                       className={`rounded-xl ${revisable ? 'bg-[#1e395e] hover:bg-[#162c49] text-white' : ''}`} data-testid="promo-revision-abrir">
@@ -165,9 +171,10 @@ function RevisionTarea({ id, onBack }) {
         </p>
         {d.es_propia && <p className="text-xs rounded-xl bg-muted px-3 py-2">Es tu respuesta: la revisa el otro jefe o el gerente de la tienda.</p>}
         {tarea.estado === 'validada' && <p className="text-xs rounded-xl bg-[rgba(22,163,74,0.12)] text-[#16a34a] px-3 py-2">Validada por {tarea.validada_por_name}.</p>}
-        {tarea.estado === 'con_observaciones' && editable && (
-          <p className="text-xs rounded-xl bg-[rgba(236,144,50,0.14)] text-[#b45309] dark:text-[#fbbf24] px-3 py-2">
-            Tiene observaciones enviadas. Cuando el coordinador las corrija en piso, marca esas líneas como correctas y valida.
+        {d.ticket && (
+          <p className="text-xs rounded-xl bg-[rgba(236,144,50,0.14)] text-[#b45309] dark:text-[#fbbf24] px-3 py-2 flex flex-wrap items-center gap-2">
+            Las observaciones se atienden en el ticket {d.ticket.numero}.
+            <Link to={`/formularios/tickets/${d.ticket.id}`} className="font-semibold underline">Abrir ticket</Link>
           </p>
         )}
         {(respuesta?.general_photos || []).length > 0 && (

@@ -9,6 +9,7 @@ import { useAuth } from '@/context/AuthContext';
 import { compressImage } from '@/lib/flosPhoto';
 import { generateCustomFormPdf } from '@/lib/customFormPdf';
 import { ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
+import { Link } from 'react-router-dom';
 import { EstadoTarea } from '@/components/promociones/PromoRevision';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -302,7 +303,8 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
               {t.estado === 'con_observaciones' && obs.length > 0 && (
                 <div className="mt-2 space-y-1.5">
                   <p className="text-xs text-muted-foreground">
-                    {t.revision?.revisor_name} encontró {obs.length} inconsistencia{obs.length === 1 ? '' : 's'}. Corrígelas en piso; validará cuando estén bien.
+                    {t.revision?.revisor_name} encontró {obs.length} inconsistencia{obs.length === 1 ? '' : 's'}. Corrígelas en piso y sube la foto en el ticket.
+                    {t.ticket_id && <> <Link to={`/formularios/tickets/${t.ticket_id}`} className="font-semibold text-[#00a5df] hover:underline">Abrir ticket</Link></>}
                   </p>
                   {obs.map(([iid, l]) => (
                     <p key={iid} className="text-xs rounded-lg bg-[rgba(236,144,50,0.12)] px-2.5 py-1.5">

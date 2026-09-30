@@ -682,6 +682,7 @@ async def delete_form(form_id: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=403, detail='Solo quien lo creó (o un admin) puede eliminarlo')
     await db.custom_form_responses.delete_many({'form_id': form_id})
     await db.promo_tareas.delete_many({'form_id': form_id})
+    await db.tickets.delete_many({'origen.form_id': form_id})
     await db.custom_forms.delete_one({'id': form_id})
     return {'message': 'Formulario eliminado'}
 

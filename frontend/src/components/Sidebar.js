@@ -3,13 +3,14 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun, Boxes, FileText,
-  Palmtree, Network, Video, ClipboardCheck, ClipboardList, ChevronDown, Percent,
+  Palmtree, Network, Video, ClipboardCheck, ClipboardList, ChevronDown, Percent, Ticket,
 } from 'lucide-react';
+import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import {
   canAccessInventory, canAccessReports, canAccessOrgChart, canAccessCams, canAccessFlos, canAccessRutina,
-  canAccessFormulariosPrincipal, canAccessPromocionesMes, canAccessVacaciones,
+  canAccessFormulariosPrincipal, canAccessPromocionesMes, canAccessVacaciones, puedeVerTickets,
 } from '@/lib/constants';
 import { Logo } from '@/components/Logo';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -59,6 +60,7 @@ function NavGroup({ item, onNavigate }) {
   const location = useLocation();
   const childActive = item.children.some((c) => location.pathname === c.to || location.pathname.startsWith(`${c.to}/`));
   const [open, setOpen] = useState(childActive);
+  const pendientes = item.children.reduce((n, c) => n + (c.count || 0), 0);
 
   useEffect(() => { if (childActive) setOpen(true); }, [childActive]);
 
@@ -74,6 +76,9 @@ function NavGroup({ item, onNavigate }) {
         }`}>
         <item.icon className="h-[18px] w-[18px] shrink-0" />
         <span className="flex-1 text-left">{item.label}</span>
+        {pendientes > 0 && !open && (
+          <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#dc2626] text-white text-[11px] font-semibold grid place-items-center">{pendientes}</span>
+        )}
         <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${open ? '' : '-rotate-90'}`} />
       </button>
       <AnimatePresence initial={false}>
@@ -98,7 +103,11 @@ function NavGroup({ item, onNavigate }) {
                         <motion.span layoutId="sidebar-active" className="absolute -left-[10.5px] top-1/2 -translate-y-1/2 h-6 w-1 rounded-full bg-[#00a5df]" />
                       )}
                       <c.icon className="h-4 w-4 shrink-0" />
-                      {c.label}
+                      <span className="flex-1">{c.label}</span>
+                      {c.count > 0 && (
+                        <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#dc2626] text-white text-[11px] font-semibold grid place-items-center"
+                          data-testid={`${c.testid}-count`}>{c.count}</span>
+                      )}
                     </>
                   )}
                 </NavLink>
@@ -115,6 +124,15 @@ function SidebarContent({ onNavigate }) {
   const { user, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Tickets que esperan algo de la persona (se refresca al cambiar de pantalla).
+  const verTickets = puedeVerTickets(user);
+  const [ticketsPendientes, setTicketsPendientes] = useState(0);
+  useEffect(() => {
+    if (!verTickets) return;
+    api.get('/tickets/contador').then(({ data }) => setTicketsPendientes(data.pendientes || 0)).catch(() => {});
+  }, [verTickets, location.pathname]);
 
   // Build nav: insert "Inventario" y "Reportes" (Tienda-only) right after Sala de Juntas
   const navItems = [...baseNavItems];
@@ -143,6 +161,9 @@ function SidebarContent({ onNavigate }) {
   }
   if (canAccessPromocionesMes(user)) {
     formularioChildren.push({ to: '/formularios/promociones', label: 'Promociones del mes', icon: Percent, testid: 'sidebar-nav-promociones-mes' });
+  }
+  if (verTickets) {
+    formularioChildren.push({ to: '/formularios/tickets', label: 'Tickets', icon: Ticket, testid: 'sidebar-nav-tickets', count: ticketsPendientes });
   }
   if (formularioChildren.length > 0) {
     const idx = navItems.findIndex((n) => n.to === '/reportes-cams');

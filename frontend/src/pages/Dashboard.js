@@ -5,7 +5,7 @@ import { CalendarDays, Users, Clock, Activity, ArrowRight, Plus, ChevronLeft, Ch
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { greetingEs, fullDateEs, timeAgoEs, capitalize, ymd, MESES_CORTO } from '@/lib/time';
-import { catStyle, ROOM_STATES } from '@/lib/constants';
+import { catStyle, ROOM_STATES, puedeVerTickets } from '@/lib/constants';
 import ActivityModal from '@/components/ActivityModal';
 import { WeekView, DayView, MonthView, startOfWeek, addDays } from '@/components/CalendarViews';
 import { useTheme } from '@/context/ThemeContext';
@@ -19,11 +19,18 @@ import { ESTADO_TAREA } from '@/components/promociones/PromoRevision';
 // contestar y lo que ya contestó; al jefe y al gerente de tienda (revisan),
 // cada categoría de su tienda. A nadie más se le muestra.
 function PromosPendientes() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
+  const [tickets, setTickets] = useState(0);
   useEffect(() => { api.get('/promo-tareas/mias').then(({ data: d }) => setData(d)).catch(() => {}); }, []);
-  if (!data?.rol || !data.publicaciones.length) return null;
-  const jefe = data.rol === 'revisor';
+  useEffect(() => {
+    if (!puedeVerTickets(user)) return;
+    api.get('/tickets/contador').then(({ data: d }) => setTickets(d.pendientes || 0)).catch(() => {});
+  }, [user]);
+  const hayPubs = !!data?.rol && data.publicaciones.length > 0;
+  if (!hayPubs && !tickets) return null;
+  const jefe = data?.rol === 'revisor';
   return (
     <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.16 }}
       className="rounded-[18px] bg-card border shadow-card p-5 mb-6" data-testid="dashboard-promos-card">
@@ -31,11 +38,20 @@ function PromosPendientes() {
         <span className="h-9 w-9 rounded-full grid place-items-center bg-[rgba(22,163,74,0.12)]"><Percent className="h-4 w-4 text-[#16a34a]" /></span>
         <div>
           <h2 className="font-heading font-semibold">Promociones del mes</h2>
-          <p className="text-xs text-muted-foreground">{jefe ? `Lo que contestó ${data.publicaciones[0].tienda}` : 'Elige tu tienda y categoría al contestar'}</p>
+          <p className="text-xs text-muted-foreground">{!hayPubs ? 'Tickets por atender' : jefe ? `Lo que contestó ${data.publicaciones[0].tienda}` : 'Elige tu tienda y categoría al contestar'}</p>
         </div>
       </div>
       <div className="space-y-2.5">
-        {data.publicaciones.map((p) => {
+        {tickets > 0 && (
+          <div className="rounded-xl border border-[#dc2626]/40 bg-[rgba(220,38,38,0.05)] p-3.5 flex flex-wrap items-center gap-3" data-testid="dashboard-tickets">
+            <p className="flex-1 min-w-[180px] text-sm font-medium">
+              {tickets} ticket{tickets === 1 ? '' : 's'} por atender
+              <span className="block text-xs text-muted-foreground font-normal">{jefe ? 'Correcciones por validar en piso' : 'Inconsistencias por corregir'}</span>
+            </p>
+            <Button size="sm" className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" onClick={() => navigate('/formularios/tickets')}>Ver tickets</Button>
+          </div>
+        )}
+        {hayPubs && data.publicaciones.map((p) => {
           return (
             <div key={p.id} className="rounded-xl border p-3.5 flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="flex-1 min-w-0">

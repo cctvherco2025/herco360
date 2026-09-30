@@ -17,6 +17,7 @@ _PUSH_URL_BY_TYPE = {
     'vacation': '/vacaciones',
     'user': '/usuarios',
     'promociones': '/formularios/promociones',
+    'ticket': '/formularios/tickets',
 }
 
 
@@ -56,6 +57,11 @@ NOTIFICATION_META = {
     'promo_sin_jefe': {'title': 'Tienda sin jefe', 'icon': 'Bell', 'color': '#dc2626'},
     'promo_validada': {'title': 'Promociones validadas', 'icon': 'ClipboardCheck', 'color': '#16a34a'},
     'promo_observaciones': {'title': 'Observaciones en Promociones', 'icon': 'ClipboardCheck', 'color': '#dc2626'},
+    'ticket_abierto': {'title': 'Ticket por corregir', 'icon': 'ClipboardCheck', 'color': '#dc2626'},
+    'ticket_corregido': {'title': 'Ticket corregido', 'icon': 'ClipboardCheck', 'color': '#ec9032'},
+    'ticket_cerrado': {'title': 'Ticket cerrado', 'icon': 'ClipboardCheck', 'color': '#16a34a'},
+    'ticket_reabierto': {'title': 'Ticket reabierto', 'icon': 'ClipboardCheck', 'color': '#dc2626'},
+    'ticket_mensaje': {'title': 'Mensaje en ticket', 'icon': 'Bell', 'color': '#00a5df'},
 }
 
 
