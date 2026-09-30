@@ -1,6 +1,6 @@
 """User management routes."""
 from fastapi import APIRouter, HTTPException, Depends
-from core import (db, get_current_user, require_admin, serialize_doc, now_iso,
+from core import (db, get_current_user, require_admin, serialize_doc, now_iso, CARGOS_SOLO_ADMIN,
                   hash_password, new_id, require_access_manager, GATED_MODULES,
                   can_access_inventory, can_access_reports, can_access_cams, can_access_formulario,
                   can_access_rutina, can_access_formularios_principal, can_access_promociones_mes,
@@ -142,6 +142,16 @@ async def create_user(data: AdminUserCreate, admin=Depends(require_admin)):
 @router.patch('/me')
 async def update_me(data: ProfileUpdate, user=Depends(get_current_user)):
     updates = {k: v for k, v in data.model_dump().items() if v is not None}
+    # "Jefe de tienda" lo asigna solo un admin: nadie se lo pone desde aquí, y
+    # quien lo tiene no se cambia solo de cargo, área ni tienda.
+    actual = (user.get('position') or '').strip()
+    for campo in ('position', 'area', 'sucursal'):
+        nuevo = updates.get(campo)
+        if nuevo is None or nuevo == (user.get(campo) or ''):
+            continue  # "Mi perfil" manda todos los campos aunque no cambien
+        if actual in CARGOS_SOLO_ADMIN or (campo == 'position' and nuevo.strip() in CARGOS_SOLO_ADMIN):
+            raise HTTPException(status_code=403,
+                                detail='El cargo de Jefe de tienda y su tienda solo los cambia un administrador')
     # Director comercial oversees the whole company -> área fixed to "Casa Matriz".
     if updates.get('position') == 'Director comercial':
         updates['area'] = 'Casa Matriz'

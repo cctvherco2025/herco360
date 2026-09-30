@@ -342,6 +342,13 @@ async def require_rutina_schema_editor(user=Depends(get_current_user)):
     return user
 
 
+# Cargos que solo asigna un admin desde Usuarios: dan permisos sobre una tienda
+# (el jefe de tienda revisa Promociones del mes de su sucursal), así que nadie
+# se los pone solo al registrarse ni desde "Mi perfil".
+JEFE_TIENDA = 'Jefe de tienda'
+CARGOS_SOLO_ADMIN = {JEFE_TIENDA}
+
+
 def can_admin_promos(user) -> bool:
     """"Administrar Promociones del mes": ver y administrar TODAS las
     publicaciones de Promociones como si fueran propias (abrirlas aunque no

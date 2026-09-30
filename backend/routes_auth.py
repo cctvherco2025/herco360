@@ -1,6 +1,7 @@
 """Auth routes: register, login, me."""
 from fastapi import APIRouter, HTTPException, Depends
-from core import db, hash_password, verify_password, create_access_token, new_id, now_iso, get_current_user
+from core import (db, hash_password, verify_password, create_access_token, new_id, now_iso, get_current_user,
+                  CARGOS_SOLO_ADMIN)
 from models import RegisterInput, LoginInput, ResetPasswordInput
 from notifications import notify_admins
 
@@ -17,6 +18,9 @@ async def register(data: RegisterInput):
     existing = await db.users.find_one({'email': data.email.lower()})
     if existing:
         raise HTTPException(status_code=400, detail='El correo ya está registrado')
+    if (data.position or '').strip() in CARGOS_SOLO_ADMIN:
+        raise HTTPException(status_code=400,
+                            detail='Ese cargo lo asigna un administrador. Regístrate con tu cargo actual.')
     user = {
         'id': new_id(),
         'name': data.name,

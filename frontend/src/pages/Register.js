@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CARGOS, AREAS, SUCURSALES } from '@/lib/constants';
+import { CARGOS_PROPIOS, AREAS, SUCURSALES } from '@/lib/constants';
 
 export default function Register() {
   const { register } = useAuth();
@@ -97,7 +97,7 @@ export default function Register() {
                     </div>
                   </SelectTrigger>
                   <SelectContent>
-                    {CARGOS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    {CARGOS_PROPIOS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

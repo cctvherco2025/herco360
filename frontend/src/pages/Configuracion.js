@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { CARGOS, AREAS, SUCURSALES } from '@/lib/constants';
+import { CARGOS_PROPIOS, CARGOS_SOLO_ADMIN, AREAS, SUCURSALES } from '@/lib/constants';
 import { pushSupported, getPushState, enablePush, disablePush, sendTestPush } from '@/lib/push';
 
 function isIosNonStandalone() {
@@ -142,6 +142,8 @@ export default function Configuracion() {
   const { user, refreshUser } = useAuth();
   const { theme, isDark, setTheme } = useTheme();
   const [form, setForm] = useState({ name: user?.name || '', position: user?.position || '', area: user?.area || '', sucursal: user?.sucursal || '', phone: user?.phone || '' });
+  // "Jefe de tienda": el cargo, el área y la tienda los cambia solo un admin.
+  const cargoFijo = CARGOS_SOLO_ADMIN.includes(user?.position);
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const setVal = (k) => (v) => setForm({ ...form, [k]: v });
@@ -181,15 +183,19 @@ export default function Configuracion() {
               <div className="space-y-1.5"><Label>Nombre completo</Label><Input value={form.name} onChange={set('name')} className="h-11" data-testid="config-name-input" /></div>
               <div className="space-y-1.5">
                 <Label>Cargo</Label>
+                {cargoFijo ? (
+                  <div className="h-11 flex items-center rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground" data-testid="config-position-fixed">{form.position}</div>
+                ) : (
                 <Select value={form.position} onValueChange={(v) => setForm((f) => ({ ...f, position: v, area: v === 'Director comercial' ? 'Casa Matriz' : (f.area === 'Casa Matriz' ? '' : f.area), sucursal: '' }))}>
                   <SelectTrigger className="h-11" data-testid="config-position-select"><SelectValue placeholder="Selecciona un cargo" /></SelectTrigger>
-                  <SelectContent>{CARGOS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                  <SelectContent>{CARGOS_PROPIOS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label>Área</Label>
-                {form.position === 'Director comercial' ? (
-                  <div className="h-11 flex items-center rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground" data-testid="config-area-fixed">Casa Matriz</div>
+                {form.position === 'Director comercial' || cargoFijo ? (
+                  <div className="h-11 flex items-center rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground" data-testid="config-area-fixed">{form.position === 'Director comercial' ? 'Casa Matriz' : form.area}</div>
                 ) : (
                   <Select value={form.area} onValueChange={(v) => setForm({ ...form, area: v, sucursal: v === 'Tienda' ? form.sucursal : '' })}>
                     <SelectTrigger className="h-11" data-testid="config-area-select"><SelectValue placeholder="Selecciona un área" /></SelectTrigger>
@@ -200,11 +206,18 @@ export default function Configuracion() {
               {form.area === 'Tienda' && (
               <div className="space-y-1.5">
                 <Label>Tienda / Sucursal</Label>
+                {cargoFijo ? (
+                  <div className="h-11 flex items-center rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground" data-testid="config-sucursal-fixed">{form.sucursal}</div>
+                ) : (
                 <Select value={form.sucursal} onValueChange={setVal('sucursal')}>
                   <SelectTrigger className="h-11" data-testid="config-sucursal-select"><SelectValue placeholder="Selecciona tu tienda" /></SelectTrigger>
                   <SelectContent>{SUCURSALES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                 </Select>
+                )}
               </div>
+              )}
+              {cargoFijo && (
+                <p className="sm:col-span-2 text-xs text-muted-foreground -mt-1" data-testid="config-cargo-fijo-nota">Tu cargo, área y tienda los cambia un administrador desde Usuarios.</p>
               )}
               <div className="space-y-1.5"><Label>Teléfono</Label><Input value={form.phone} onChange={set('phone')} placeholder="Opcional" className="h-11" /></div>
               <div className="space-y-1.5"><Label>Correo</Label><Input value={user?.email} disabled className="h-11 opacity-60" /></div>
