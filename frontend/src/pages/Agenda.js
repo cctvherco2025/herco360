@@ -8,7 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 import { canAccessVacaciones } from '@/lib/constants';
 import { fullDateEs, capitalize, ymd, MESES, MESES_CORTO } from '@/lib/time';
 import ActivityModal from '@/components/ActivityModal';
-import { WeekView, DayView, MonthView, startOfWeek, addDays } from '@/components/CalendarViews';
+import { WeekView, DayView, MonthView, startOfWeek, addDays, esVariosDias, rangoCortoCal } from '@/components/CalendarViews';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -111,8 +111,9 @@ export default function Agenda() {
     } catch (err) { toast.error(err?.response?.data?.detail || 'No se pudo mover'); }
   };
 
+  // incluye las de varios días que ya empezaron y todavía no terminan
   const upcoming = activities
-    .filter((a) => a.date >= ymd(new Date()))
+    .filter((a) => (a.end_date || a.date) >= ymd(new Date()))
     .sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time))
     .slice(0, 6);
 
@@ -224,7 +225,9 @@ export default function Agenda() {
                       <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: solid }} />
                       <span className="text-sm font-medium truncate">{a.title}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">{capitalize(fullDateEs(a.date))} · {a.start_time}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {esVariosDias(a) ? `${rangoCortoCal(a)} · ${a.start_time}` : `${capitalize(fullDateEs(a.date))} · ${a.start_time}`}
+                    </p>
                     {invite && (
                       <div className="flex gap-2 mt-2">
                         <button onClick={(e) => respond(a.id, 'accepted', e)} className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-[rgba(22,163,74,0.12)] text-[#16a34a] text-xs font-medium py-1.5 hover:bg-[rgba(22,163,74,0.2)]" data-testid="agenda-accept"><Check className="h-3.5 w-3.5" /> Aceptar</button>

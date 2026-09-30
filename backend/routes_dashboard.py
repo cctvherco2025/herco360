@@ -15,7 +15,11 @@ def _today_str():
 async def dashboard(user=Depends(get_current_user)):
     today = _today_str()
     # Today's activities involving the user (created or participant) OR all if admin
-    base_filter = {'date': today}
+    # "hoy" incluye actividades de varios días que ya empezaron y no han terminado
+    base_filter = {'date': {'$lte': today}, '$or': [
+        {'end_date': {'$gte': today}},
+        {'end_date': {'$exists': False}, 'date': today},
+    ]}
     today_acts = await db.activities.find(base_filter, {'_id': 0}).sort('start_time', 1).to_list(100)
     my_today = [a for a in today_acts
                 if a['created_by'] == user['id']

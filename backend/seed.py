@@ -214,6 +214,29 @@ async def migrate_activity_colors():
         print(f'[MIGRATE] Backfilled color on {len(legacy)} activities.')
 
 
+async def migrate_activity_ranges():
+    """Actividades de varios días: cada actividad pasa a guardar su rango.
+
+    - `end_date` (último día): = `date` en las actividades existentes (todas
+      son de un solo día).
+    - `fecha_hora_inicio` / `fecha_hora_fin`: fecha y hora completas en hora
+      de Honduras (America/Tegucigalpa, UTC-6 sin horario de verano), p. ej.
+      "2026-10-20T09:00:00-06:00".
+    Idempotente: solo toca documentos que aún no tienen `end_date`. Se hace en
+    el servidor con un pipeline de actualización (un solo viaje a la BD).
+    """
+    res = await db.activities.update_many(
+        {'end_date': {'$exists': False}},
+        [{'$set': {
+            'end_date': '$date',
+            'fecha_hora_inicio': {'$concat': ['$date', 'T', {'$ifNull': ['$start_time', '00:00']}, ':00-06:00']},
+            'fecha_hora_fin': {'$concat': ['$date', 'T', {'$ifNull': ['$end_time', '23:59']}, ':00-06:00']},
+        }}],
+    )
+    if res.modified_count:
+        print(f'[MIGRATE] Rango (end_date / fecha_hora_*) agregado a {res.modified_count} actividades.')
+
+
 async def migrate_activity_reminders():
     """Move activities to the multi-offset reminder model.
 

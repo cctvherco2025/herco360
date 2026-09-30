@@ -89,9 +89,12 @@ class Participant(BaseModel):
 class ActivityInput(BaseModel):
     title: str
     color: str = '#00a5df'  # user-picked color (replaces fixed categories)
-    date: str  # YYYY-MM-DD
-    start_time: str  # HH:MM
-    end_time: str  # HH:MM
+    date: str  # YYYY-MM-DD (primer día)
+    start_time: str  # HH:MM (hora del primer día)
+    end_time: str  # HH:MM (hora del último día)
+    # Último día para actividades de varios días. None = mismo día que `date`
+    # (clientes viejos); al editar sin enviarlo se conserva la duración.
+    end_date: Optional[str] = None
     description: Optional[str] = ''
     location: Optional[str] = ''
     participant_ids: List[str] = []

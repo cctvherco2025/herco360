@@ -8,7 +8,7 @@ from pathlib import Path
 
 from core import client, require_admin, new_id
 from seed import (seed_if_needed, migrate_activity_colors, seed_inventory, bootstrap_admins,
-                  migrate_room_info, migrate_activity_reminders)
+                  migrate_room_info, migrate_activity_reminders, migrate_activity_ranges)
 import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard, routes_inventory, routes_reports, routes_public, routes_vacations, routes_push, routes_cams, routes_formulario, routes_rutina, routes_formularios_custom, routes_diagnostico, routes_groups
 import storage
 import reminders
@@ -102,6 +102,7 @@ async def startup():
         await bootstrap_admins()
         await migrate_room_info()
         await migrate_activity_reminders()
+        await migrate_activity_ranges()
     except Exception as e:
         logger.error(f'Seed error: {e}')
     try:

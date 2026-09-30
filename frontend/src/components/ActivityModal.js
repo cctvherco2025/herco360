@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import ParticipantPicker from '@/components/ParticipantPicker';
+import RangeDatePicker from '@/components/RangeDatePicker';
 
 const RECURRENCE_OPTIONS = [
   { value: 'none', label: 'No se repite' },
@@ -52,7 +53,7 @@ const addHour = (t) => {
 };
 
 const empty = (date, time) => ({
-  title: '', color: DEFAULT_ACTIVITY_COLOR, date: date || ymd(new Date()),
+  title: '', color: DEFAULT_ACTIVITY_COLOR, date: date || ymd(new Date()), end_date: date || ymd(new Date()),
   start_time: time || '09:00', end_time: addHour(time || '09:00'), description: '', location: '',
   participant_ids: [], uses_meeting_room: false, recurrence: 'none',
   reminder_offsets: [...DEFAULT_REMINDERS],
@@ -73,9 +74,13 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
     if (open) {
       api.get('/users?status=approved').then(({ data }) => setUsers(data.filter((u) => u.id !== user?.id))).catch(() => {});
       api.get('/groups').then(({ data }) => setGroups(data)).catch(() => setGroups([]));
+      setAbrirRango(false);
       if (activity) {
+        const fin = activity.end_date || activity.date;
+        setVariosDias(fin !== activity.date);
         setForm({
           title: activity.title, color: activity.color || DEFAULT_ACTIVITY_COLOR, date: activity.date,
+          end_date: fin,
           start_time: activity.start_time, end_time: activity.end_time,
           description: activity.description || '', location: activity.location || '',
           participant_ids: (activity.participants || []).map((p) => p.user_id),
@@ -84,6 +89,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
           reminder_offsets: readOffsets(activity),
         });
       } else {
+        setVariosDias(false);
         setForm(empty(defaultDate, defaultTime));
       }
     }
@@ -91,29 +97,75 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
-  // ¿Está abierta la lista del buscador de participantes? Si lo está, Escape
-  // solo la cierra (no cierra el modal completo).
+  // ¿Está abierta la lista del buscador de participantes o el calendario de
+  // "Varios días"? Si lo está, Escape solo la cierra (no cierra el modal).
   const participantsOpenRef = useRef(false);
+  const rangoOpenRef = useRef(false);
 
-  // Mondays the meeting room is reserved for Dirección Comercial.
-  const MONDAY_MSG = 'Los lunes la Sala de Juntas está reservada para Dirección Comercial';
-  const isMondaySelected = (() => {
-    if (!form.date) return false;
-    const parts = form.date.split('-').map(Number);
-    if (parts.length !== 3 || parts.some((n) => !n)) return false;
-    return new Date(parts[0], parts[1] - 1, parts[2]).getDay() === 1; // 1 = Monday
+  // ── Varios días ──────────────────────────────────────────────
+  // En modo varios días "Inicio" es la hora del primer día y "Fin" la del
+  // último. Una sola actividad con su rango (date → end_date).
+  const [variosDias, setVariosDias] = useState(false);
+  const [abrirRango, setAbrirRango] = useState(false);
+  const activarVariosDias = () => {
+    setVariosDias(true);
+    setForm((f) => ({ ...f, end_date: '' })); // falta tocar el último día
+    setAbrirRango(true);
+  };
+  const activarUnDia = () => {
+    setVariosDias(false);
+    setAbrirRango(false);
+    setForm((f) => ({ ...f, end_date: f.date }));
+  };
+  const endDate = variosDias ? form.end_date : form.date;
+  const faltaUltimoDia = variosDias && !form.end_date;
+  // un solo día (o rango de un mismo día): Fin debe ser mayor que Inicio
+  const horaInvalida = !faltaUltimoDia && endDate === form.date && form.end_time <= form.start_time;
+
+  // Días del rango (para la regla de los lunes y el choque de repetición)
+  const aFecha = (s) => { const [y, m, d] = (s || '').split('-').map(Number); return y ? new Date(y, m - 1, d) : null; };
+  const diasDelRango = (() => {
+    const a = aFecha(form.date); const b = aFecha(endDate) || a;
+    if (!a) return [];
+    const out = [];
+    for (let d = new Date(a); d <= b && out.length < 40; d.setDate(d.getDate() + 1)) out.push(new Date(d));
+    return out;
   })();
+  const duracionDias = Math.max(0, diasDelRango.length - 1);
+
+  // Una actividad de varios días que se repite no puede volver a empezar
+  // antes de terminar (misma regla que valida el servidor).
+  const repeticionChoca = (() => {
+    if (isEdit || duracionDias === 0 || form.recurrence === 'none') return false;
+    const inicio = aFecha(form.date);
+    const siguiente = new Date(inicio);
+    if (form.recurrence === 'daily') siguiente.setDate(siguiente.getDate() + 1);
+    else if (form.recurrence === 'weekly') siguiente.setDate(siguiente.getDate() + 7);
+    else if (form.recurrence === 'monthly') siguiente.setMonth(siguiente.getMonth() + 1);
+    else return false;
+    const [hi, mi] = form.start_time.split(':').map(Number);
+    const [hf, mf] = form.end_time.split(':').map(Number);
+    const fin = new Date(inicio); fin.setDate(fin.getDate() + duracionDias); fin.setHours(hf, mf, 0, 0);
+    siguiente.setHours(hi, mi, 0, 0);
+    return siguiente < fin;
+  })();
+
+  // Mondays the meeting room is reserved for Dirección Comercial (en
+  // cualquiera de los días del rango).
+  const MONDAY_MSG = 'Los lunes la Sala de Juntas está reservada para Dirección Comercial';
+  const isMondaySelected = diasDelRango.some((d) => d.getDay() === 1);
   const roomBlocked = form.uses_meeting_room && isMondaySelected;
+  const bloqueado = roomBlocked || horaInvalida || faltaUltimoDia || repeticionChoca;
 
   const save = async () => {
     if (!form.title.trim()) { toast.error('Ingresa un título'); return; }
-    if (form.end_time <= form.start_time) { toast.error('La hora de fin debe ser mayor a la de inicio'); return; }
-    if (roomBlocked) { toast.error(MONDAY_MSG); return; }
+    if (bloqueado) return;
+    const payload = { ...form, end_date: endDate };
     setSaving(true);
     try {
-      if (isEdit) { await api.put(`/activities/${activity.id}`, form); toast.success('Actividad actualizada'); }
+      if (isEdit) { await api.put(`/activities/${activity.id}`, payload); toast.success('Actividad actualizada'); }
       else {
-        const { data } = await api.post('/activities', form);
+        const { data } = await api.post('/activities', payload);
         toast.success(data?.series_count > 1 ? `Serie creada: ${data.series_count} actividades` : 'Actividad creada');
       }
       onOpenChange(false);
@@ -146,7 +198,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[540px] rounded-[22px] p-0 overflow-hidden max-h-[92vh] flex flex-col"
-        onEscapeKeyDown={(e) => { if (participantsOpenRef.current) e.preventDefault(); }}>
+        onEscapeKeyDown={(e) => { if (participantsOpenRef.current || rangoOpenRef.current) e.preventDefault(); }}>
         <DialogHeader className="px-6 pt-6 pb-2">
           <DialogTitle className="font-heading text-xl">{!isEdit ? 'Nueva actividad' : (readOnly ? 'Detalle de actividad' : 'Editar actividad')}</DialogTitle>
         </DialogHeader>
@@ -185,19 +237,42 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5">
-                <Label>Fecha</Label>
-                <Input data-testid="activity-form-date-picker" type="date" value={form.date} onChange={(e) => set('date', e.target.value)} className="h-11" />
+            {/* Fecha · Inicio · Fin. En celular la fecha ocupa todo el ancho y
+                las horas van debajo, lado a lado. "Varios días" cambia el input
+                de fecha por un campo con calendario de rango. */}
+            <div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="space-y-1.5 col-span-2 sm:col-span-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label>Fecha</Label>
+                    {!readOnly && (
+                      <button type="button" onClick={variosDias ? activarUnDia : activarVariosDias}
+                        className="text-[11px] font-medium text-[#00a5df] hover:underline" data-testid="activity-form-multiday-toggle">
+                        {variosDias ? 'Un solo día' : 'Varios días'}
+                      </button>
+                    )}
+                  </div>
+                  {variosDias ? (
+                    <RangeDatePicker start={form.date} end={form.end_date} disabled={readOnly} autoOpen={abrirRango}
+                      onChange={({ start, end }) => setForm((f) => ({ ...f, date: start, end_date: end }))}
+                      onOpenChange={(o) => { rangoOpenRef.current = o; if (!o) setAbrirRango(false); }} />
+                  ) : (
+                    <Input data-testid="activity-form-date-picker" type="date" value={form.date}
+                      onChange={(e) => setForm((f) => ({ ...f, date: e.target.value, end_date: e.target.value }))} className="h-11" />
+                  )}
+                </div>
+                <div className="space-y-1.5 min-w-0">
+                  <Label>Inicio</Label>
+                  <Input type="time" value={form.start_time} onChange={(e) => set('start_time', e.target.value)} className="h-11" />
+                </div>
+                <div className="space-y-1.5 min-w-0">
+                  <Label>Fin</Label>
+                  <Input type="time" value={form.end_time} onChange={(e) => set('end_time', e.target.value)} className="h-11" />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label>Inicio</Label>
-                <Input type="time" value={form.start_time} onChange={(e) => set('start_time', e.target.value)} className="h-11" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Fin</Label>
-                <Input type="time" value={form.end_time} onChange={(e) => set('end_time', e.target.value)} className="h-11" />
-              </div>
+              {horaInvalida && (
+                <p className="text-xs text-[#dc2626] mt-1.5" data-testid="activity-form-time-error">La hora de fin debe ser mayor a la de inicio</p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -238,7 +313,11 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
                     {RECURRENCE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                {RECURRENCE_HINT[form.recurrence] && (
+                {repeticionChoca ? (
+                  <p className="text-xs text-[#dc2626]" data-testid="activity-form-recurrence-error">
+                    La actividad dura {duracionDias + 1} días y se repetiría antes de terminar. Cambiá la repetición.
+                  </p>
+                ) : RECURRENCE_HINT[form.recurrence] && (
                   <p className="text-xs text-muted-foreground">{RECURRENCE_HINT[form.recurrence]}</p>
                 )}
               </div>
@@ -304,7 +383,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
           ) : (
             <>
               <Button variant="outline" onClick={() => onOpenChange(false)} className="rounded-xl">Cancelar</Button>
-              <Button onClick={save} disabled={saving || roomBlocked} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="activity-form-submit-button">
+              <Button onClick={save} disabled={saving || bloqueado} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="activity-form-submit-button">
                 {saving ? 'Guardando…' : (isEdit ? 'Guardar cambios' : 'Crear actividad')}
               </Button>
             </>
