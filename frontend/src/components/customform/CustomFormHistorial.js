@@ -23,7 +23,7 @@ function blobToDataUrl(blob) {
   });
 }
 
-function AuthedImg({ url, className, onClick }) {
+export function AuthedImg({ url, className, onClick }) {
   const [src, setSrc] = useState(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {

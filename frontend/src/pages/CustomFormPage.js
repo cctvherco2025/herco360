@@ -1,22 +1,26 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { ClipboardList, ArrowLeft, Trash2, Pencil } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { canAdminPromos } from '@/lib/constants';
+import { canAdminPromos, esRevisorTienda } from '@/lib/constants';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import CustomFormWizard from '@/components/customform/CustomFormWizard';
 import CustomFormHistorial from '@/components/customform/CustomFormHistorial';
 import PromoResultados from '@/components/promociones/PromoResultados';
+import PromoRevision from '@/components/promociones/PromoRevision';
 
 export default function CustomFormPage() {
   const { id } = useParams();
   const { user } = useAuth();
   const [schema, setSchema] = useState(null);
   const [error, setError] = useState(null);
-  const [tab, setTab] = useState('responder');
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState(params.get('tab') || 'responder');
+  // una notificación puede abrir la misma página en otra pestaña (?tab=revision)
+  useEffect(() => { if (params.get('tab')) setTab(params.get('tab')); }, [params]);
   const [historyKey, setHistoryKey] = useState(0);
 
   const load = useCallback(async () => {
@@ -51,6 +55,8 @@ export default function CustomFormPage() {
   const promoAdmin = schema.kind === 'promociones' && canAdminPromos(user);
   const canSeeAll = user?.role === 'admin' || (user?.position || '').trim() === 'Director comercial' || schema.creator_id === user?.id || promoAdmin;
   const canManage = user?.role === 'admin' || schema.creator_id === user?.id || promoAdmin;
+  // Promociones con tareas: el jefe o gerente de tienda (y quien administra) revisa.
+  const puedeRevisar = !!schema.flujo_tareas && (esRevisorTienda(user) || promoAdmin);
 
   return (
     <div className="max-w-[1000px] mx-auto pt-2">
@@ -77,6 +83,9 @@ export default function CustomFormPage() {
         <TabsList className="rounded-xl mb-5">
           <TabsTrigger value="responder" className="rounded-lg" data-testid="customform-tab-responder">Responder</TabsTrigger>
           <TabsTrigger value="historial" className="rounded-lg" data-testid="customform-tab-historial">Historial</TabsTrigger>
+          {puedeRevisar && (
+            <TabsTrigger value="revision" className="rounded-lg" data-testid="customform-tab-revision">Revisión</TabsTrigger>
+          )}
           {schema.kind === 'promociones' && (
             <TabsTrigger value="resultados" className="rounded-lg" data-testid="customform-tab-resultados">Resultados</TabsTrigger>
           )}
@@ -88,6 +97,11 @@ export default function CustomFormPage() {
         <TabsContent value="historial">
           <CustomFormHistorial key={historyKey} schema={schema} canSeeAll={canSeeAll} canManage={canManage} />
         </TabsContent>
+        {puedeRevisar && (
+          <TabsContent value="revision">
+            <PromoRevision schema={schema} />
+          </TabsContent>
+        )}
         {schema.kind === 'promociones' && (
           <TabsContent value="resultados">
             <PromoResultados formId={schema.id} />

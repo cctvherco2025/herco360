@@ -54,6 +54,8 @@ NOTIFICATION_META = {
     'promo_publicada': {'title': 'Promociones del mes', 'icon': 'Percent', 'color': '#16a34a'},
     'promo_enviada': {'title': 'Promociones por revisar', 'icon': 'ClipboardCheck', 'color': '#ec9032'},
     'promo_sin_jefe': {'title': 'Tienda sin jefe', 'icon': 'Bell', 'color': '#dc2626'},
+    'promo_validada': {'title': 'Promociones validadas', 'icon': 'ClipboardCheck', 'color': '#16a34a'},
+    'promo_observaciones': {'title': 'Observaciones en Promociones', 'icon': 'ClipboardCheck', 'color': '#dc2626'},
 }
 
 

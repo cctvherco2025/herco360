@@ -9,6 +9,7 @@ import { useAuth } from '@/context/AuthContext';
 import { compressImage } from '@/lib/flosPhoto';
 import { generateCustomFormPdf } from '@/lib/customFormPdf';
 import { ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
+import { EstadoTarea } from '@/components/promociones/PromoRevision';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -282,8 +283,48 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
     );
   }
 
+  // Lo que ya contestó en esta publicación, con su estado y, si quien revisa
+  // encontró inconsistencias, cuáles son (se corrigen en piso).
+  const misTareas = conTareas ? tareas.filter((t) => t.coordinador_id === user?.id) : [];
+  const tituloItem = (iid) => schema.items.find((it) => it.id === iid)?.titulo || 'Promoción';
+  const misCategorias = misTareas.length > 0 && (
+    <div className="max-w-[520px] mx-auto rounded-[18px] bg-card border shadow-card p-5 mb-4" data-testid="promo-mis-categorias">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Lo que ya contestaste</p>
+      <div className="space-y-2.5">
+        {misTareas.map((t) => {
+          const obs = Object.entries(t.revision?.lineas || {}).filter(([, l]) => l.v === 'mal');
+          return (
+            <div key={t.id} className="rounded-xl border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">{t.tienda} · {t.categoria}</span>
+                <EstadoTarea estado={t.estado} />
+              </div>
+              {t.estado === 'con_observaciones' && obs.length > 0 && (
+                <div className="mt-2 space-y-1.5">
+                  <p className="text-xs text-muted-foreground">
+                    {t.revision?.revisor_name} encontró {obs.length} inconsistencia{obs.length === 1 ? '' : 's'}. Corrígelas en piso; validará cuando estén bien.
+                  </p>
+                  {obs.map(([iid, l]) => (
+                    <p key={iid} className="text-xs rounded-lg bg-[rgba(236,144,50,0.12)] px-2.5 py-1.5">
+                      <span className="font-semibold">{tituloItem(iid)}</span> · {l.tipo}{l.comentario ? `: ${l.comentario}` : ''}
+                    </p>
+                  ))}
+                </div>
+              )}
+              {t.estado === 'validada' && t.validada_por_name && (
+                <p className="text-xs text-muted-foreground mt-1">Validada por {t.validada_por_name}.</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   if (phase === 'intro') {
     return (
+      <>
+      {misCategorias}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
         className="max-w-[520px] mx-auto rounded-[18px] bg-card border shadow-card p-6 sm:p-8">
         <div className="flex items-center gap-3 mb-1">
@@ -376,6 +417,7 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
           {hasDraft ? 'Continuar' : 'Comenzar'} <ChevronRight className="h-4 w-4 ml-1" />
         </Button>
       </motion.div>
+      </>
     );
   }
 

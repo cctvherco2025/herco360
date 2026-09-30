@@ -13,11 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { periodoLabel } from '@/pages/PromocionesHome';
-
-const ESTADO_TAREA = {
-  pendiente: { label: 'Pendiente', cls: 'bg-muted text-muted-foreground' },
-  enviada: { label: 'Enviada', cls: 'bg-[rgba(0,165,223,0.12)] text-[#1e395e] dark:text-[#3cbef6]' },
-};
+import { ESTADO_TAREA } from '@/components/promociones/PromoRevision';
 
 // Promociones del mes en Inicio: al coordinador de tienda, lo que falta por
 // contestar y lo que ya contestó; al jefe y al gerente de tienda (revisan),
@@ -40,14 +36,13 @@ function PromosPendientes() {
       </div>
       <div className="space-y-2.5">
         {data.publicaciones.map((p) => {
-          const enviadas = p.tareas.filter((t) => t.estado === 'enviada').length;
           return (
             <div key={p.id} className="rounded-xl border p-3.5 flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{p.titulo} · {periodoLabel(p.periodo)}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {jefe
-                    ? `${enviadas} de ${p.tareas.length} categorías contestadas`
+                    ? `${p.tareas.length - p.tareas.filter((t) => t.estado === 'pendiente').length} de ${p.tareas.length} categorías contestadas${p.por_revisar ? ` · ${p.por_revisar} por revisar` : ''}`
                     : p.pendientes ? `${p.pendientes} categoría${p.pendientes === 1 ? '' : 's'} sin contestar entre las tiendas` : 'Todas las categorías tienen respuesta'}
                 </p>
                 {p.tareas.length > 0 && (
@@ -60,11 +55,16 @@ function PromosPendientes() {
                   </div>
                 )}
               </div>
-              <Button size="sm" onClick={() => navigate(`/formularios/custom/${p.id}`)}
-                className={`rounded-xl shrink-0 ${!jefe && p.pendientes ? 'bg-[#1e395e] hover:bg-[#162c49] text-white' : ''}`}
-                variant={!jefe && p.pendientes ? 'default' : 'outline'} data-testid="dashboard-promos-open">
-                {jefe ? 'Ver' : p.pendientes ? 'Contestar' : 'Ver'}
-              </Button>
+              {(() => {
+                const destacar = jefe ? p.por_revisar > 0 : p.pendientes > 0;
+                return (
+                  <Button size="sm" onClick={() => navigate(`/formularios/custom/${p.id}${jefe ? '?tab=revision' : ''}`)}
+                    className={`rounded-xl shrink-0 ${destacar ? 'bg-[#1e395e] hover:bg-[#162c49] text-white' : ''}`}
+                    variant={destacar ? 'default' : 'outline'} data-testid="dashboard-promos-open">
+                    {jefe ? (p.por_revisar ? 'Revisar' : 'Ver') : p.pendientes ? 'Contestar' : 'Ver'}
+                  </Button>
+                );
+              })()}
             </div>
           );
         })}

@@ -8,17 +8,31 @@ también coordinan una categoría), y a partir de ahí nadie más puede contesta
 La revisan los jefes y el gerente de esa tienda (nunca quien la contestó).
 Las publicaciones viejas (sin `flujo_tareas`) no tienen tareas y siguen igual.
 
-Estados de una tarea: pendiente → enviada (etapa 3 agrega revisión y tickets);
-cancelada si su categoría sale de la publicación al editarla.
+Estados de una tarea:
+  pendiente          nadie la ha contestado
+  enviada            contestada; espera revisión (quien la contestó puede reenviar)
+  con_observaciones  quien revisa marcó inconsistencias y se las mandó a quien contestó
+  validada           quien revisa confirmó en piso cada línea
+  cancelada          su categoría salió de la publicación al editarla
+Quien revisa recorre cada línea (Correcto / Inconsistencia con tipo y comentario).
+Las observaciones se corrigen en piso; cuando todo está bien, se valida.
 """
+from typing import Dict, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from core import (db, get_current_user, serialize_doc, new_id, now_iso, PROMO_TIENDAS,
                   JEFE_TIENDA, tienda_promos, es_revisor_tienda, es_coordinador_tienda,
-                  require_promociones_mes_access)
+                  require_promociones_mes_access, can_admin_promos)
 from notifications import create_notification, notify_admins
 
 router = APIRouter(prefix='/promo-tareas', tags=['promo-tareas'])
+
+TIPOS_INCONSISTENCIA = [
+    'Promoción sin rótulo', 'Rótulo con precio o descuento distinto', 'Rótulo vencido o de otro mes',
+    'Producto sin existencia en piso', 'La foto no corresponde', 'Otro',
+]
 
 _MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
           'septiembre', 'octubre', 'noviembre', 'diciembre']
@@ -134,11 +148,11 @@ async def tomar_tarea(form: dict, tienda: str, categoria: str, user: dict) -> tu
     t = await db.promo_tareas.find_one({'form_id': form['id'], 'tienda': tienda, 'categoria': categoria}, {'_id': 0})
     if not t or t['estado'] == 'cancelada':
         raise HTTPException(status_code=400, detail=f'{categoria} no está en esta publicación para {tienda}')
-    previo = {k: t.get(k) for k in ('estado', 'coordinador_id', 'coordinador_name', 'enviada_at')}
+    previo = {k: t.get(k) for k in ('estado', 'coordinador_id', 'coordinador_name', 'enviada_at', 'revision')}
     r = await db.promo_tareas.update_one(
         {'id': t['id'], '$or': [{'estado': 'pendiente'}, {'estado': 'enviada', 'coordinador_id': user['id']}]},
         {'$set': {'estado': 'enviada', 'coordinador_id': user['id'], 'coordinador_name': user['name'],
-                  'enviada_at': now_iso()}})
+                  'enviada_at': now_iso(), 'revision': None}})
     if r.matched_count == 0:
         actual = await db.promo_tareas.find_one({'id': t['id']}, {'_id': 0})
         if actual and actual.get('coordinador_id') == user['id']:
@@ -159,14 +173,39 @@ async def liberar_por_respuesta(resp_ids: list):
     await db.promo_tareas.update_many(
         {'respuesta_id': {'$in': list(resp_ids)}},
         {'$set': {'estado': 'pendiente', 'coordinador_id': None, 'coordinador_name': None,
-                  'respuesta_id': None, 'enviada_at': None}})
+                  'respuesta_id': None, 'enviada_at': None, 'revision': None,
+                  'validada_por': None, 'validada_por_name': None, 'validada_at': None}})
+
+
+def puede_revisar(user: dict, tarea: dict) -> bool:
+    """Jefe o gerente de esa tienda, o quien administra Promociones; nunca
+    quien la contestó."""
+    if tarea.get('coordinador_id') == user.get('id'):
+        return False
+    return (es_revisor_tienda(user) and tienda_promos(user) == tarea.get('tienda')) or can_admin_promos(user)
+
+
+def puede_ver(user: dict, tarea: dict) -> bool:
+    return (tarea.get('coordinador_id') == user.get('id') or puede_revisar(user, tarea)
+            or (es_revisor_tienda(user) and tienda_promos(user) == tarea.get('tienda')))
 
 
 # --------------------------------------------------------------------------- #
 #  Consultas
 # --------------------------------------------------------------------------- #
 _PUBLICO = {'_id': 0, 'id': 1, 'form_id': 1, 'tienda': 1, 'categoria': 1, 'estado': 1,
-            'coordinador_id': 1, 'coordinador_name': 1, 'enviada_at': 1}
+            'coordinador_id': 1, 'coordinador_name': 1, 'enviada_at': 1, 'revision': 1,
+            'validada_por_name': 1, 'validada_at': 1}
+
+
+def _sin_revision_ajena(tareas: list, user: dict) -> list:
+    """El detalle de la revisión solo lo ven quien contestó y quien revisa;
+    al resto le queda quién la está revisando."""
+    for t in tareas:
+        rev = t.get('revision')
+        if rev and not puede_ver(user, t):
+            t['revision'] = {'revisor_name': rev.get('revisor_name')}
+    return tareas
 
 
 @router.get('/form/{form_id}')
@@ -175,7 +214,7 @@ async def tareas_de_form(form_id: str, user=Depends(require_promociones_mes_acce
     para bloquear las categorías que ya contestó otro coordinador."""
     rows = await db.promo_tareas.find({'form_id': form_id, 'estado': {'$ne': 'cancelada'}}, _PUBLICO) \
         .sort([('tienda', 1), ('categoria', 1)]).to_list(500)
-    return serialize_doc(rows)
+    return serialize_doc(_sin_revision_ajena(rows, user))
 
 
 @router.get('/mias')
@@ -194,7 +233,8 @@ async def mis_tareas(user=Depends(get_current_user)):
         q = {'form_id': f['id'], 'estado': {'$ne': 'cancelada'}}
         if rol == 'revisor':
             q['tienda'] = tienda_promos(user)
-        tareas = await db.promo_tareas.find(q, _PUBLICO).sort([('tienda', 1), ('categoria', 1)]).to_list(200)
+        tareas = _sin_revision_ajena(
+            await db.promo_tareas.find(q, _PUBLICO).sort([('tienda', 1), ('categoria', 1)]).to_list(200), user)
         if rol == 'coordinador':
             mias = [t for t in tareas if t.get('coordinador_id') == user['id']]
             pendientes = sum(1 for t in tareas if t['estado'] == 'pendiente')
@@ -202,5 +242,120 @@ async def mis_tareas(user=Depends(get_current_user)):
                 continue
             out.append({**f, 'pendientes': pendientes, 'tareas': mias})
         else:
-            out.append({**f, 'tienda': tienda_promos(user), 'tareas': tareas})
+            por_revisar = sum(1 for t in tareas if t['estado'] == 'enviada' and t.get('coordinador_id') != user['id'])
+            out.append({**f, 'tienda': tienda_promos(user), 'tareas': tareas, 'por_revisar': por_revisar})
     return serialize_doc({'rol': rol, 'publicaciones': out})
+
+
+# --------------------------------------------------------------------------- #
+#  Revisión (jefe o gerente de la tienda)
+# --------------------------------------------------------------------------- #
+async def _tarea_o_404(tarea_id: str) -> dict:
+    t = await db.promo_tareas.find_one({'id': tarea_id}, {'_id': 0})
+    if not t or t['estado'] == 'cancelada':
+        raise HTTPException(status_code=404, detail='Tarea no encontrada')
+    return t
+
+
+@router.get('/{tarea_id}')
+async def detalle(tarea_id: str, user=Depends(get_current_user)):
+    """Lo que necesita la pantalla de revisión: la tarea (con su revisión), la
+    respuesta del coordinador y las preguntas de la publicación."""
+    t = await _tarea_o_404(tarea_id)
+    if not puede_ver(user, t):
+        raise HTTPException(status_code=403, detail='No puedes ver esta tarea')
+    resp = None
+    if t.get('respuesta_id'):
+        resp = await db.custom_form_responses.find_one({'id': t['respuesta_id']}, {'_id': 0})
+    form = await db.custom_forms.find_one({'id': t['form_id']}, {'_id': 0, 'items': 1, 'titulo': 1, 'periodo': 1})
+    items = {it['id']: {k: it.get(k) for k in ('titulo', 'pregunta', 'tipo', 'estrategia', 'etiqueta', 'opciones')}
+             for it in (form or {}).get('items', [])}
+    return serialize_doc({
+        'tarea': t, 'respuesta': resp, 'items': items,
+        'form': {'titulo': (form or {}).get('titulo'), 'periodo': (form or {}).get('periodo')},
+        'puede_revisar': puede_revisar(user, t) and t['estado'] in ('enviada', 'con_observaciones'),
+        'es_propia': t.get('coordinador_id') == user['id'],
+        'tipos': TIPOS_INCONSISTENCIA,
+    })
+
+
+class LineaRevision(BaseModel):
+    v: str  # 'ok' | 'mal'
+    tipo: Optional[str] = None
+    comentario: Optional[str] = ''
+
+
+class RevisionInput(BaseModel):
+    lineas: Dict[str, LineaRevision] = {}
+    accion: str = 'guardar'  # 'guardar' | 'observaciones' | 'validar'
+
+
+@router.post('/{tarea_id}/revision')
+async def revisar(tarea_id: str, data: RevisionInput, user=Depends(get_current_user)):
+    """Guardar el avance de la revisión, mandar las observaciones a quien
+    contestó, o validar (todas las líneas correctas)."""
+    t = await _tarea_o_404(tarea_id)
+    if t.get('coordinador_id') == user['id']:
+        raise HTTPException(status_code=403, detail='No puedes revisar tu propia respuesta')
+    if not puede_revisar(user, t):
+        raise HTTPException(status_code=403, detail='Solo el jefe o el gerente de la tienda revisan esta categoría')
+    if t['estado'] not in ('enviada', 'con_observaciones'):
+        raise HTTPException(status_code=409, detail='Esta categoría no está esperando revisión')
+    if data.accion not in ('guardar', 'observaciones', 'validar'):
+        raise HTTPException(status_code=400, detail='Acción inválida')
+    resp = await db.custom_form_responses.find_one({'id': t.get('respuesta_id')}, {'_id': 0, 'entries': 1})
+    if not resp:
+        raise HTTPException(status_code=409, detail='La respuesta de esta categoría ya no existe')
+    ids = [e['id'] for e in resp.get('entries', [])]
+    lineas = {}
+    for iid, ln in data.lineas.items():
+        if iid not in ids:
+            continue
+        if ln.v not in ('ok', 'mal'):
+            raise HTTPException(status_code=400, detail='Cada línea es Correcta o Inconsistencia')
+        linea = {'v': ln.v}
+        if ln.v == 'mal':
+            linea['tipo'] = ln.tipo if ln.tipo in TIPOS_INCONSISTENCIA else 'Otro'
+            linea['comentario'] = ' '.join((ln.comentario or '').split())[:500]
+        lineas[iid] = linea
+    malas = [i for i in ids if lineas.get(i, {}).get('v') == 'mal']
+    if data.accion != 'guardar':
+        faltan = [i for i in ids if i not in lineas]
+        if faltan:
+            raise HTTPException(status_code=400, detail=f'Revisa todas las líneas: faltan {len(faltan)}')
+    if data.accion == 'validar' and malas:
+        raise HTTPException(status_code=400, detail='Hay líneas con inconsistencias: no se puede validar')
+    if data.accion == 'observaciones':
+        if not malas:
+            raise HTTPException(status_code=400, detail='No hay inconsistencias: valida la categoría')
+        if any(not lineas[i]['comentario'] for i in malas):
+            raise HTTPException(status_code=400, detail='Describe cada inconsistencia')
+
+    ahora = now_iso()
+    updates = {'revision': {'lineas': lineas, 'revisor_id': user['id'], 'revisor_name': user['name'],
+                            'actualizada_at': ahora}}
+    if data.accion == 'validar':
+        updates.update({'estado': 'validada', 'validada_por': user['id'], 'validada_por_name': user['name'],
+                        'validada_at': ahora})
+    elif data.accion == 'observaciones':
+        updates['estado'] = 'con_observaciones'
+    r = await db.promo_tareas.update_one({'id': t['id'], 'estado': t['estado']}, {'$set': updates})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=409, detail='Alguien más cambió esta categoría; vuelve a abrirla')
+
+    mes = periodo_label(t.get('periodo'))
+    if data.accion == 'validar' and t.get('coordinador_id'):
+        await create_notification(
+            t['coordinador_id'], 'promo_validada',
+            f"{user['name']} validó {t['categoria']} de {t['tienda']} ({mes}). Todo en orden.",
+            related_id=t['form_id'], related_type='promociones',
+            actor_name=user['name'], actor_avatar=user.get('avatar_url'))
+    elif data.accion == 'observaciones' and t.get('coordinador_id'):
+        n = len(malas)
+        await create_notification(
+            t['coordinador_id'], 'promo_observaciones',
+            f"{user['name']} encontró {n} inconsistencia{'s' if n != 1 else ''} en {t['categoria']} de "
+            f"{t['tienda']} ({mes}). Corrígelas en piso.",
+            related_id=t['form_id'], related_type='promociones',
+            actor_name=user['name'], actor_avatar=user.get('avatar_url'))
+    return serialize_doc(await db.promo_tareas.find_one({'id': t['id']}, {'_id': 0}))

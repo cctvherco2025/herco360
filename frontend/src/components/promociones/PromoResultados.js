@@ -4,6 +4,54 @@ import { CheckCircle2, Store, ListChecks, Clock, Lock } from 'lucide-react';
 import api from '@/lib/api';
 import { ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { EstadoTarea } from '@/components/promociones/PromoRevision';
+
+// Publicaciones con tareas: cada celda es una tienda × categoría con su estado.
+function Matriz({ report }) {
+  const celda = (tienda, cat) => report.matriz.find((m) => m.tienda === tienda && m.categoria === cat);
+  return (
+    <div className="rounded-[18px] bg-card border shadow-card p-5" data-testid="promo-report-matriz">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <h3 className="font-heading font-semibold">Tienda × categoría</h3>
+        <span className="text-xs text-muted-foreground">
+          {report.kpis.validadas} validadas · {report.kpis.con_observaciones} con observaciones · {report.kpis.pendientes} sin contestar
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[560px]">
+          <thead>
+            <tr className="text-xs text-muted-foreground uppercase tracking-wide">
+              <th className="text-left font-semibold pb-2 pr-3">Tienda</th>
+              {report.categorias.map((c) => <th key={c} className="text-left font-semibold pb-2 pr-3">{c}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {report.tiendas.map((t) => (
+              <tr key={t} className="border-t align-top">
+                <td className="py-2.5 pr-3 font-medium whitespace-nowrap">{t}</td>
+                {report.categorias.map((c) => {
+                  const m = celda(t, c);
+                  return (
+                    <td key={c} className="py-2.5 pr-3">
+                      {m ? (
+                        <div className="space-y-0.5">
+                          <EstadoTarea estado={m.estado} />
+                          <p className="text-[11px] text-muted-foreground">
+                            {m.coordinador_name || '—'}{m.cumplimiento !== null && m.cumplimiento !== undefined ? ` · ${m.cumplimiento}%` : ''}
+                          </p>
+                        </div>
+                      ) : <span className="text-xs text-muted-foreground">—</span>}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 function Kpi({ icon: Icon, label, value, sub, color, tint }) {
   return (
@@ -75,11 +123,15 @@ export default function PromoResultados({ formId }) {
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Kpi icon={CheckCircle2} label="Cumplimiento general" value={kpis.cumplimiento_general !== null ? `${kpis.cumplimiento_general}%` : '—'}
-          sub={`${kpis.respondieron}/${kpis.asignados} respondieron`} color="#16a34a" tint="rgba(22,163,74,0.14)" />
+          sub={report.flujo_tareas ? `${kpis.respondieron}/${kpis.asignados} categorías contestadas` : `${kpis.respondieron}/${kpis.asignados} respondieron`}
+          color="#16a34a" tint="rgba(22,163,74,0.14)" />
         <Kpi icon={Store} label="Tiendas reportadas" value={`${kpis.tiendas_reportadas}/${kpis.tiendas_total}`} sub="con al menos 1 respuesta" color="#00a5df" tint="rgba(0,165,223,0.14)" />
         <Kpi icon={ListChecks} label="Promociones evaluadas" value={kpis.promociones_evaluadas} sub="en este formulario" color="#712146" tint="rgba(113,33,70,0.14)" />
-        <Kpi icon={Clock} label="Pendientes de respuesta" value={kpis.pendientes} sub="usuarios asignados" color="#ec9032" tint="rgba(236,144,50,0.14)" />
+        <Kpi icon={Clock} label="Pendientes de respuesta" value={kpis.pendientes} sub={report.flujo_tareas ? 'categorías sin contestar' : 'usuarios asignados'}
+          color="#ec9032" tint="rgba(236,144,50,0.14)" />
       </div>
+
+      {report.flujo_tareas && <Matriz report={report} />}
 
       <div className="rounded-[18px] bg-card border shadow-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">

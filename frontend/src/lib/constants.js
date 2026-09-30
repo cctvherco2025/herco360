@@ -198,6 +198,17 @@ export function canManagePromos(user) {
 // de Promociones como si fueran propias. Se otorga por usuario
 // (module_access.promociones_admin); admin y Director comercial ya lo tienen.
 // Igual que core.can_admin_promos.
+// Promociones del mes: tiendas que participan según la sucursal del perfil
+// (mismo mapa que core.PROMO_TIENDAS en el servidor).
+export const PROMO_TIENDAS = { H1: 'Herco Max', H2: 'Herco Centro' };
+export const tiendaPromos = (user) => PROMO_TIENDAS[(user?.sucursal || '').trim()] || '';
+// Revisa Promociones del mes de su tienda: jefe o gerente de tienda.
+export function esRevisorTienda(user) {
+  const cargo = (user?.position || '').trim();
+  const area = (user?.area || '').trim();
+  return !!tiendaPromos(user) && (cargo === 'Jefe de tienda' || (cargo === 'Gerente' && area === 'Tienda'));
+}
+
 export function canAdminPromos(user) {
   if (!user) return false;
   if (user.role === 'admin') return true;

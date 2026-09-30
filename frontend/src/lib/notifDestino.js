@@ -7,7 +7,9 @@ export function destinoNotificacion(n) {
     case 'activity': return '/agenda';
     case 'reservation': return '/sala-de-juntas';
     case 'vacation': return '/vacaciones';
-    case 'promociones': return n.related_id ? `/formularios/custom/${n.related_id}` : '/formularios/promociones';
+    case 'promociones':
+      if (!n.related_id) return '/formularios/promociones';
+      return `/formularios/custom/${n.related_id}${n.type === 'promo_enviada' ? '?tab=revision' : ''}`;
     default: return null;
   }
 }

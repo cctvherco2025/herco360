@@ -33,7 +33,8 @@ from fastapi.responses import Response, StreamingResponse
 from core import (db, get_current_user, serialize_doc, new_id, now_iso, can_manage_promos,
                   require_promo_access, can_create_custom_formulario, require_formularios_principal_access,
                   require_promociones_mes_access, can_admin_promos, PROMO_TIENDAS,
-                  es_jefe_tienda, es_gerente_tienda, es_coordinador_tienda)
+                  es_jefe_tienda, es_gerente_tienda, es_coordinador_tienda, es_revisor_tienda,
+                  tienda_promos)
 from models import CustomFormInput
 from notifications import create_notification
 import promo_tareas
@@ -153,6 +154,13 @@ def _sees_all_responses(user, form: dict) -> bool:
     if _is_promo_admin(user, form):
         return True
     return form.get('creator_id') == user.get('id')
+
+
+def _revisa_tienda(user, form: dict, row: dict) -> bool:
+    """Jefe o gerente de tienda: ve las respuestas (y sus fotos) de su tienda
+    en publicaciones con tareas, para revisarlas."""
+    return (bool(form.get('flujo_tareas')) and es_revisor_tienda(user)
+            and (row or {}).get('sucursal') == tienda_promos(user))
 
 
 async def _get_form_or_404(form_id: str) -> dict:
@@ -849,7 +857,10 @@ async def list_responses(form_id: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=403, detail='No tienes acceso a este formulario')
     q = {'form_id': form_id}
     if not _sees_all_responses(user, form):
-        q['respondent_id'] = user['id']
+        if form.get('flujo_tareas') and es_revisor_tienda(user):
+            q['$or'] = [{'sucursal': tienda_promos(user)}, {'respondent_id': user['id']}]
+        else:
+            q['respondent_id'] = user['id']
     rows = await db.custom_form_responses.find(q, {'_id': 0, 'entries': 0}).sort('created_at', -1).limit(300).to_list(300)
     return serialize_doc(rows)
 
@@ -883,6 +894,8 @@ async def get_report(form_id: str, user=Depends(get_current_user)):
     form = await _get_form_or_404(form_id)
     if not _sees_all_responses(user, form):
         raise HTTPException(status_code=403, detail='No tienes acceso al reporte de este formulario')
+    if form.get('flujo_tareas'):
+        return await _reporte_por_tareas(form)
 
     assigned_ids = list(dict.fromkeys(form.get('audiencia_resueltos') or []))
     assigned_users = []
@@ -964,7 +977,7 @@ async def get_response(form_id: str, resp_id: str, user=Depends(get_current_user
     row = await db.custom_form_responses.find_one({'id': resp_id, 'form_id': form_id}, {'_id': 0})
     if not row:
         raise HTTPException(status_code=404, detail='Respuesta no encontrada')
-    if not (_sees_all_responses(user, form) or row['respondent_id'] == user['id']):
+    if not (_sees_all_responses(user, form) or row['respondent_id'] == user['id'] or _revisa_tienda(user, form, row)):
         raise HTTPException(status_code=403, detail='No tienes acceso a esta respuesta')
     return serialize_doc(row)
 
@@ -992,7 +1005,7 @@ async def get_response_photo(form_id: str, resp_id: str, photo_id: str, user=Dep
     row = await db.custom_form_responses.find_one({'id': resp_id, 'form_id': form_id}, {'_id': 0})
     if not row:
         raise HTTPException(status_code=404, detail='Respuesta no encontrada')
-    if not (_sees_all_responses(user, form) or row['respondent_id'] == user['id']):
+    if not (_sees_all_responses(user, form) or row['respondent_id'] == user['id'] or _revisa_tienda(user, form, row)):
         raise HTTPException(status_code=403, detail='No tienes acceso a esta respuesta')
     photo = None
     for p in row.get('general_photos', []):
@@ -1011,3 +1024,88 @@ async def get_response_photo(form_id: str, resp_id: str, photo_id: str, user=Dep
         logger.error(f'photo download failed: {ex}')
         raise HTTPException(status_code=502, detail='No se pudo descargar la foto')
     return Response(content=content, media_type=photo.get('content_type', ctype))
+
+
+def _por_promocion(form: dict, responses: list) -> list:
+    """Visibles / no visibles / no aplica y cumplimiento de cada pregunta."""
+    items_by_id = {it['id']: it for it in form.get('items', [])}
+    por_promo = {it['id']: {'id': it['id'], 'titulo': it['titulo'], 'categoria': it.get('seccion') or 'General',
+                            'lineas': len(it.get('opciones') or []) if it.get('tipo') == 'checklist' else 1,
+                            'estrategia': it.get('estrategia'), 'etiqueta': it.get('etiqueta'),
+                            'visibles': 0, 'no_visibles': 0, 'no_aplica': 0}
+                 for it in form.get('items', [])}
+    for r in responses:
+        for e in r.get('entries', []):
+            row = por_promo.get(e['id'])
+            if not row:
+                continue
+            y, n, a = _promo_counts(e, items_by_id.get(e['id']))
+            row['visibles'] += y; row['no_visibles'] += n; row['no_aplica'] += a
+    out = []
+    for row in por_promo.values():
+        evaluated = row['visibles'] + row['no_visibles']
+        row['cumplimiento'] = round(row['visibles'] / evaluated * 100) if evaluated else None
+        out.append(row)
+    out.sort(key=lambda r: (r['categoria'], r['titulo']))
+    return out
+
+
+async def _reporte_por_tareas(form: dict) -> dict:
+    """Reporte de una publicación con tareas: la unidad es tienda × categoría
+    (no la persona). Incluye la matriz para el tablero."""
+    tareas = await db.promo_tareas.find({'form_id': form['id'], 'estado': {'$ne': 'cancelada'}}, {'_id': 0}) \
+        .sort([('tienda', 1), ('categoria', 1)]).to_list(500)
+    responses = await db.custom_form_responses.find({'form_id': form['id']}, {'_id': 0}).to_list(2000)
+    resp_by_id = {r['id']: r for r in responses}
+    items_by_id = {it['id']: it for it in form.get('items', [])}
+
+    def conteo(resps):
+        yes = no = 0
+        for r in resps:
+            for e in r.get('entries', []):
+                y, n, _ = _promo_counts(e, items_by_id.get(e['id']))
+                yes += y; no += n
+        return yes, no
+
+    matriz = []
+    for t in tareas:
+        r = resp_by_id.get(t.get('respuesta_id'))
+        yes, no = conteo([r] if r else [])
+        malas = sum(1 for ln in ((t.get('revision') or {}).get('lineas') or {}).values() if ln.get('v') == 'mal')
+        matriz.append({'id': t['id'], 'tienda': t['tienda'], 'categoria': t['categoria'], 'estado': t['estado'],
+                       'coordinador_name': t.get('coordinador_name'), 'validada_por_name': t.get('validada_por_name'),
+                       'inconsistencias': malas if t['estado'] == 'con_observaciones' else 0,
+                       'cumplimiento': round(yes / (yes + no) * 100) if (yes + no) else None})
+
+    por_sucursal = []
+    for tienda in PROMO_TIENDAS.values():
+        ts = [t for t in tareas if t['tienda'] == tienda]
+        con_resp = [t for t in ts if t.get('respuesta_id') in resp_by_id]
+        yes, no = conteo([resp_by_id[t['respuesta_id']] for t in con_resp])
+        n_asig, n_resp = len(ts), len(con_resp)
+        estado = 'Completo' if n_resp and n_resp >= n_asig else ('Parcial' if n_resp else 'Pendiente')
+        por_sucursal.append({
+            'sucursal': tienda, 'estado': estado, 'asignados': n_asig, 'respondieron': n_resp,
+            'validadas': sum(1 for t in ts if t['estado'] == 'validada'),
+            'promociones_evaluadas': yes + no,
+            'cumplimiento': round(yes / (yes + no) * 100) if (yes + no) else None,
+        })
+
+    vigentes = [resp_by_id[t['respuesta_id']] for t in tareas if t.get('respuesta_id') in resp_by_id]
+    por_promocion = _por_promocion(form, vigentes)
+    total_yes = sum(r['visibles'] for r in por_promocion)
+    total_eval = total_yes + sum(r['no_visibles'] for r in por_promocion)
+    kpis = {
+        'cumplimiento_general': round(total_yes / total_eval * 100) if total_eval else None,
+        'tiendas_reportadas': sum(1 for s in por_sucursal if s['respondieron'] > 0),
+        'tiendas_total': len(por_sucursal),
+        'promociones_evaluadas': len(por_promocion),
+        'asignados': len(tareas),
+        'respondieron': sum(1 for t in tareas if t.get('respuesta_id') in resp_by_id),
+        'pendientes': sum(1 for t in tareas if t['estado'] == 'pendiente'),
+        'validadas': sum(1 for t in tareas if t['estado'] == 'validada'),
+        'con_observaciones': sum(1 for t in tareas if t['estado'] == 'con_observaciones'),
+    }
+    return {'flujo_tareas': True, 'kpis': kpis, 'por_promocion': por_promocion, 'por_sucursal': por_sucursal,
+            'matriz': matriz, 'categorias': sorted({t['categoria'] for t in tareas}),
+            'tiendas': list(PROMO_TIENDAS.values())}
