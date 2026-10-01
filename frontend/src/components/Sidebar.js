@@ -41,7 +41,7 @@ function NavItem({ item, onNavigate }) {
       {({ isActive }) => (
         <>
           {isActive && (
-            <motion.span layoutId="sidebar-active" className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-full bg-[#00a5df]" />
+            <motion.span layoutId="sidebar-active" className="absolute left-0 inset-y-0 my-auto h-6 w-1 rounded-full bg-[#00a5df]" />
           )}
           <item.icon className="h-[18px] w-[18px] shrink-0" />
           {item.label}
@@ -100,7 +100,7 @@ function NavGroup({ item, onNavigate }) {
                     <>
                       {/* la marca celeste del item activo, sobre la línea guía */}
                       {isActive && (
-                        <motion.span layoutId="sidebar-active" className="absolute -left-[10.5px] top-1/2 -translate-y-1/2 h-6 w-1 rounded-full bg-[#00a5df]" />
+                        <motion.span layoutId="sidebar-active" className="absolute -left-[10.5px] inset-y-0 my-auto h-6 w-1 rounded-full bg-[#00a5df]" />
                       )}
                       <c.icon className="h-4 w-4 shrink-0" />
                       <span className="flex-1">{c.label}</span>

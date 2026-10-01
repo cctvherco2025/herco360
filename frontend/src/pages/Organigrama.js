@@ -27,13 +27,23 @@ const C = {
 };
 
 // ---- Org-chart departments (dependen del Director Comercial) ----
+// Cada rol es un texto o { label, level }: level indica cuántos niveles cuelga
+// del primero (ej. Gerente H1 → Jefes de tienda → Coordinadores).
 const DEPARTMENTS = [
-  { name: 'ECCP', color: C.navy, icon: ClipboardCheck, roles: ['Jefe de ECCP', 'Coordinadores de ECCP'] },
+  { name: 'ECCP', color: C.navy, icon: ClipboardCheck, roles: ['Jefe de ECCP', { label: 'Coordinadores de ECCP', level: 1 }] },
   { name: 'Centro de Servicio', color: C.cyan, icon: Headphones, roles: ['Jefe de Centro de Servicio'] },
   { name: 'Negocios Remotos', color: C.purple, icon: Globe, roles: ['Jefe de Negocios Remotos'] },
-  { name: 'Negocios País', color: C.green, icon: Map, roles: ['Jefe de Negocios País'] },
-  { name: 'Cajas', color: C.orange, icon: CreditCard, roles: ['Jefe de Cajas'] },
-  { name: 'Operación Tienda', color: C.sky, icon: Store, roles: ['Gerente H1', 'Gerente H2', 'Gerente H4', 'Gerente H5', 'Gerente H6'] },
+  { name: 'Negocios País', color: C.green, icon: Map, roles: ['Gerente de Negocios País'] },
+  { name: 'Cajas', color: C.orange, icon: CreditCard, roles: ['Jefe de Cajas', { label: 'Coordinador de Cajas', level: 1 }] },
+  {
+    name: 'Operación Tienda', color: C.sky, icon: Store,
+    roles: [
+      'Gerente de Operación Tienda',
+      { label: 'Gerente H1', level: 1 }, { label: 'Jefes de tienda H1', level: 2 }, { label: 'Coordinadores H1', level: 3 },
+      { label: 'Gerente H2', level: 1 }, { label: 'Jefe de tienda H2', level: 2 }, { label: 'Coordinadores H2', level: 3 },
+      { label: 'Gerente H4', level: 1 }, { label: 'Gerente H5', level: 1 }, { label: 'Gerente H6', level: 1 },
+    ],
+  },
   { name: 'Ferrecrédito', color: C.red, icon: Coins, roles: ['Jefe de Ferrecrédito'] },
 ];
 
@@ -51,6 +61,8 @@ const MODULES = [
 const FULL = [true, true, true, true, true, true];
 const BASIC = [true, true, true, true, false, false];
 const COORD = [true, true, true, true, false, true]; // Coordinadores ECCP: sin Inventario, con Reportes
+const SIN_REPORTES = [true, true, true, true, true, false];
+const RESTRINGIDO = [true, true, true, false, false, false]; // sin Vacaciones, Inventario ni Reportes
 
 const ROLES = [
   { role: 'Director Comercial', access: FULL, highlight: true },
@@ -58,12 +70,17 @@ const ROLES = [
   { role: 'Coordinadores de ECCP', access: COORD },
   { role: 'Jefe Centro de Servicio', access: BASIC },
   { role: 'Jefe Negocios Remotos', access: BASIC },
-  { role: 'Jefe Negocios País', access: BASIC },
+  { role: 'Gerente de Negocios País', access: BASIC },
   { role: 'Jefe de Cajas', access: BASIC },
+  { role: 'Coordinador de Cajas', access: BASIC },
   { role: 'Jefe de Ferrecrédito', access: BASIC },
-  { role: 'Operación Tienda', access: FULL },
+  { role: 'Gerente de Operación Tienda', access: SIN_REPORTES },
   { role: 'Gerente H1', access: FULL },
+  { role: 'Jefes de tienda H1', access: SIN_REPORTES },
+  { role: 'Coordinadores H1', access: SIN_REPORTES },
   { role: 'Gerente H2', access: FULL },
+  { role: 'Jefe de tienda H2', access: RESTRINGIDO },
+  { role: 'Coordinadores H2', access: RESTRINGIDO },
   { role: 'Gerente H4', access: FULL },
   { role: 'Gerente H5', access: FULL },
   { role: 'Gerente H6', access: FULL },
@@ -99,15 +116,20 @@ function DeptCard({ dept }) {
       {/* sub-roles */}
       <span className="h-4 w-px" style={{ background: '#e2e8f0' }} />
       <div className="w-full space-y-1.5">
-        {dept.roles.map((r) => (
-          <div
-            key={r}
-            className="rounded-lg border bg-muted/40 px-2 py-1.5 text-center text-[11.5px] font-medium leading-tight text-muted-foreground"
-            style={{ borderLeftColor: dept.color, borderLeftWidth: 3 }}
-          >
-            {r}
-          </div>
-        ))}
+        {dept.roles.map((r) => {
+          const { label, level = 0 } = typeof r === 'string' ? { label: r } : r;
+          return (
+            <div key={label} className="flex items-center" style={{ paddingLeft: Math.max(0, level - 1) * 8 }}>
+              {level > 0 && <span className="mr-1 text-[11px] leading-none text-muted-foreground/60">└</span>}
+              <div
+                className={`flex-1 min-w-0 rounded-lg border px-2 py-1.5 text-center text-[11.5px] font-medium leading-tight ${level === 0 ? 'bg-muted/60 text-foreground' : 'bg-muted/40 text-muted-foreground'}`}
+                style={{ borderLeftColor: dept.color, borderLeftWidth: 3 }}
+              >
+                {label}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -351,7 +373,7 @@ export default function Organigrama() {
         </div>
         <p className="mt-3 flex items-start gap-1.5 text-[12px] text-muted-foreground">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: C.orange }} />
-          Los Coordinadores de ECCP acceden a Reportes (por área ECCP) pero no a Inventario, que se reserva a Jefes de ECCP, Gerentes de Tienda y Dirección.
+          Acceso por defecto de cada rol. Hay excepciones por usuario (por ejemplo, algunos Coordinadores H1 sí ven Reportes); se revisan y cambian en Gestión de accesos, más abajo.
         </p>
       </section>
 
@@ -373,12 +395,13 @@ export default function Organigrama() {
             </div>
             <p className="mb-2 text-[12px] text-muted-foreground">Los 6 módulos, incluidos Inventario y Reportes.</p>
             <ul className="space-y-1.5 text-[13px] text-foreground">
-              {['Director Comercial', 'Jefe de ECCP', 'Operación Tienda', 'Gerentes H1, H2, H4, H5 y H6'].map((x) => (
+              {['Director Comercial', 'Jefe de ECCP', 'Gerentes H1, H2, H4, H5 y H6'].map((x) => (
                 <li key={x} className="flex items-center gap-2"><Check className="h-3.5 w-3.5" style={{ color: C.green }} /> {x}</li>
               ))}
             </ul>
             <p className="mt-3 rounded-lg bg-muted/50 px-3 py-2 text-[11.5px] text-muted-foreground">
-              <strong>Coordinadores de ECCP:</strong> acceso completo excepto Inventario.
+              <strong>Coordinadores de ECCP:</strong> todo excepto Inventario.<br />
+              <strong>Gerente de Operación Tienda, Jefes y Coordinadores H1:</strong> todo excepto Reportes.
             </p>
           </motion.div>
 
@@ -393,10 +416,13 @@ export default function Organigrama() {
             </div>
             <p className="mb-2 text-[12px] text-muted-foreground">Solo visualizan: Inicio, Agenda, Sala de Juntas y Vacaciones.</p>
             <ul className="space-y-1.5 text-[13px] text-foreground">
-              {['Jefe Centro de Servicio', 'Jefe Negocios Remotos', 'Jefe Negocios País', 'Jefe de Cajas', 'Jefe de Ferrecrédito', 'Otros usuarios'].map((x) => (
+              {['Jefe Centro de Servicio', 'Jefe Negocios Remotos', 'Gerente de Negocios País', 'Jefe y Coordinador de Cajas', 'Jefe de Ferrecrédito', 'Otros usuarios'].map((x) => (
                 <li key={x} className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full" style={{ background: C.orange }} /> {x}</li>
               ))}
             </ul>
+            <p className="mt-3 rounded-lg bg-muted/50 px-3 py-2 text-[11.5px] text-muted-foreground">
+              <strong>Jefe de tienda y Coordinadores H2:</strong> solo Inicio, Agenda y Sala de Juntas (sin Vacaciones).
+            </p>
           </motion.div>
 
           {/* Card 3 */}
@@ -411,7 +437,7 @@ export default function Organigrama() {
             <ul className="space-y-2.5 text-[13px] text-muted-foreground">
               <li className="flex gap-2"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: C.purple }} /> El sistema funciona con permisos por rol (RBAC).</li>
               <li className="flex gap-2"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: C.purple }} /> Los módulos se muestran u ocultan automáticamente según el rol.</li>
-              <li className="flex gap-2"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: C.purple }} /> Vacaciones está disponible para todos los usuarios.</li>
+              <li className="flex gap-2"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: C.purple }} /> Vacaciones está disponible para todos, salvo a quien se le quite en Gestión de accesos.</li>
               <li className="flex gap-2"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: C.purple }} /> Inventario y Reportes solo son visibles para los roles autorizados.</li>
             </ul>
           </motion.div>
