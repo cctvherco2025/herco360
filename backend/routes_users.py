@@ -1,6 +1,6 @@
 """User management routes."""
 from fastapi import APIRouter, HTTPException, Depends
-from core import (db, get_current_user, require_admin, serialize_doc, now_iso, CARGOS_SOLO_ADMIN,
+from core import (db, get_current_user, require_admin, serialize_doc, now_iso,
                   hash_password, new_id, require_access_manager, GATED_MODULES,
                   can_access_inventory, can_access_reports, can_access_cams, can_access_formulario,
                   can_access_rutina, can_access_formularios_principal, can_access_promociones_mes,
@@ -142,22 +142,13 @@ async def create_user(data: AdminUserCreate, admin=Depends(require_admin)):
 @router.patch('/me')
 async def update_me(data: ProfileUpdate, user=Depends(get_current_user)):
     updates = {k: v for k, v in data.model_dump().items() if v is not None}
-    # "Jefe de tienda" lo asigna solo un admin: nadie se lo pone desde aquí, y
-    # quien lo tiene no se cambia solo de cargo, área ni tienda.
-    actual = (user.get('position') or '').strip()
+    # Cargo, área y tienda deciden a qué módulos entra cada quien: solo los
+    # cambia un administrador (Usuarios → Editar). Aquí solo nombre, teléfono y foto.
     for campo in ('position', 'area', 'sucursal'):
-        nuevo = updates.get(campo)
-        if nuevo is None or nuevo == (user.get(campo) or ''):
-            continue  # "Mi perfil" manda todos los campos aunque no cambien
-        if actual in CARGOS_SOLO_ADMIN or (campo == 'position' and nuevo.strip() in CARGOS_SOLO_ADMIN):
+        nuevo = updates.pop(campo, None)
+        if nuevo is not None and nuevo.strip() != (user.get(campo) or '').strip():
             raise HTTPException(status_code=403,
-                                detail='El cargo de Jefe de tienda y su tienda solo los cambia un administrador')
-    # Director comercial oversees the whole company -> área fixed to "Casa Matriz".
-    if updates.get('position') == 'Director comercial':
-        updates['area'] = 'Casa Matriz'
-    # Only "Tienda" area has a sucursal; everyone else is "Casa Matriz".
-    if updates.get('area') and updates['area'] != 'Tienda':
-        updates['sucursal'] = 'Casa Matriz'
+                                detail='Tu cargo, área y tienda los cambia un administrador')
     if updates:
         await db.users.update_one({'id': user['id']}, {'$set': updates})
     updated = await db.users.find_one({'id': user['id']}, {'_id': 0, 'password_hash': 0})
@@ -195,6 +186,8 @@ async def reject_user(user_id: str, admin=Depends(require_admin)):
 async def change_role(user_id: str, data: RoleUpdate, admin=Depends(require_admin)):
     if data.role not in ('admin', 'user'):
         raise HTTPException(status_code=400, detail='Rol inválido')
+    if user_id == admin['id'] and data.role != 'admin':
+        raise HTTPException(status_code=400, detail='No puedes quitarte tu propio rol de administrador')
     await db.users.update_one({'id': user_id}, {'$set': {'role': data.role}})
     return {'message': 'Rol actualizado'}
 
@@ -219,6 +212,10 @@ async def update_user(user_id: str, data: AdminUserUpdate, admin=Depends(require
         if payload['role'] not in ('admin', 'user'):
             raise HTTPException(status_code=400, detail='Rol inválido')
         updates['role'] = payload['role']
+    # Un admin no se quita a sí mismo el rol ni se desactiva (no quedaría quien administre).
+    if user_id == admin['id'] and (updates.get('role', 'admin') != 'admin'
+                                   or updates.get('status', 'approved') != 'approved'):
+        raise HTTPException(status_code=400, detail='No puedes quitarte el rol de administrador ni desactivar tu cuenta')
     if 'password' in payload:
         if len(payload['password']) < 4:
             raise HTTPException(status_code=400, detail='La contraseña debe tener al menos 4 caracteres')

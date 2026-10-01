@@ -38,9 +38,13 @@ export default function Register() {
     if (form.area === 'Tienda' && !form.sucursal) { toast.error('Selecciona tu tienda'); return; }
     setLoading(true);
     try {
-      await register(form);
-      toast.success('Cuenta creada. ¡Bienvenido a HERCO360!');
-      navigate('/');
+      const data = await register(form);
+      if (data?.token) { toast.success('Cuenta creada. ¡Bienvenido a HERCO360!'); navigate('/'); }
+      else {
+        // la cuenta queda pendiente hasta que un administrador la apruebe
+        toast.success(data?.message || 'Cuenta creada. Un administrador debe aprobarla antes de que puedas entrar.', { duration: 8000 });
+        navigate('/login');
+      }
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Error al crear la cuenta');
     } finally {

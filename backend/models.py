@@ -22,8 +22,8 @@ class LoginInput(BaseModel):
     password: str
 
 
-class ResetPasswordInput(BaseModel):
-    email: EmailStr
+class ChangePasswordInput(BaseModel):
+    current_password: str
     new_password: str = Field(min_length=4)
 
 

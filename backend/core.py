@@ -346,7 +346,9 @@ async def require_rutina_schema_editor(user=Depends(get_current_user)):
 # (el jefe de tienda revisa Promociones del mes de su sucursal), así que nadie
 # se los pone solo al registrarse ni desde "Mi perfil".
 JEFE_TIENDA = 'Jefe de tienda'
-CARGOS_SOLO_ADMIN = {JEFE_TIENDA}
+# Cargos de mando: solo un administrador los asigna (no se eligen al
+# registrarse; nadie cambia su propio cargo, área ni tienda).
+CARGOS_SOLO_ADMIN = {JEFE_TIENDA, 'Jefe', 'Gerente', 'Director comercial'}
 
 # Promociones del mes: tiendas que participan, por la sucursal del perfil.
 # Por ahora solo Herco Max y Herco Centro (las que tienen coordinadores y jefe).

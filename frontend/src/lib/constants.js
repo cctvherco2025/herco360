@@ -47,10 +47,10 @@ export function colorTint(hex, isDark) {
 
 // User cargo (job title) and área (department) options
 export const CARGOS = ['Jefe', 'Jefe de tienda', 'Coordinador', 'Asesor Comercial', 'Gerente', 'Director comercial'];
-// Cargos que solo asigna un admin desde Usuarios (dan permisos sobre una
-// tienda): no aparecen al registrarse ni en "Mi perfil" (mismo criterio que
+// Cargos de mando: solo los asigna un admin desde Usuarios (dan acceso a más
+// módulos); no aparecen al registrarse (mismo criterio que
 // core.CARGOS_SOLO_ADMIN en el servidor).
-export const CARGOS_SOLO_ADMIN = ['Jefe de tienda'];
+export const CARGOS_SOLO_ADMIN = ['Jefe de tienda', 'Jefe', 'Gerente', 'Director comercial'];
 export const CARGOS_PROPIOS = CARGOS.filter((c) => !CARGOS_SOLO_ADMIN.includes(c));
 export const AREAS = [
   'ECCP', 'Negocios País', 'Negocios Remotos', 'Caja', 'Ferrecréditos',
