@@ -1,6 +1,8 @@
 import React from 'react';
-import { catStyle } from '@/lib/constants';
-import { ymd, DIAS_CORTO } from '@/lib/time';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence, useDragControls } from 'framer-motion';
+import { catStyle, ACTIVITY_COLORS } from '@/lib/constants';
+import { ymd, DIAS, DIAS_CORTO, MESES_CORTO } from '@/lib/time';
 import { useTheme } from '@/context/ThemeContext';
 
 const START_HOUR = 7;
@@ -20,48 +22,6 @@ function timeFromOffset(offsetY) {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
-// Given a day's events, assign each one a column + total-column-count so that
-// events overlapping in time are placed side by side instead of stacked on
-// top of each other — the same approach Google Calendar uses.
-function layoutDayEvents(dayEvents) {
-  const sorted = [...dayEvents].sort((a, b) => {
-    const s = toMin(a.start_time) - toMin(b.start_time);
-    if (s !== 0) return s;
-    return toMin(b.end_time) - toMin(a.end_time);
-  });
-
-  const results = [];
-  let cluster = [];
-  let clusterEnd = -Infinity;
-
-  const flushCluster = () => {
-    if (!cluster.length) return;
-    const columnEndTimes = []; // last end time placed in each column
-    cluster.forEach((ev) => {
-      const s = toMin(ev.start_time);
-      const e = toMin(ev.end_time);
-      let col = columnEndTimes.findIndex((endT) => endT <= s);
-      if (col === -1) { col = columnEndTimes.length; columnEndTimes.push(e); }
-      else { columnEndTimes[col] = e; }
-      results.push({ ev, col, totalCols: 0 }); // totalCols filled in below
-    });
-    const totalCols = columnEndTimes.length;
-    for (let i = results.length - cluster.length; i < results.length; i++) results[i].totalCols = totalCols;
-    cluster = [];
-    clusterEnd = -Infinity;
-  };
-
-  sorted.forEach((ev) => {
-    const s = toMin(ev.start_time);
-    if (cluster.length && s >= clusterEnd) flushCluster();
-    cluster.push(ev);
-    clusterEnd = Math.max(clusterEnd, toMin(ev.end_time));
-  });
-  flushCluster();
-
-  return results;
 }
 
 export function startOfWeek(date) {
@@ -162,6 +122,165 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
       </span>
     </button>
   );
+}
+
+/* ── Actividades que se CRUZAN ─────────────────────────────────────────────
+   Se agrupan por día de forma encadenada (A cruza con B y B con C → un grupo,
+   aunque A y C no se crucen). Un grupo de 2 o más se dibuja como UN bloque a
+   todo el ancho (de la hora más temprana al fin más tardío) con la primera
+   actividad, "+N más" y una rayita de color por actividad; al tocarlo sube
+   una hoja con la lista. En la vista Día, un grupo de exactamente 2 va lado
+   a lado. Igual en PC y en celular. */
+function gruposDelDia(evs) {
+  const orden = [...evs].sort((a, b) => toMin(a.start_time) - toMin(b.start_time) || toMin(b.end_time) - toMin(a.end_time));
+  const grupos = [];
+  let actual = null;
+  let fin = -Infinity;
+  orden.forEach((ev) => {
+    if (actual && toMin(ev.start_time) < fin) {
+      actual.push(ev);
+      fin = Math.max(fin, toMin(ev.end_time));
+    } else {
+      actual = [ev];
+      grupos.push(actual);
+      fin = toMin(ev.end_time);
+    }
+  });
+  return grupos;
+}
+
+// Colores para distinguir las actividades de un grupo: la primera que usa un
+// color lo conserva; las que lo repiten toman otro de la paleta que nadie del
+// grupo use (solo en la vista; el color guardado de la actividad no cambia).
+const PALETA_CONTRASTE = ['#1e395e', '#ec9032', '#16a34a', '#712146', '#0d9488', '#dc2626', '#e0a800', '#64748b', '#3cbef6', '#00a5df']
+  .filter((c) => ACTIVITY_COLORS.some((a) => a.value === c));
+function coloresDelGrupo(evs, isDark) {
+  const propios = evs.map((e) => evStyle(e, isDark).solid.toLowerCase());
+  const usados = new Set(propios);
+  const vistos = new Set();
+  return propios.map((c) => {
+    if (!vistos.has(c)) { vistos.add(c); return c; }
+    const libre = PALETA_CONTRASTE.find((p) => !usados.has(p.toLowerCase()));
+    if (!libre) return c; // más actividades que colores: se repite
+    usados.add(libre.toLowerCase());
+    return libre;
+  });
+}
+
+const PillMas = ({ n }) => (
+  <span className="inline-block shrink-0 rounded-full border border-border bg-card px-1.5 text-[10px] font-bold leading-[16px] text-foreground">+{n} más</span>
+);
+
+function BloqueGrupo({ evs, isDark, onClick }) {
+  const primera = evs[0];
+  const { solid, tint } = evStyle(primera, isDark);
+  const inicio = Math.min(...evs.map((e) => toMin(e.start_time)));
+  const fin = Math.max(...evs.map((e) => toMin(e.end_time)));
+  const top = ((inicio - START_HOUR * 60) / 60) * HOUR_H;
+  const height = Math.max(30, ((fin - inicio) / 60) * HOUR_H - 4);
+  const bajo = height < 40;
+  return (
+    <button type="button" onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+      className="absolute z-10 flex overflow-hidden rounded-[12px] border px-2 py-1 text-left shadow-xs hover:shadow-card transition-[transform,box-shadow] cursor-pointer"
+      style={{ top, height, left: 2, right: 2, background: tint, borderColor: solid }}
+      title={evs.map((e) => `${e.start_time} ${e.title}`).join('\n')}
+      data-testid="calendar-event-group">
+      {/* una rayita apilada por cada actividad del grupo, con su color */}
+      <span className="mr-1.5 flex w-[4px] shrink-0 flex-col gap-[2px]">
+        {coloresDelGrupo(evs, isDark).map((c, i) => <span key={`${evs[i].id}-${i}`} className="min-h-[3px] flex-1 rounded-full" style={{ background: c }} />)}
+      </span>
+      {bajo ? (
+        <span className="flex min-w-0 flex-1 items-center gap-1">
+          <span className="min-w-0 flex-1 truncate text-[11px] font-semibold leading-[14px]" style={{ color: solid }}>{primera.title}</span>
+          <PillMas n={evs.length - 1} />
+        </span>
+      ) : (
+        <span className="min-w-0 flex-1">
+          <span className="block text-[11px] font-semibold leading-[14px] break-words" style={{ color: solid, ...clampStyle(height < 70 ? 1 : 3) }}>
+            {seRepite(primera) && <IconoRepite />}{primera.title}
+          </span>
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+            <span className="text-[10px] font-medium leading-[14px] opacity-80" style={{ color: solid }}>{primera.start_time}</span>
+            <PillMas n={evs.length - 1} />
+          </span>
+        </span>
+      )}
+    </button>
+  );
+}
+
+const tituloDia = (d) => `${DIAS[d.getDay()].charAt(0).toUpperCase()}${DIAS[d.getDay()].slice(1)} ${d.getDate()} ${MESES_CORTO[d.getMonth()]}`;
+const participantesTexto = (ev) => {
+  const nombres = (ev.participants || []).map((p) => (p.name || '').trim().split(/\s+/)[0]).filter(Boolean);
+  if (ev.owner_name) nombres.unshift(ev.owner_name);
+  if (!nombres.length) return 'Sin participantes';
+  return nombres.length > 3 ? `${nombres.slice(0, 3).join(', ')} +${nombres.length - 3}` : nombres.join(', ');
+};
+
+// Hoja que sube desde abajo con las actividades de un grupo. Se cierra con el
+// fondo oscuro, deslizándola hacia abajo o con Escape.
+function HojaGrupo({ grupo, isDark, onClose, onPick }) {
+  const controles = useDragControls();
+  React.useEffect(() => {
+    if (!grupo) return undefined;
+    const esc = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [grupo, onClose]);
+  return createPortal(
+    <AnimatePresence>
+      {grupo && (
+        <motion.div key="hoja" className="fixed inset-0 z-50" exit={{ opacity: 1 }}>
+          <motion.div className="absolute inset-0 bg-black/50" onClick={onClose}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} />
+          <motion.div
+            role="dialog" aria-modal="true" aria-label={tituloDia(grupo.dia)}
+            className="absolute inset-x-0 bottom-0 mx-auto flex max-h-[75vh] w-full max-w-[560px] flex-col rounded-t-[22px] border-t bg-card shadow-2xl"
+            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+            initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+            transition={{ type: 'tween', duration: 0.25, ease: 'easeOut' }}
+            drag="y" dragListener={false} dragControls={controles}
+            dragConstraints={{ top: 0, bottom: 0 }} dragElastic={{ top: 0, bottom: 0.8 }}
+            onDragEnd={(e, info) => { if (info.offset.y > 80 || info.velocity.y > 500) onClose(); }}
+            data-testid="agenda-group-sheet">
+            {/* zona para arrastrar hacia abajo */}
+            <div className="shrink-0 cursor-grab touch-none px-5 pb-3 pt-2.5" onPointerDown={(e) => controles.start(e)}>
+              <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-muted-foreground/30" />
+              <p className="font-heading text-lg font-semibold">{tituloDia(grupo.dia)}</p>
+              <p className="text-sm text-muted-foreground">{grupo.evs.length} actividades a la misma hora</p>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
+              {grupo.evs.map((ev, i, todos) => (
+                <button key={`${ev.id}-${i}`} type="button" onClick={() => onPick(ev)}
+                  className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left hover:bg-muted/60 active:bg-muted">
+                  <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: coloresDelGrupo(todos, isDark)[i] }} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold leading-snug break-words">{ev.title}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">{ev.start_time} – {ev.end_time} · {participantesTexto(ev)}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body,
+  );
+}
+
+// Bloques de un día: sueltos a todo el ancho, grupos como un solo bloque.
+// ladoALadoDe2: en la vista Día, un grupo de exactamente 2 va lado a lado.
+function BloquesDelDia({ evs, dia, isDark, onEventClick, onAbrirGrupo, draggable, onDragStart, onDragEnd, ladoALadoDe2 = false }) {
+  return gruposDelDia(evs).map((g) => {
+    if (g.length === 1 || (ladoALadoDe2 && g.length === 2)) {
+      return g.map((ev, i) => (
+        <EventBlock key={ev.id} ev={ev} isDark={isDark} onClick={onEventClick} col={i} totalCols={g.length}
+          draggable={draggable} onDragStart={onDragStart} onDragEnd={onDragEnd} />
+      ));
+    }
+    return <BloqueGrupo key={g.map((e) => e.id).join('|')} evs={g} isDark={isDark} onClick={() => onAbrirGrupo({ dia, evs: g })} />;
+  });
 }
 
 /* ── Actividades de VARIOS DÍAS ────────────────────────────────────────────
@@ -340,6 +459,8 @@ function useResizableColumns(gridRef, numCols) {
 export const WeekView = React.forwardRef(function WeekView({ anchor, activities, onEventClick, onSlotClick, onEventMove }, ref) {
   const { isDark } = useTheme();
   const [dragEv, setDragEv] = React.useState(null);
+  const [grupo, setGrupo] = React.useState(null); // { dia, evs } de la hoja abierta
+  const cerrarGrupo = React.useCallback(() => setGrupo(null), []);
   const gridRef = React.useRef(null);
 
   const start = startOfWeek(anchor);
@@ -368,7 +489,6 @@ export const WeekView = React.forwardRef(function WeekView({ anchor, activities,
         {days.map((day, i) => {
           const ds = ymd(day);
           const dayEvents = activities.filter((a) => ocupaDia(a, ds));
-          const laidOut = layoutDayEvents(dayEvents);
           const isToday = ds === todayStr;
           return (
             <div key={ds} className="relative border-l first:border-l-0">
@@ -383,9 +503,8 @@ export const WeekView = React.forwardRef(function WeekView({ anchor, activities,
                 {Array.from({ length: railHours }).map((_, hi) => (
                   <div key={hi} style={{ height: HOUR_H }} className="border-t border-dashed border-border/60" />
                 ))}
-                {laidOut.map(({ ev, col, totalCols }) => (
-                  <EventBlock key={ev.id} ev={ev} isDark={isDark} onClick={onEventClick} col={col} totalCols={totalCols} draggable={!!onEventMove} onDragStart={setDragEv} onDragEnd={() => setDragEv(null)} />
-                ))}
+                <BloquesDelDia evs={dayEvents} dia={day} isDark={isDark} onEventClick={onEventClick} onAbrirGrupo={setGrupo}
+                  draggable={!!onEventMove} onDragStart={setDragEv} onDragEnd={() => setDragEv(null)} />
               </div>
               {i < days.length - 1 && (
                 <ColumnResizeHandle onResizeStart={startResize(i)} onResetPair={resetPair(i)} />
@@ -394,6 +513,7 @@ export const WeekView = React.forwardRef(function WeekView({ anchor, activities,
           );
         })}
       </div>
+      <HojaGrupo grupo={grupo} isDark={isDark} onClose={cerrarGrupo} onPick={(ev) => { setGrupo(null); onEventClick?.(ev); }} />
     </div>
   );
 });
@@ -401,9 +521,10 @@ export const WeekView = React.forwardRef(function WeekView({ anchor, activities,
 export function DayView({ anchor, activities, onEventClick, onSlotClick, onEventMove }) {
   const { isDark } = useTheme();
   const [dragEv, setDragEv] = React.useState(null);
+  const [grupo, setGrupo] = React.useState(null);
+  const cerrarGrupo = React.useCallback(() => setGrupo(null), []);
   const ds = ymd(anchor);
   const dayEvents = activities.filter((a) => ocupaDia(a, ds));
-  const laidOut = layoutDayEvents(dayEvents);
   const railHours = END_HOUR - START_HOUR + 1;
   return (
     <div className="flex">
@@ -417,14 +538,14 @@ export function DayView({ anchor, activities, onEventClick, onSlotClick, onEvent
           {Array.from({ length: railHours }).map((_, i) => (
             <div key={i} style={{ height: HOUR_H }} className="border-t border-dashed border-border/60" />
           ))}
-          {laidOut.map(({ ev, col, totalCols }) => (
-            <EventBlock key={ev.id} ev={ev} isDark={isDark} onClick={onEventClick} col={col} totalCols={totalCols} draggable={!!onEventMove} onDragStart={setDragEv} onDragEnd={() => setDragEv(null)} />
-          ))}
+          <BloquesDelDia evs={dayEvents} dia={anchor} isDark={isDark} onEventClick={onEventClick} onAbrirGrupo={setGrupo} ladoALadoDe2
+            draggable={!!onEventMove} onDragStart={setDragEv} onDragEnd={() => setDragEv(null)} />
           {dayEvents.length === 0 && (
             <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground pointer-events-none">No hay actividades este día</div>
           )}
         </div>
       </div>
+      <HojaGrupo grupo={grupo} isDark={isDark} onClose={cerrarGrupo} onPick={(ev) => { setGrupo(null); onEventClick?.(ev); }} />
     </div>
   );
 }
