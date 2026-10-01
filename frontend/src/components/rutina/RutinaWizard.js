@@ -21,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import PhotoZoomDialog, { ZOOM_IMG_CLASS } from '@/components/PhotoZoomDialog';
+import { confirmar, avisar } from '@/components/ConfirmDialog';
 
 const DRAFT_KEY = 'herco360_rutina_draft_v1';
 const MAX_PHOTOS_PER_ITEM = 8;
@@ -124,12 +125,16 @@ export default function RutinaWizard({ onSubmitted }) {
     setPhase('walk');
   };
 
-  const resetAll = () => {
-    if (!window.confirm('¿Reiniciar la evaluación? Se perderán las respuestas, notas y fotos.')) return;
+  const resetAll = async () => {
+    if (!(await confirmar({
+      tipo: 'danger', titulo: '¿Reiniciar la evaluación?',
+      mensaje: <>Se borrarán <b>las respuestas, notas y fotos</b> de la Rutina Operativa. Esta acción no se puede deshacer.</>,
+      textoConfirmar: 'Reiniciar',
+    }))) return;
     clearDraft();
     setMeta(emptyMeta()); setAnswers({}); setNotes({}); setTouched(new Set());
     setPhotos({}); setCursor(0); setPhase('intro'); setHasDraft(false);
-    toast.success('Evaluación reiniciada');
+    avisar('Evaluación reiniciada');
   };
 
   const buildRows = useCallback(() => flat.map((it) => {

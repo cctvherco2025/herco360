@@ -11,10 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import PhotoZoomDialog, { ZOOM_IMG_CLASS } from '@/components/PhotoZoomDialog';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { confirmar } from '@/components/ConfirmDialog';
 
 const currentMonth = () => new Date().toISOString().slice(0, 7);
 const monthLabel = (ym) => {
@@ -191,7 +188,6 @@ export default function Historial({ refreshKey }) {
   const [openId, setOpenId] = useState(null);
   const [exportingId, setExportingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
-  const [confirmDel, setConfirmDel] = useState(null); // fila de la evaluación a borrar
 
   const isDirector = (user?.position || '').trim() === 'Director comercial';
   const canDelete = (r) => user?.role === 'admin' || isDirector || r.gerente_id === user?.id;
@@ -218,18 +214,21 @@ export default function Historial({ refreshKey }) {
     finally { setExportingId(null); }
   };
 
-  const removeOne = async () => {
-    const id = confirmDel?.id;
-    if (!id) return;
-    setDeletingId(id);
-    try {
-      await api.delete(`/rutina/evaluaciones/${id}`);
-      setRows((rs) => rs.filter((r) => r.id !== id));
-      if (openId === id) setOpenId(null);
-      toast.success('Evaluación eliminada');
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || 'No se pudo eliminar la evaluación');
-    } finally { setDeletingId(null); setConfirmDel(null); }
+  const removeOne = async (r) => {
+    setDeletingId(r.id);
+    const ok = await confirmar({
+      tipo: 'danger',
+      titulo: '¿Eliminar evaluación?',
+      mensaje: <>Se eliminará la Rutina Operativa de <b>{r.sucursal}</b> de <b>{monthLabel(r.mes)}</b>, registrada por <b>{r.gerente_name}</b>, junto con sus fotos. Esta acción no se puede deshacer.</>,
+      textoConfirmar: 'Eliminar',
+      textoCargando: 'Eliminando…',
+      textoExito: 'Evaluación eliminada',
+      accion: () => api.delete(`/rutina/evaluaciones/${r.id}`),
+    });
+    setDeletingId(null);
+    if (!ok) return;
+    setRows((rs) => rs.filter((x) => x.id !== r.id));
+    if (openId === r.id) setOpenId(null);
   };
 
   const filtered = rows.filter((r) => {
@@ -295,7 +294,7 @@ export default function Historial({ refreshKey }) {
               {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             </button>
             {canDelete(r) && (
-              <button onClick={(e) => { e.stopPropagation(); setConfirmDel(r); }} disabled={deletingId === r.id} title="Eliminar evaluación"
+              <button onClick={(e) => { e.stopPropagation(); removeOne(r); }} disabled={deletingId === r.id} title="Eliminar evaluación"
                 data-testid="rutina-history-delete-row"
                 className="p-2 rounded-lg hover:bg-[rgba(220,38,38,0.08)] text-muted-foreground hover:text-[#dc2626] shrink-0 disabled:opacity-50 transition-colors">
                 {deletingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -309,29 +308,6 @@ export default function Historial({ refreshKey }) {
 
       <DetailDialog id={openId} onClose={() => setOpenId(null)} />
 
-      <AlertDialog open={!!confirmDel} onOpenChange={(o) => { if (!o) setConfirmDel(null); }}>
-        <AlertDialogContent className="w-[calc(100%-1.5rem)] rounded-[22px]">
-          <AlertDialogHeader>
-            <div className="h-11 w-11 rounded-full grid place-items-center bg-[rgba(220,38,38,0.1)] mb-1">
-              <Trash2 className="h-5 w-5 text-[#dc2626]" />
-            </div>
-            <AlertDialogTitle>Eliminar evaluación</AlertDialogTitle>
-            <AlertDialogDescription>
-              Se eliminará la Rutina Operativa de <span className="font-medium text-foreground">{confirmDel?.sucursal}</span> de{' '}
-              <span className="font-medium text-foreground">{monthLabel(confirmDel?.mes)}</span>, registrada por{' '}
-              <span className="font-medium text-foreground">{confirmDel?.gerente_name}</span>, junto con sus fotos.
-              Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={removeOne} data-testid="rutina-history-confirm-delete"
-              className="rounded-xl bg-[#dc2626] hover:bg-[#b91c1c] text-white">
-              Eliminar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

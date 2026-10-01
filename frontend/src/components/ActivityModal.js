@@ -18,7 +18,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import ParticipantPicker from '@/components/ParticipantPicker';
 import RangeDatePicker from '@/components/RangeDatePicker';
 import RecurrenceDialog from '@/components/RecurrenceDialog';
-import AlcanceDialog from '@/components/AlcanceDialog';
+import { confirmar } from '@/components/ConfirmDialog';
+import { opcionesAlcance, NOTA_REGLA_CAMBIADA } from '@/lib/alcance';
 import {
   opcionesRepeticion, describirRegla, fechasEnRango, proximasFechas,
   repeticionChoca as chocaRepeticion,
@@ -184,7 +185,6 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
       api.get('/groups').then(({ data }) => setGroups(data)).catch(() => setGroups([]));
       setAbrirRango(false);
       setRecOpen(false);
-      setAlcance(null);
       setRepTocada(false);
       setModo(activity ? 'ver' : 'editar');
       if (activity) {
@@ -274,7 +274,6 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   // Actividad de una serie con RRULE (una repetición o una editada aparte):
   // guardar / eliminar pregunta el alcance.
   const esSerie = isEdit && !!(activity?.rrule || activity?.serie_madre);
-  const [alcance, setAlcance] = useState(null); // null | 'guardar' | 'eliminar'
   const opciones = useMemo(() => opcionesRepeticion(form.date), [form.date]);
   const reglaActual = repKey === 'custom' ? reglaCustom : (opciones.find((o) => o.key === repKey)?.regla || '');
 
@@ -338,54 +337,68 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   const MENSAJES = {
     esta: 'Se actualizó esta actividad', siguientes: 'Se actualizaron esta y las siguientes', todas: 'Se actualizaron todas las repeticiones',
   };
-  const guardar = async (alc) => {
+  // Envía la actividad (crear o editar). Lanza el error para que quien llama
+  // lo muestre (toast o dentro del diálogo de confirmación).
+  const enviar = async (alc) => {
     const payload = { ...form, end_date: endDate, recurrence: 'none' };
     // "" = no se repite (al editar, deja de repetirse); sin el campo se
     // conserva lo que tenía.
     const regla = reglaAEnviar();
     if (regla !== undefined) payload.rrule = regla;
-    setSaving(true);
-    try {
-      if (isEdit) {
-        await api.put(`/activities/${activity.id}`, payload, { params: paramsAlcance(alc) });
-        toast.success(alc ? MENSAJES[alc] : 'Actividad actualizada');
-      } else {
-        const { data } = await api.post('/activities', payload);
-        toast.success(data?.rrule
-          ? `Actividad creada: se repite ${describirRegla(data.rrule, { conFin: false })}`
-          : 'Actividad creada');
-      }
-      setAlcance(null);
-      onOpenChange(false);
-      onSaved?.();
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || 'Error al guardar');
-    } finally { setSaving(false); }
+    if (isEdit) {
+      await api.put(`/activities/${activity.id}`, payload, { params: paramsAlcance(alc) });
+      return alc ? MENSAJES[alc] : 'Actividad actualizada';
+    }
+    const { data } = await api.post('/activities', payload);
+    return data?.rrule ? `Actividad creada: se repite ${describirRegla(data.rrule, { conFin: false })}` : 'Actividad creada';
   };
-  const save = () => {
+  const terminado = (mensaje) => {
+    toast.success(mensaje);
+    onOpenChange(false);
+    onSaved?.();
+  };
+  const save = async () => {
     if (!form.title.trim()) { toast.error('Ingresa un título'); return; }
     if (bloqueado) return;
-    if (esSerie) setAlcance('guardar'); // pregunta: solo esta / siguientes / todas
-    else guardar(null);
+    if (esSerie) {
+      // pregunta: solo esta / siguientes / todas
+      let mensaje = '';
+      const alc = await confirmar({
+        tipo: 'normal',
+        titulo: 'Guardar actividad que se repite',
+        mensaje: <>¿A qué repeticiones de <b>{form.title}</b> se aplican los cambios?</>,
+        opciones: opcionesAlcance(reglaCambio),
+        notaOpciones: reglaCambio ? NOTA_REGLA_CAMBIADA : null,
+        textoConfirmar: 'Guardar',
+        textoCargando: 'Guardando…',
+        accion: async (a) => { mensaje = await enviar(a); },
+      });
+      if (alc) terminado(mensaje);
+      return;
+    }
+    setSaving(true);
+    try { terminado(await enviar(null)); }
+    catch (err) { toast.error(err?.response?.data?.detail || 'Error al guardar'); }
+    finally { setSaving(false); }
   };
 
   const ELIMINADAS = {
     esta: 'Se eliminó esta actividad', siguientes: 'Se eliminaron esta y las siguientes', todas: 'Se eliminó toda la serie',
   };
-  const eliminar = async (alc) => {
-    setSaving(true);
-    try {
-      await api.delete(`/activities/${activity.id}`, { params: paramsAlcance(alc) });
-      toast.success(alc ? ELIMINADAS[alc] : 'Actividad eliminada');
-      setAlcance(null);
-      onOpenChange(false);
-      onSaved?.();
-    } catch (err) { toast.error(err?.response?.data?.detail || 'Error al eliminar'); } finally { setSaving(false); }
-  };
-  const remove = () => {
+  const remove = async () => {
     if (!isEdit) return;
-    if (esSerie) setAlcance('eliminar');
-    else eliminar(null);
+    const alc = await confirmar({
+      tipo: 'danger',
+      titulo: esSerie ? 'Eliminar actividad que se repite' : '¿Eliminar actividad?',
+      mensaje: esSerie
+        ? <>¿Qué repeticiones de <b>{activity.title}</b> quieres eliminar? Esta acción no se puede deshacer.</>
+        : <>Se eliminará <b>{activity.title}</b> del <b>{activity.date}</b> para todos sus participantes. Esta acción no se puede deshacer.</>,
+      opciones: esSerie ? opcionesAlcance(false) : undefined,
+      textoConfirmar: 'Eliminar',
+      textoCargando: 'Eliminando…',
+      accion: (a) => api.delete(`/activities/${activity.id}`, { params: paramsAlcance(esSerie ? a : null) }),
+    });
+    if (alc) terminado(esSerie ? ELIMINADAS[alc] : 'Actividad eliminada');
   };
 
   const respond = async (response) => {
@@ -634,9 +647,6 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
       </DialogContent>
       <RecurrenceDialog open={recOpen} onOpenChange={setRecOpen} fecha={form.date} horaInicio={form.start_time}
         regla={reglaActual} onListo={aplicarPersonalizada} />
-      <AlcanceDialog open={!!alcance} onOpenChange={(o) => { if (!o) setAlcance(null); }} accion={alcance || 'guardar'}
-        soloEstaDeshabilitada={alcance === 'guardar' && reglaCambio} ocupado={saving}
-        onAceptar={(alc) => (alcance === 'eliminar' ? eliminar(alc) : guardar(alc))} />
     </Dialog>
   );
 }

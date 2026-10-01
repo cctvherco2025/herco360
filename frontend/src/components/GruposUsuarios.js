@@ -14,10 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { confirmar } from '@/components/ConfirmDialog';
 import { AvatarIniciales, Resaltado, normalizar, palabrasDe, coincide, SIN_AREA } from '@/components/ParticipantPicker';
 
 const MAX_NOMBRE = 50;
@@ -103,19 +100,17 @@ function GrupoCard({ grupo, usersById, onEdit, onDelete }) {
 // ya los filtra.
 export function GruposSection({ grupos, usuarios, onNuevo, onEditar, onEliminado }) {
   const usersById = useMemo(() => new Map(usuarios.map((u) => [u.id, u])), [usuarios]);
-  const [aEliminar, setAEliminar] = useState(null);
-  const [eliminando, setEliminando] = useState(false);
-
-  const confirmarEliminar = async () => {
-    if (!aEliminar) return;
-    setEliminando(true);
-    try {
-      await api.delete(`/groups/${aEliminar.id}`);
-      toast.success(`Grupo "${aEliminar.nombre}" eliminado`);
-      onEliminado();
-    } catch (e) {
-      toast.error(e?.response?.data?.detail || 'No se pudo eliminar el grupo');
-    } finally { setEliminando(false); setAEliminar(null); }
+  const confirmarEliminar = async (g) => {
+    const ok = await confirmar({
+      tipo: 'danger',
+      titulo: '¿Eliminar grupo?',
+      mensaje: <>Se eliminará el grupo <b>{g.nombre}</b>. Los usuarios que lo forman no se eliminan.</>,
+      textoConfirmar: 'Eliminar',
+      textoCargando: 'Eliminando…',
+      textoExito: 'Grupo eliminado',
+      accion: () => api.delete(`/groups/${g.id}`),
+    });
+    if (ok) onEliminado();
   };
 
   return (
@@ -127,7 +122,7 @@ export function GruposSection({ grupos, usuarios, onNuevo, onEditar, onEliminado
       <p className="text-sm text-muted-foreground mb-4">Los grupos sirven para agregar varios participantes de una vez en la Agenda.</p>
       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {grupos.map((g) => (
-          <GrupoCard key={g.id} grupo={g} usersById={usersById} onEdit={onEditar} onDelete={setAEliminar} />
+          <GrupoCard key={g.id} grupo={g} usersById={usersById} onEdit={onEditar} onDelete={confirmarEliminar} />
         ))}
         <button type="button" onClick={onNuevo}
           className="min-h-[150px] rounded-xl border-2 border-dashed text-muted-foreground hover:text-[#00a5df] hover:border-[#00a5df]/60 hover:bg-[rgba(0,165,223,0.04)] transition-colors flex flex-col items-center justify-center gap-1.5"
@@ -137,23 +132,6 @@ export function GruposSection({ grupos, usuarios, onNuevo, onEditar, onEliminado
         </button>
       </div>
 
-      <AlertDialog open={!!aEliminar} onOpenChange={(o) => !o && setAEliminar(null)}>
-        <AlertDialogContent className="w-[calc(100%-1.5rem)] rounded-[22px]">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Eliminar grupo</AlertDialogTitle>
-            <AlertDialogDescription>
-              ¿Eliminar el grupo "<span className="font-medium text-foreground">{aEliminar?.nombre}</span>"? Los usuarios no se eliminan.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-xl" disabled={eliminando}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmarEliminar} disabled={eliminando}
-              className="rounded-xl bg-[#dc2626] hover:bg-[#b91c1c] text-white" data-testid="group-delete-confirm">
-              Eliminar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

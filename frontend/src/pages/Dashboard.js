@@ -270,8 +270,8 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="overflow-hidden">
-          {view === 'Semana' && <WeekView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} />}
-          {view === 'Día' && <DayView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} />}
+          {view === 'Semana' && <WeekView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onNuevoEnDia={(ds) => openNew(ds)} />}
+          {view === 'Día' && <DayView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onNuevoEnDia={(ds) => openNew(ds)} />}
           {view === 'Mes' && <MonthView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} />}
         </div>
       </motion.div>*/}

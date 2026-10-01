@@ -12,10 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { confirmar } from '@/components/ConfirmDialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { GruposSection, GrupoDialog, GrupoPills, CrearGrupoButton } from '@/components/GruposUsuarios';
 
@@ -32,7 +29,6 @@ export default function Usuarios() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [showPass, setShowPass] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const load = useCallback(async () => {
     try { const { data } = await api.get('/users'); setUsers(data); } catch (e) {}
@@ -109,16 +105,17 @@ export default function Usuarios() {
     } finally { setSaving(false); }
   };
 
-  const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    try {
-      await api.delete(`/users/${deleteTarget.id}`);
-      toast.success('Usuario eliminado');
-      setDeleteTarget(null);
-      load();
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || 'Error al eliminar');
-    }
+  const confirmDelete = async (u) => {
+    const ok = await confirmar({
+      tipo: 'danger',
+      titulo: '¿Eliminar usuario?',
+      mensaje: <>Se eliminará a <b>{u.name}</b>{u.email ? <> ({u.email})</> : null}. Ya no podrá ingresar al sistema. Esta acción no se puede deshacer.</>,
+      textoConfirmar: 'Eliminar',
+      textoCargando: 'Eliminando…',
+      textoExito: 'Usuario eliminado',
+      accion: () => api.delete(`/users/${u.id}`),
+    });
+    if (ok) load();
   };
 
   return (
@@ -230,7 +227,7 @@ export default function Usuarios() {
                             <DropdownMenuItem onClick={() => setRole(u.id, 'user')}><UserCog className="h-4 w-4 mr-2" /> Hacer usuario</DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
-                        <button onClick={() => setDeleteTarget(u)} title="Eliminar" className="h-8 w-8 grid place-items-center rounded-lg text-muted-foreground hover:text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)]" data-testid="delete-user-button"><Trash2 className="h-3.5 w-3.5" /></button>
+                        <button onClick={() => confirmDelete(u)} title="Eliminar" className="h-8 w-8 grid place-items-center rounded-lg text-muted-foreground hover:text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)]" data-testid="delete-user-button"><Trash2 className="h-3.5 w-3.5" /></button>
                       </>
                     )}
                   </div>
@@ -322,20 +319,6 @@ export default function Usuarios() {
       </Dialog>
 
       {/* Delete confirmation */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <AlertDialogContent className="w-[calc(100%-1.5rem)] rounded-[22px]">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Eliminar usuario</AlertDialogTitle>
-            <AlertDialogDescription>
-              ¿Seguro que deseas eliminar a <span className="font-medium text-foreground">{deleteTarget?.name}</span>? Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="rounded-xl bg-[#dc2626] hover:bg-[#b91c1c] text-white" data-testid="confirm-delete-user">Eliminar</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

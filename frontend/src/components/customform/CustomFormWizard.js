@@ -19,6 +19,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import PhotoZoomDialog, { ZOOM_IMG_CLASS } from '@/components/PhotoZoomDialog';
+import { confirmar, avisar } from '@/components/ConfirmDialog';
 
 const MAX_PHOTOS_PER_ITEM = 8;
 const GENERAL_PHOTO_OWNER = '_general';
@@ -204,12 +205,16 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
   };
   const prev = () => goto(cursor - 1);
 
-  const resetAll = () => {
-    if (!window.confirm('¿Reiniciar? Se perderán las respuestas y fotos.')) return;
+  const resetAll = async () => {
+    if (!(await confirmar({
+      tipo: 'danger', titulo: '¿Reiniciar el formulario?',
+      mensaje: <>Se borrarán <b>las respuestas y fotos</b> que llevas capturadas. Esta acción no se puede deshacer.</>,
+      textoConfirmar: 'Reiniciar',
+    }))) return;
     clearDraft();
     setChoice({}); setNotes({}); setTouched(new Set()); setPhotos({}); setCursor(0); setPhase('intro'); setHasDraft(false);
     setCategoria('');
-    toast.success('Reiniciado');
+    avisar('Formulario reiniciado');
   };
 
   const answerLabel = (it) => {

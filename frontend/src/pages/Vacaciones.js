@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MonthView, WeekView, DayView, startOfWeek, addDays } from '@/components/CalendarViews';
+import { confirmar } from '@/components/ConfirmDialog';
 
 const TYPES = ['Vacaciones', 'Permiso', 'Incapacidad'];
 const TYPE_COLOR = { Vacaciones: '#ec9032', Permiso: '#77868d', Incapacidad: '#dc2626' };
@@ -111,9 +112,17 @@ function VacacionesPage() {
     setOpen(true);
   };
 
-  const removeMine = async (id) => {
-    try { await api.delete(`/vacations/${id}`); toast.success('Solicitud eliminada'); load(); loadCalendar(); }
-    catch (err) { toast.error(err?.response?.data?.detail || 'No se pudo eliminar'); }
+  const removeMine = async (r) => {
+    const ok = await confirmar({
+      tipo: 'danger',
+      titulo: '¿Eliminar solicitud?',
+      mensaje: <>Se eliminará tu solicitud de <b>{r.type || 'vacaciones'}</b> del <b>{r.start_date}</b> al <b>{r.end_date}</b>. Esta acción no se puede deshacer.</>,
+      textoConfirmar: 'Eliminar',
+      textoCargando: 'Eliminando…',
+      textoExito: 'Solicitud eliminada',
+      accion: () => api.delete(`/vacations/${r.id}`),
+    });
+    if (ok) { load(); loadCalendar(); }
   };
 
   // ---- Calendario de vacaciones ----
@@ -267,7 +276,7 @@ function VacacionesPage() {
                     Editar
                   </button>
                   {r.status !== 'approved' && (
-                    <button onClick={() => removeMine(r.id)} className="text-xs font-medium text-[#dc2626] hover:underline" data-testid="delete-my-vacation">
+                    <button onClick={() => removeMine(r)} className="text-xs font-medium text-[#dc2626] hover:underline" data-testid="delete-my-vacation">
                       Eliminar
                     </button>
                   )}

@@ -10,6 +10,7 @@ import {
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { canAccessReports, SUCURSALES, REPORT_TYPES, reportTypeMeta } from '@/lib/constants';
+import { confirmar } from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -122,9 +123,17 @@ function EnviarTab({ meta, onChanged, refreshKey }) {
     finally { setUploading(false); }
   };
 
-  const remove = async (id) => {
-    try { await api.delete(`/reports/${id}`); toast.success('Informe eliminado'); loadMine(); onChanged?.(); }
-    catch (e) { toast.error('No se pudo eliminar'); }
+  const remove = async (r) => {
+    const ok = await confirmar({
+      tipo: 'danger',
+      titulo: '¿Eliminar informe?',
+      mensaje: <>Se eliminará el informe <b>{reportTypeMeta(r.type)?.label || r.type}</b> de <b>{monthLabel(r.period_month)}</b> (tienda {r.sucursal}) con su archivo. Esta acción no se puede deshacer.</>,
+      textoConfirmar: 'Eliminar',
+      textoCargando: 'Eliminando…',
+      textoExito: 'Informe eliminado',
+      accion: () => api.delete(`/reports/${r.id}`),
+    });
+    if (ok) { loadMine(); onChanged?.(); }
   };
 
   return (
@@ -253,7 +262,7 @@ function EnviarTab({ meta, onChanged, refreshKey }) {
                   <Download className="h-3.5 w-3.5 mr-1" /> Descargar
                 </Button>
                 {r.status !== 'revisado' && (
-                  <Button size="sm" variant="ghost" className="rounded-lg h-8 text-muted-foreground hover:text-[#dc2626]" onClick={() => remove(r.id)} data-testid="my-report-delete">
+                  <Button size="sm" variant="ghost" className="rounded-lg h-8 text-muted-foreground hover:text-[#dc2626]" onClick={() => remove(r)} data-testid="my-report-delete">
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 )}

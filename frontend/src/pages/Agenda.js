@@ -8,7 +8,8 @@ import { useAuth } from '@/context/AuthContext';
 import { canAccessVacaciones } from '@/lib/constants';
 import { fullDateEs, capitalize, ymd, MESES, MESES_CORTO } from '@/lib/time';
 import ActivityModal from '@/components/ActivityModal';
-import AlcanceDialog from '@/components/AlcanceDialog';
+import { confirmar } from '@/components/ConfirmDialog';
+import { opcionesAlcance } from '@/lib/alcance';
 import { opcionesRepeticion } from '@/lib/recurrence';
 import { WeekView, DayView, MonthView, startOfWeek, addDays, esVariosDias, rangoCortoCal } from '@/components/CalendarViews';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -28,7 +29,6 @@ export default function Agenda() {
   const [team, setTeam] = useState([]);
   const [visible, setVisible] = useState({});
   const [teamEvents, setTeamEvents] = useState({});
-  const [moviendo, setMoviendo] = useState(null); // repetición arrastrada: { ev, newDate, newStart }
 
   const TEAM_COLORS = ['#0d9488', '#712146', '#ec9032', '#64748b', '#16a34a', '#dc2626', '#3cbef6', '#1e395e'];
   const colorFor = useCallback((id) => {
@@ -98,9 +98,26 @@ export default function Agenda() {
     if (ev.date === newDate && ev.start_time === newStart) return;
     // Repetición de una serie: primero se pregunta si mueve solo esta,
     // esta y las siguientes o todas.
-    if (ev.rrule || ev.serie_madre) { setMoviendo({ ev, newDate, newStart }); return; }
-    await mover(ev, newDate, newStart, null);
+    if (ev.rrule || ev.serie_madre) {
+      const alc = await confirmar({
+        tipo: 'normal',
+        titulo: 'Mover actividad que se repite',
+        mensaje: <>¿Qué repeticiones de <b>{ev.title}</b> quieres mover al <b>{newDate}</b> a las <b>{newStart}</b>?</>,
+        opciones: opcionesAlcance(false),
+        textoConfirmar: 'Mover',
+        textoCargando: 'Moviendo…',
+        accion: (a) => mover(ev, newDate, newStart, a),
+      });
+      if (alc) { toast.success('Actividad movida'); load(); }
+      return;
+    }
+    try {
+      await mover(ev, newDate, newStart, null);
+      toast.success('Actividad movida');
+      load();
+    } catch (err) { toast.error(err?.response?.data?.detail || 'No se pudo mover'); }
   };
+  // Envía el cambio de fecha/hora (lanza el error a quien llama).
   const mover = async (ev, newDate, newStart, alcance) => {
     const dur = Math.max(30, toMin(ev.end_time) - toMin(ev.start_time));
     let endM = Math.min(toMin(newStart) + dur, 20 * 60);
@@ -122,12 +139,7 @@ export default function Agenda() {
       if (nueva) payload.rrule = nueva.regla;
     }
     const params = alcance ? { alcance, ...(ev.serie_madre ? {} : { ocurrencia: ev.date }) } : undefined;
-    try {
-      await api.put(`/activities/${ev.id}`, payload, { params });
-      toast.success('Actividad movida');
-      setMoviendo(null);
-      load();
-    } catch (err) { toast.error(err?.response?.data?.detail || 'No se pudo mover'); }
+    await api.put(`/activities/${ev.id}`, payload, { params });
   };
 
   // incluye las de varios días que ya empezaron y todavía no terminan
@@ -193,8 +205,8 @@ export default function Agenda() {
             </Tabs>
           </div>
           <div className="overflow-hidden">
-            {view === 'Semana' && <WeekView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} />}
-            {view === 'Día' && <DayView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} />}
+            {view === 'Semana' && <WeekView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} onNuevoEnDia={(ds) => openNew(ds)} />}
+            {view === 'Día' && <DayView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} onNuevoEnDia={(ds) => openNew(ds)} />}
             {view === 'Mes' && <MonthView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onEventMove={moveEvent} />}
           </div>
         </motion.div>
@@ -262,8 +274,6 @@ export default function Agenda() {
       </div>
 
       <ActivityModal open={modalOpen} onOpenChange={setModalOpen} activity={editing} defaultDate={pendingDate} defaultTime={pendingTime} onSaved={load} />
-      <AlcanceDialog open={!!moviendo} onOpenChange={(o) => { if (!o) setMoviendo(null); }} accion="mover"
-        onAceptar={(alc) => mover(moviendo.ev, moviendo.newDate, moviendo.newStart, alc)} />
     </div>
   );
 }

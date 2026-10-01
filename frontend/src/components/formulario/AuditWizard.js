@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import PhotoZoomDialog, { ZOOM_IMG_CLASS } from '@/components/PhotoZoomDialog';
+import { confirmar, avisar } from '@/components/ConfirmDialog';
 
 const DIM_ICON = { FRENTEO: AlignStartVertical, LIMPIEZA: Sparkles, ORDEN: LayoutGrid, SURTIDO: PackageSearch };
 const DRAFT_KEY = 'herco360_flos_draft_v1';
@@ -145,12 +146,16 @@ export default function AuditWizard({ onSubmitted }) {
     setPhase('walk');
   };
 
-  const resetAll = () => {
-    if (!window.confirm('¿Reiniciar la auditoría? Se perderán los puntajes, notas y fotos capturados.')) return;
+  const resetAll = async () => {
+    if (!(await confirmar({
+      tipo: 'danger', titulo: '¿Reiniciar la auditoría FLOS?',
+      mensaje: <>Se borrarán <b>los puntajes, notas y fotos</b> capturados. Esta acción no se puede deshacer.</>,
+      textoConfirmar: 'Reiniciar',
+    }))) return;
     clearDraft();
     setMeta(emptyMeta(user)); setScores({}); setComments({}); setTouched(new Set());
     setPhotos({}); setGeneralComment(''); setCursor(0); setPhase('intro'); setHasDraft(false);
-    toast.success('Auditoría reiniciada');
+    avisar('Auditoría reiniciada');
   };
 
   // ── Filas con todo lo capturado, para el PDF y el envío ─────

@@ -1,6 +1,8 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
+import { X, ChevronRight, Plus } from 'lucide-react';
+import useEsMovil from '@/lib/useEsMovil';
 import { catStyle, ACTIVITY_COLORS } from '@/lib/constants';
 import { ymd, DIAS, DIAS_CORTO, MESES_CORTO } from '@/lib/time';
 import { useTheme } from '@/context/ThemeContext';
@@ -171,7 +173,7 @@ const PillMas = ({ n }) => (
   <span className="inline-block shrink-0 rounded-full border border-border bg-card px-1.5 text-[10px] font-bold leading-[16px] text-foreground">+{n} más</span>
 );
 
-function BloqueGrupo({ evs, isDark, onClick }) {
+function BloqueGrupo({ evs, isDark, onClick, abierto }) {
   const primera = evs[0];
   const { solid, tint } = evStyle(primera, isDark);
   const inicio = Math.min(...evs.map((e) => toMin(e.start_time)));
@@ -180,9 +182,15 @@ function BloqueGrupo({ evs, isDark, onClick }) {
   const height = Math.max(30, ((fin - inicio) / 60) * HOUR_H - 4);
   const bajo = height < 40;
   return (
-    <button type="button" onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+    <button type="button" onClick={(e) => { e.stopPropagation(); onClick?.(e.currentTarget); }}
+      aria-haspopup="dialog" aria-expanded={!!abierto}
+      aria-label={`${evs.length} actividades de ${evs[0].start_time} a ${evs.reduce((m, e) => (e.end_time > m ? e.end_time : m), '00:00')}: ${evs.map((e) => e.title).join(', ')}`}
       className="absolute z-10 flex overflow-hidden rounded-[12px] border px-2 py-1 text-left shadow-xs hover:shadow-card transition-[transform,box-shadow] cursor-pointer"
-      style={{ top, height, left: 2, right: 2, background: tint, borderColor: solid }}
+      style={{
+        top, height, left: 2, right: 2, background: tint, borderColor: solid,
+        // resaltado mientras su panel está abierto
+        boxShadow: abierto ? `0 0 0 2px ${solid}` : undefined, zIndex: abierto ? 20 : undefined,
+      }}
       title={evs.map((e) => `${e.start_time} ${e.title}`).join('\n')}
       data-testid="calendar-event-group">
       {/* una rayita apilada por cada actividad del grupo, con su color */}
@@ -210,60 +218,197 @@ function BloqueGrupo({ evs, isDark, onClick }) {
 }
 
 const tituloDia = (d) => `${DIAS[d.getDay()].charAt(0).toUpperCase()}${DIAS[d.getDay()].slice(1)} ${d.getDate()} ${MESES_CORTO[d.getMonth()]}`;
-const participantesTexto = (ev) => {
-  const nombres = (ev.participants || []).map((p) => (p.name || '').trim().split(/\s+/)[0]).filter(Boolean);
-  if (ev.owner_name) nombres.unshift(ev.owner_name);
-  if (!nombres.length) return 'Sin participantes';
-  return nombres.length > 3 ? `${nombres.slice(0, 3).join(', ')} +${nombres.length - 3}` : nombres.join(', ');
-};
+const inicialesDe = (n) => (n || '?').trim().split(/\s+/).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
 
-// Hoja que sube desde abajo con las actividades de un grupo. Se cierra con el
-// fondo oscuro, deslizándola hacia abajo o con Escape.
-function HojaGrupo({ grupo, isDark, onClose, onPick }) {
+// Participantes de una fila: hasta 3 avatares + "+N"; si es uno, su nombre.
+function Participantes({ ev }) {
+  const lista = (ev.participants || []).filter((p) => p.name);
+  if (!lista.length) return <span className="text-xs text-muted-foreground">Sin participantes</span>;
+  if (lista.length === 1) return <span className="truncate text-xs text-muted-foreground">{lista[0].name}</span>;
+  return (
+    <span className="flex items-center" title={lista.map((p) => p.name).join(', ')}>
+      {lista.slice(0, 3).map((p, i) => (
+        <span key={p.user_id || i}
+          className={`grid h-6 w-6 place-items-center rounded-full border-2 border-card bg-[rgba(0,165,223,0.14)] text-[9px] font-semibold text-[#1e395e] dark:text-[#3cbef6] ${i ? '-ml-1.5' : ''}`}>
+          {inicialesDe(p.name)}
+        </span>
+      ))}
+      {lista.length > 3 && <span className="ml-1 text-xs font-medium text-muted-foreground">+{lista.length - 3}</span>}
+    </span>
+  );
+}
+
+// Encabezado, lista y pie del panel (igual en PC y celular).
+function ContenidoGrupo({ grupo, isDark, onClose, onPick, onNuevo, movil, primeraRef, tituloId }) {
+  const { dia, evs } = grupo;
+  const inicio = evs.reduce((m, e) => (e.start_time < m ? e.start_time : m), '99:99');
+  const fin = evs.reduce((m, e) => (e.end_time > m ? e.end_time : m), '00:00');
+  const colores = coloresDelGrupo(evs, isDark);
+  return (
+    <>
+      <div className={`flex shrink-0 items-start gap-3 ${movil ? 'px-5 pb-3' : 'px-4 pb-2.5 pt-3.5'}`}>
+        <div className="min-w-0 flex-1">
+          <p id={tituloId} className="font-heading text-base font-semibold leading-tight">{tituloDia(dia)}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{evs.length} actividades · {inicio} – {fin}</p>
+        </div>
+        <button type="button" onClick={onClose} aria-label="Cerrar"
+          className="-mr-1.5 -mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00a5df]"
+          data-testid="agenda-group-close">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2"
+        style={{ maxHeight: movil ? '62vh' : 'min(420px, 60vh)' }}>
+        {evs.map((ev, i) => (
+          <button key={`${ev.id}-${i}`} ref={i === 0 ? primeraRef : undefined} type="button" onClick={() => onPick(ev)}
+            className={`flex w-full items-stretch gap-3 rounded-xl px-2.5 text-left transition-colors hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none ${movil ? 'py-3.5' : 'py-2.5'}`}
+            data-testid="agenda-group-row">
+            <span className="w-1 shrink-0 rounded-full" style={{ background: colores[i] }} />
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold leading-snug break-words">{ev.title}</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">{ev.start_time} – {ev.end_time}</span>
+              <span className="mt-1.5 flex min-w-0">{ev.owner_name
+                ? <span className="truncate text-xs text-muted-foreground">{ev.owner_name}</span>
+                : <Participantes ev={ev} />}</span>
+            </span>
+            <ChevronRight className="h-4 w-4 shrink-0 self-center text-muted-foreground" />
+          </button>
+        ))}
+      </div>
+      {onNuevo && (
+        <div className={`shrink-0 border-t ${movil ? 'px-5 pt-3' : 'px-3 py-3'}`}>
+          <button type="button" onClick={() => onNuevo(ymd(dia))}
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-2.5 text-sm font-medium text-muted-foreground hover:border-[#00a5df] hover:text-[#00a5df] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00a5df]"
+            data-testid="agenda-group-new">
+            <Plus className="h-4 w-4" /> Nueva actividad este día
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+const ANCHO_PANEL = 340;
+const MARGEN = 12;
+
+/* Panel de un grupo de actividades que se cruzan.
+   PC: tarjeta flotante junto al bloque (derecha; si no cabe, izquierda; si
+   tampoco, centrada), sin fondo oscuro. Se cierra con ×, clic fuera, Escape,
+   scroll o al cambiar el tamaño de la ventana.
+   Celular: hoja inferior con fondo oscuro; se cierra con ×, el fondo,
+   deslizándola hacia abajo o con el botón atrás del teléfono. */
+function PanelGrupo({ grupo, isDark, onClose, onPick, onNuevo }) {
+  const movil = useEsMovil();
   const controles = useDragControls();
+  const panelRef = React.useRef(null);
+  const primeraRef = React.useRef(null);
+  const tituloId = React.useId();
+  const [pos, setPos] = React.useState(null);
+  const ancla = grupo?.ancla;
+
+  // Al cerrar, el foco vuelve al bloque que lo abrió.
+  const cerrar = React.useCallback(() => {
+    onClose();
+    if (ancla?.isConnected) setTimeout(() => ancla.focus({ preventScroll: true }), 0);
+  }, [onClose, ancla]);
+
+  // Posición en PC (antes de pintar, para que no "salte").
+  React.useLayoutEffect(() => {
+    if (!grupo || movil || !ancla) { setPos(null); return; }
+    const r = ancla.getBoundingClientRect();
+    const vw = window.innerWidth; const vh = window.innerHeight;
+    const alto = panelRef.current?.offsetHeight || 300;
+    const ancho = Math.min(ANCHO_PANEL, vw - MARGEN * 2);
+    let left;
+    if (r.right + 8 + ancho <= vw - MARGEN) left = r.right + 8;
+    else if (r.left - 8 - ancho >= MARGEN) left = r.left - 8 - ancho;
+    else left = (vw - ancho) / 2;
+    let top = left === (vw - ancho) / 2 ? (vh - alto) / 2 : r.top;
+    top = Math.max(MARGEN, Math.min(top, vh - alto - MARGEN));
+    setPos({ left, top, ancho });
+  }, [grupo, movil, ancla]);
+
+  // Foco a la primera actividad al abrir.
   React.useEffect(() => {
     if (!grupo) return undefined;
-    const esc = (e) => { if (e.key === 'Escape') onClose(); };
+    const t = setTimeout(() => primeraRef.current?.focus({ preventScroll: true }), 60);
+    return () => clearTimeout(t);
+  }, [grupo]);
+
+  // Escape (ambos), y en PC: clic fuera, scroll y cambio de tamaño.
+  React.useEffect(() => {
+    if (!grupo) return undefined;
+    const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); cerrar(); } };
     window.addEventListener('keydown', esc);
-    return () => window.removeEventListener('keydown', esc);
-  }, [grupo, onClose]);
+    if (movil) return () => window.removeEventListener('keydown', esc);
+    const fuera = (e) => {
+      if (panelRef.current?.contains(e.target) || ancla?.contains(e.target)) return;
+      onClose();
+    };
+    const scroll = (e) => { if (!panelRef.current?.contains(e.target)) onClose(); };
+    const resize = () => onClose();
+    document.addEventListener('pointerdown', fuera, true);
+    window.addEventListener('scroll', scroll, true);
+    window.addEventListener('resize', resize);
+    return () => {
+      window.removeEventListener('keydown', esc);
+      document.removeEventListener('pointerdown', fuera, true);
+      window.removeEventListener('scroll', scroll, true);
+      window.removeEventListener('resize', resize);
+    };
+  }, [grupo, movil, ancla, cerrar, onClose]);
+
+  // Celular: el botón atrás del teléfono cierra la hoja.
+  React.useEffect(() => {
+    if (!grupo || !movil) return undefined;
+    window.history.pushState({ ...(window.history.state || {}), hojaGrupo: true }, '');
+    const atras = () => onClose();
+    window.addEventListener('popstate', atras);
+    return () => {
+      window.removeEventListener('popstate', atras);
+      // cerrada por otro medio: quita la entrada que agregamos
+      if (window.history.state?.hojaGrupo) window.history.back();
+    };
+  }, [grupo, movil, onClose]);
+
+  const elegir = (ev) => { onClose(); onPick(ev); };
+  const nuevo = onNuevo ? (ds) => { onClose(); onNuevo(ds); } : null;
+  const props = { grupo, isDark, onClose: cerrar, onPick: elegir, onNuevo: nuevo, movil, primeraRef, tituloId };
+
   return createPortal(
     <AnimatePresence>
-      {grupo && (
+      {grupo && (movil ? (
         <motion.div key="hoja" className="fixed inset-0 z-50" exit={{ opacity: 1 }}>
-          <motion.div className="absolute inset-0 bg-black/50" onClick={onClose}
+          <motion.div className="absolute inset-0 bg-black/50" onClick={cerrar}
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} />
-          <motion.div
-            role="dialog" aria-modal="true" aria-label={tituloDia(grupo.dia)}
-            className="absolute inset-x-0 bottom-0 mx-auto flex max-h-[75vh] w-full max-w-[560px] flex-col rounded-t-[22px] border-t bg-card shadow-2xl"
-            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+          <motion.div ref={panelRef}
+            role="dialog" aria-modal="true" aria-labelledby={tituloId}
+            className="absolute inset-x-0 bottom-0 flex flex-col rounded-t-[22px] border-t bg-card shadow-2xl"
+            style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
             initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
             transition={{ type: 'tween', duration: 0.25, ease: 'easeOut' }}
             drag="y" dragListener={false} dragControls={controles}
             dragConstraints={{ top: 0, bottom: 0 }} dragElastic={{ top: 0, bottom: 0.8 }}
-            onDragEnd={(e, info) => { if (info.offset.y > 80 || info.velocity.y > 500) onClose(); }}
+            onDragEnd={(e, info) => { if (info.offset.y > 80 || info.velocity.y > 500) cerrar(); }}
             data-testid="agenda-group-sheet">
-            {/* zona para arrastrar hacia abajo */}
-            <div className="shrink-0 cursor-grab touch-none px-5 pb-3 pt-2.5" onPointerDown={(e) => controles.start(e)}>
-              <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-muted-foreground/30" />
-              <p className="font-heading text-lg font-semibold">{tituloDia(grupo.dia)}</p>
-              <p className="text-sm text-muted-foreground">{grupo.evs.length} actividades a la misma hora</p>
+            {/* barra para arrastrar hacia abajo */}
+            <div className="shrink-0 cursor-grab touch-none pb-2 pt-2.5" onPointerDown={(e) => controles.start(e)}>
+              <div className="mx-auto h-1.5 w-10 rounded-full bg-muted-foreground/30" />
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
-              {grupo.evs.map((ev, i, todos) => (
-                <button key={`${ev.id}-${i}`} type="button" onClick={() => onPick(ev)}
-                  className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left hover:bg-muted/60 active:bg-muted">
-                  <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: coloresDelGrupo(todos, isDark)[i] }} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold leading-snug break-words">{ev.title}</span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">{ev.start_time} – {ev.end_time} · {participantesTexto(ev)}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
+            <ContenidoGrupo {...props} />
           </motion.div>
         </motion.div>
-      )}
+      ) : (
+        <motion.div key="panel" ref={panelRef}
+          role="dialog" aria-modal="true" aria-labelledby={tituloId}
+          className="fixed z-50 flex flex-col rounded-[16px] border bg-card shadow-[0_12px_40px_-8px_rgba(15,23,42,0.28)]"
+          style={{ left: pos?.left ?? -9999, top: pos?.top ?? 0, width: pos?.ancho ?? ANCHO_PANEL, transformOrigin: 'top left' }}
+          initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }}
+          transition={{ duration: 0.14, ease: 'easeOut' }}
+          data-testid="agenda-group-sheet">
+          <ContenidoGrupo {...props} />
+        </motion.div>
+      ))}
     </AnimatePresence>,
     document.body,
   );
@@ -271,7 +416,7 @@ function HojaGrupo({ grupo, isDark, onClose, onPick }) {
 
 // Bloques de un día: sueltos a todo el ancho, grupos como un solo bloque.
 // ladoALadoDe2: en la vista Día, un grupo de exactamente 2 va lado a lado.
-function BloquesDelDia({ evs, dia, isDark, onEventClick, onAbrirGrupo, draggable, onDragStart, onDragEnd, ladoALadoDe2 = false }) {
+function BloquesDelDia({ evs, dia, isDark, onEventClick, onAbrirGrupo, grupoAbierto, draggable, onDragStart, onDragEnd, ladoALadoDe2 = false }) {
   return gruposDelDia(evs).map((g) => {
     if (g.length === 1 || (ladoALadoDe2 && g.length === 2)) {
       return g.map((ev, i) => (
@@ -279,7 +424,9 @@ function BloquesDelDia({ evs, dia, isDark, onEventClick, onAbrirGrupo, draggable
           draggable={draggable} onDragStart={onDragStart} onDragEnd={onDragEnd} />
       ));
     }
-    return <BloqueGrupo key={g.map((e) => e.id).join('|')} evs={g} isDark={isDark} onClick={() => onAbrirGrupo({ dia, evs: g })} />;
+    const clave = `${ymd(dia)}|${g.map((e) => e.id).join('|')}`;
+    return <BloqueGrupo key={clave} evs={g} isDark={isDark} abierto={grupoAbierto === clave}
+      onClick={(ancla) => onAbrirGrupo({ dia, evs: g, ancla, clave })} />;
   });
 }
 
@@ -456,7 +603,7 @@ function useResizableColumns(gridRef, numCols) {
   return { colWidths, startResize, resetPair, resetAll };
 }
 
-export const WeekView = React.forwardRef(function WeekView({ anchor, activities, onEventClick, onSlotClick, onEventMove }, ref) {
+export const WeekView = React.forwardRef(function WeekView({ anchor, activities, onEventClick, onSlotClick, onEventMove, onNuevoEnDia }, ref) {
   const { isDark } = useTheme();
   const [dragEv, setDragEv] = React.useState(null);
   const [grupo, setGrupo] = React.useState(null); // { dia, evs } de la hoja abierta
@@ -503,7 +650,7 @@ export const WeekView = React.forwardRef(function WeekView({ anchor, activities,
                 {Array.from({ length: railHours }).map((_, hi) => (
                   <div key={hi} style={{ height: HOUR_H }} className="border-t border-dashed border-border/60" />
                 ))}
-                <BloquesDelDia evs={dayEvents} dia={day} isDark={isDark} onEventClick={onEventClick} onAbrirGrupo={setGrupo}
+                <BloquesDelDia evs={dayEvents} dia={day} isDark={isDark} onEventClick={onEventClick} onAbrirGrupo={setGrupo} grupoAbierto={grupo?.clave}
                   draggable={!!onEventMove} onDragStart={setDragEv} onDragEnd={() => setDragEv(null)} />
               </div>
               {i < days.length - 1 && (
@@ -513,12 +660,12 @@ export const WeekView = React.forwardRef(function WeekView({ anchor, activities,
           );
         })}
       </div>
-      <HojaGrupo grupo={grupo} isDark={isDark} onClose={cerrarGrupo} onPick={(ev) => { setGrupo(null); onEventClick?.(ev); }} />
+      <PanelGrupo grupo={grupo} isDark={isDark} onClose={cerrarGrupo} onPick={(ev) => onEventClick?.(ev)} onNuevo={onNuevoEnDia} />
     </div>
   );
 });
 
-export function DayView({ anchor, activities, onEventClick, onSlotClick, onEventMove }) {
+export function DayView({ anchor, activities, onEventClick, onSlotClick, onEventMove, onNuevoEnDia }) {
   const { isDark } = useTheme();
   const [dragEv, setDragEv] = React.useState(null);
   const [grupo, setGrupo] = React.useState(null);
@@ -538,14 +685,14 @@ export function DayView({ anchor, activities, onEventClick, onSlotClick, onEvent
           {Array.from({ length: railHours }).map((_, i) => (
             <div key={i} style={{ height: HOUR_H }} className="border-t border-dashed border-border/60" />
           ))}
-          <BloquesDelDia evs={dayEvents} dia={anchor} isDark={isDark} onEventClick={onEventClick} onAbrirGrupo={setGrupo} ladoALadoDe2
+          <BloquesDelDia evs={dayEvents} dia={anchor} isDark={isDark} onEventClick={onEventClick} onAbrirGrupo={setGrupo} grupoAbierto={grupo?.clave} ladoALadoDe2
             draggable={!!onEventMove} onDragStart={setDragEv} onDragEnd={() => setDragEv(null)} />
           {dayEvents.length === 0 && (
             <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground pointer-events-none">No hay actividades este día</div>
           )}
         </div>
       </div>
-      <HojaGrupo grupo={grupo} isDark={isDark} onClose={cerrarGrupo} onPick={(ev) => { setGrupo(null); onEventClick?.(ev); }} />
+      <PanelGrupo grupo={grupo} isDark={isDark} onClose={cerrarGrupo} onPick={(ev) => onEventClick?.(ev)} onNuevo={onNuevoEnDia} />
     </div>
   );
 }

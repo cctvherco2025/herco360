@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, Link, useSearchParams } from 'react-router-dom';
-import { toast } from 'sonner';
-import { ClipboardList, ArrowLeft, Trash2, Pencil } from 'lucide-react';
+import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
+import { ClipboardList, ArrowLeft, Trash2, Pencil, MoreVertical } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { canAdminPromos, esRevisorTienda } from '@/lib/constants';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { confirmar } from '@/components/ConfirmDialog';
 import CustomFormWizard from '@/components/customform/CustomFormWizard';
 import CustomFormHistorial from '@/components/customform/CustomFormHistorial';
 import PromoResultados from '@/components/promociones/PromoResultados';
@@ -15,6 +16,7 @@ import PromoRevision from '@/components/promociones/PromoRevision';
 export default function CustomFormPage() {
   const { id } = useParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [schema, setSchema] = useState(null);
   const [error, setError] = useState(null);
   const [params] = useSearchParams();
@@ -32,12 +34,16 @@ export default function CustomFormPage() {
   useEffect(() => { load(); }, [load]);
 
   const remove = async () => {
-    if (!window.confirm('¿Eliminar este formulario? También se borran todas sus respuestas.')) return;
-    try {
-      await api.delete(`/formularios-custom/${id}`);
-      toast.success('Formulario eliminado');
-      window.location.href = '/formularios';
-    } catch (e) { toast.error(e?.response?.data?.detail || 'No se pudo eliminar'); }
+    const ok = await confirmar({
+      tipo: 'danger',
+      titulo: '¿Eliminar formulario?',
+      mensaje: <>Se eliminará <b>{schema?.titulo}</b> y todas sus respuestas. Esta acción no se puede deshacer.</>,
+      textoConfirmar: 'Eliminar',
+      textoCargando: 'Eliminando…',
+      textoExito: 'Formulario eliminado',
+      accion: () => api.delete(`/formularios-custom/${id}`),
+    });
+    if (ok) navigate('/formularios');
   };
 
   if (error) {
@@ -61,14 +67,32 @@ export default function CustomFormPage() {
   return (
     <div className="max-w-[1000px] mx-auto pt-2">
       <div className="flex items-start justify-between gap-3 mb-5">
-        <div>
-          <h1 className="font-heading text-2xl sm:text-3xl font-semibold flex items-center gap-2">
-            <ClipboardList className="h-7 w-7 text-[#00a5df]" /> {schema.titulo}
+        <div className="min-w-0 flex-1">
+          <h1 className="font-heading text-2xl sm:text-3xl font-semibold flex items-start gap-2 break-words">
+            <ClipboardList className="h-7 w-7 text-[#00a5df] shrink-0 mt-0.5 sm:mt-1" /> <span className="min-w-0">{schema.titulo}</span>
           </h1>
           {schema.descripcion && <p className="text-muted-foreground text-sm mt-0.5">{schema.descripcion}</p>}
         </div>
         {canManage && (
-          <div className="flex items-center gap-1 shrink-0">
+          // celular: menú de tres puntos
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="md:hidden shrink-0 -mr-2 text-muted-foreground" aria-label="Más opciones" data-testid="customform-menu-button">
+                <MoreVertical className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[160px] rounded-xl">
+              <DropdownMenuItem asChild className="cursor-pointer">
+                <Link to={`/formularios/custom/${id}/editar`}><Pencil className="h-4 w-4 mr-2" /> Editar</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => remove()} className="cursor-pointer text-[#dc2626] focus:text-[#dc2626] focus:bg-[rgba(220,38,38,0.08)]">
+                <Trash2 className="h-4 w-4 mr-2" /> Eliminar
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        {canManage && (
+          <div className="hidden md:flex items-center gap-1 shrink-0">
             <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="customform-edit-button">
               <Link to={`/formularios/custom/${id}/editar`}><Pencil className="h-4 w-4 mr-1.5" /> Editar</Link>
             </Button>
