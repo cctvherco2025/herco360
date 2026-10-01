@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Check, Trash2, AlertTriangle } from 'lucide-react';
+import {
+  Check, Trash2, AlertTriangle, Pencil, CalendarDays, Clock, Repeat, Users, Bell, StickyNote, Building2, UserRound, MapPin,
+} from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { ACTIVITY_COLORS, DEFAULT_ACTIVITY_COLOR } from '@/lib/constants';
@@ -56,9 +58,118 @@ const empty = (date, time) => ({
   reminder_offsets: [...DEFAULT_REMINDERS],
 });
 
+// ── Vista de detalle (se muestra al abrir una actividad existente) ──
+const aHora12 = (t) => {
+  const [h, m] = (t || '00:00').split(':').map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'a. m.' : 'p. m.'}`;
+};
+const aFechaLocal = (s) => { const [y, m, d] = (s || '').split('-').map(Number); return y ? new Date(y, m - 1, d) : null; };
+const fechaLarga = (s, conAnio = true) => {
+  const d = aFechaLocal(s);
+  if (!d) return '';
+  const t = d.toLocaleDateString('es-HN', { weekday: 'long', day: 'numeric', month: 'long', ...(conAnio ? { year: 'numeric' } : {}) });
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+const ESTADO_PARTICIPANTE = {
+  accepted: { label: 'Aceptó', cls: 'bg-[rgba(22,163,74,0.12)] text-[#16a34a]' },
+  rejected: { label: 'Rechazó', cls: 'bg-[rgba(220,38,38,0.1)] text-[#dc2626]' },
+  invited: { label: 'Pendiente', cls: 'bg-muted text-muted-foreground' },
+};
+const iniciales = (n) => (n || '?').trim().split(/\s+/).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
+
+function Fila({ icon: Icon, children }) {
+  return (
+    <div className="flex items-start gap-3">
+      <Icon className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1 text-sm">{children}</div>
+    </div>
+  );
+}
+
+function DetalleActividad({ activity }) {
+  const ini = activity.date;
+  const fin = activity.end_date || activity.date;
+  const todoElDia = activity.start_time === TODO_EL_DIA.start && activity.end_time === TODO_EL_DIA.end;
+  const horas = todoElDia ? 'Todo el día' : `${aHora12(activity.start_time)} – ${aHora12(activity.end_time)}`;
+  const recordatorios = readOffsets(activity)
+    .map((v) => REMINDER_CHOICES.find((c) => c.value === v)?.label || `${v} minutos antes`);
+  const participantes = activity.participants || [];
+  return (
+    <div className="px-6 pb-4 space-y-4" data-testid="activity-detail">
+      <div className="flex items-start gap-3">
+        <span className="mt-1.5 h-4 w-4 rounded-full shrink-0" style={{ background: activity.color || DEFAULT_ACTIVITY_COLOR }} />
+        <h3 className="font-heading text-lg font-semibold leading-snug break-words min-w-0">{activity.title}</h3>
+      </div>
+
+      <div className="rounded-xl border bg-card px-4 py-3 space-y-3">
+        <Fila icon={CalendarDays}>
+          {fin !== ini ? (
+            <>
+              <p>{fechaLarga(ini, false)} <span className="text-muted-foreground">({aHora12(activity.start_time)})</span></p>
+              <p>hasta {fechaLarga(fin)} <span className="text-muted-foreground">({aHora12(activity.end_time)})</span></p>
+            </>
+          ) : <p>{fechaLarga(ini)}</p>}
+        </Fila>
+        {fin === ini && <Fila icon={Clock}><p>{horas}</p></Fila>}
+        {activity.rrule && <Fila icon={Repeat}><p>Se repite {describirRegla(activity.rrule)}</p></Fila>}
+        {!activity.rrule && activity.series_id && <Fila icon={Repeat}><p>Forma parte de una serie de actividades</p></Fila>}
+        {activity.location && <Fila icon={MapPin}><p>{activity.location}</p></Fila>}
+        {activity.uses_meeting_room && <Fila icon={Building2}><p>Sala de Juntas reservada</p></Fila>}
+        {activity.created_by_name && (
+          <Fila icon={UserRound}><p><span className="text-muted-foreground">Organiza:</span> {activity.created_by_name}</p></Fila>
+        )}
+      </div>
+
+      <div>
+        <p className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+          <Users className="h-3.5 w-3.5" /> Participantes {participantes.length > 0 && `(${participantes.length})`}
+        </p>
+        {participantes.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Sin participantes invitados.</p>
+        ) : (
+          <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+            {participantes.map((p) => {
+              const e = ESTADO_PARTICIPANTE[p.status] || ESTADO_PARTICIPANTE.invited;
+              return (
+                <div key={p.user_id} className="flex items-center gap-2.5">
+                  {p.avatar_url
+                    ? <img src={p.avatar_url} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
+                    : <span className="h-7 w-7 rounded-full bg-[rgba(0,165,223,0.12)] text-[#1e395e] dark:text-[#3cbef6] grid place-items-center text-[10px] font-semibold shrink-0">{iniciales(p.name)}</span>}
+                  <span className="flex-1 min-w-0 truncate text-sm">{p.name}</span>
+                  <span className={`text-[11px] font-semibold rounded-full px-2 py-0.5 shrink-0 ${e.cls}`}>{e.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <p className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+          <Bell className="h-3.5 w-3.5" /> Recordatorios
+        </p>
+        <p className="text-sm">{recordatorios.length ? recordatorios.join(' · ') : 'Sin recordatorio'}</p>
+      </div>
+
+      <div>
+        <p className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+          <StickyNote className="h-3.5 w-3.5" /> Notas
+        </p>
+        {activity.description
+          ? <p className="text-sm whitespace-pre-wrap break-words">{activity.description}</p>
+          : <p className="text-sm text-muted-foreground">Sin notas.</p>}
+      </div>
+    </div>
+  );
+}
+
 export default function ActivityModal({ open, onOpenChange, activity, defaultDate, defaultTime, onSaved }) {
   const { user } = useAuth();
   const [form, setForm] = useState(empty(defaultDate, defaultTime));
+  // Una actividad existente se abre primero en modo "ver"; el creador (o un
+  // admin) pasa a "editar" con el botón Editar.
+  const [modo, setModo] = useState('ver');
+  const [recarga, setRecarga] = useState(0); // Cancelar en "editar": vuelve a "ver" y descarta cambios
   const [users, setUsers] = useState([]);
   const [groups, setGroups] = useState([]); // grupos de usuarios: atajo para agregar participantes
   const [saving, setSaving] = useState(false);
@@ -75,6 +186,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
       setRecOpen(false);
       setAlcance(null);
       setRepTocada(false);
+      setModo(activity ? 'ver' : 'editar');
       if (activity) {
         // Una repetición se abre con SU fecha; al guardar se elige si el
         // cambio aplica solo a esta, a esta y las siguientes o a todas.
@@ -102,7 +214,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
         setForm(empty(defaultDate, defaultTime));
       }
     }
-  }, [open, activity, defaultDate, defaultTime, user]);
+  }, [open, activity, defaultDate, defaultTime, user, recarga]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -294,14 +406,15 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
       <DialogContent className="sm:max-w-[540px] rounded-[22px] p-0 overflow-hidden max-h-[92vh] flex flex-col"
         onEscapeKeyDown={(e) => { if (participantsOpenRef.current || rangoOpenRef.current) e.preventDefault(); }}>
         <DialogHeader className="px-6 pt-6 pb-2">
-          <DialogTitle className="font-heading text-xl">{!isEdit ? 'Nueva actividad' : (readOnly ? 'Detalle de actividad' : 'Editar actividad')}</DialogTitle>
+          <DialogTitle className="font-heading text-xl">{!isEdit ? 'Nueva actividad' : (modo === 'ver' ? 'Detalle de actividad' : 'Editar actividad')}</DialogTitle>
         </DialogHeader>
-        {readOnly && (
+        {readOnly && modo === 'ver' && (
           <div className="mx-6 mb-1 rounded-xl bg-[rgba(0,165,223,0.1)] text-[#1e395e] dark:text-[#3cbef6] text-xs px-3 py-2">
             Fuiste invitado por <span className="font-semibold">{activity?.created_by_name || 'otro usuario'}</span>. Solo el creador puede editar o eliminar esta actividad.
           </div>
         )}
         <div className="flex-1 min-h-0 overflow-y-auto">
+          {isEdit && modo === 'ver' ? <DetalleActividad activity={activity} /> : (
           <fieldset disabled={readOnly} className="px-6 pb-2 space-y-4 min-w-0 border-0">
             <div className="space-y-1.5">
               <Label>Título</Label>
@@ -476,6 +589,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
               <Textarea value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Detalles de la actividad…" rows={2} />
             </div>
           </fieldset>
+          )}
         </div>
         <DialogFooter className="px-6 py-4 border-t gap-2 sm:gap-2">
           {isEdit && isOwner && (
@@ -483,7 +597,14 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
               <Trash2 className="h-4 w-4 mr-1" /> Eliminar
             </Button>
           )}
-          {readOnly ? (
+          {isEdit && isOwner && modo === 'ver' ? (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)} className="rounded-xl">Cerrar</Button>
+              <Button onClick={() => setModo('editar')} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="activity-edit-button">
+                <Pencil className="h-4 w-4 mr-1.5" /> Editar
+              </Button>
+            </>
+          ) : readOnly ? (
             myPart ? (
               <>
                 <Button variant="outline" onClick={() => respond('rejected')} disabled={saving}
@@ -500,7 +621,10 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
             )
           ) : (
             <>
-              <Button variant="outline" onClick={() => onOpenChange(false)} className="rounded-xl">Cancelar</Button>
+              <Button variant="outline" className="rounded-xl"
+                onClick={() => (isEdit ? setRecarga((n) => n + 1) : onOpenChange(false))}>
+                Cancelar
+              </Button>
               <Button onClick={save} disabled={saving || bloqueado} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="activity-form-submit-button">
                 {saving ? 'Guardando…' : (isEdit ? 'Guardar cambios' : 'Crear actividad')}
               </Button>
