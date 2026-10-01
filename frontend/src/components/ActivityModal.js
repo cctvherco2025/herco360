@@ -16,7 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import ParticipantPicker from '@/components/ParticipantPicker';
-import RangeDatePicker from '@/components/RangeDatePicker';
+import CalendarioFecha from '@/components/CalendarioFecha';
 import RecurrenceDialog from '@/components/RecurrenceDialog';
 import { confirmar } from '@/components/ConfirmDialog';
 import { opcionesAlcance, NOTA_REGLA_CAMBIADA } from '@/lib/alcance';
@@ -186,6 +186,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
       setAbrirRango(false);
       setRecOpen(false);
       setRepTocada(false);
+      setErrores({});
       setModo(activity ? 'ver' : 'editar');
       if (activity) {
         // Una repetición se abre con SU fecha; al guardar se elige si el
@@ -219,7 +220,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   // ¿Está abierta la lista del buscador de participantes o el calendario de
-  // "Varios días"? Si lo está, Escape solo la cierra (no cierra el modal).
+  // la fecha? Si lo está, Escape solo la cierra (no cierra el modal).
   const participantsOpenRef = useRef(false);
   const rangoOpenRef = useRef(false);
 
@@ -244,6 +245,15 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
     setVariosDias(false);
     setAbrirRango(false);
     setForm((f) => ({ ...f, end_date: f.date }));
+  };
+  // Errores que se marcan al tocar Crear/Guardar (el botón nunca se deshabilita).
+  const [errores, setErrores] = useState({}); // { titulo, fecha, hora }
+  const camposRef = useRef({});
+  const limpiarError = (k) => setErrores((e) => (e[k] ? { ...e, [k]: null } : e));
+  // Al cambiar Inicio, si Fin queda igual o antes, Fin pasa a Inicio + 1 h.
+  const cambiarInicio = (v) => {
+    setForm((f) => ({ ...f, start_time: v, end_time: f.end_time && f.end_time > v ? f.end_time : addHour(v) }));
+    limpiarError('hora');
   };
   const endDate = variosDias ? form.end_date : form.date;
   const faltaUltimoDia = variosDias && !form.end_date;
@@ -317,7 +327,6 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.uses_meeting_room, reglaActual, puedeRepetir, form.date, form.start_time, duracionDias]);
   const roomBlocked = form.uses_meeting_room && (isMondaySelected || repeticionEnLunes);
-  const bloqueado = roomBlocked || horaInvalida || faltaUltimoDia || repeticionChoca;
 
   // Regla que se manda al guardar. Al editar una serie sin tocar la
   // repetición ni la fecha no se manda (el servidor conserva la regla exacta,
@@ -358,8 +367,18 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
     onSaved?.();
   };
   const save = async () => {
-    if (!form.title.trim()) { toast.error('Ingresa un título'); return; }
-    if (bloqueado) return;
+    const err = {};
+    if (!form.title.trim()) err.titulo = 'Ingresa un título';
+    if (!form.date || faltaUltimoDia) err.fecha = 'Elige la fecha';
+    if (horaInvalida) err.hora = 'La hora de fin debe ser mayor a la de inicio';
+    setErrores(err);
+    // primer campo con error (o el aviso de sala / repetición) a la vista
+    const primero = ['titulo', 'fecha', 'hora'].find((k) => err[k])
+      || (roomBlocked ? 'sala' : null) || (repeticionChoca ? 'repeticion' : null);
+    if (primero) {
+      camposRef.current[primero]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
     if (esSerie) {
       // pregunta: solo esta / siguientes / todas
       let mensaje = '';
@@ -416,7 +435,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[540px] rounded-[22px] p-0 overflow-hidden max-h-[92vh] flex flex-col"
+      <DialogContent className="w-[min(485px,100%)] max-w-none rounded-[22px] p-0 overflow-hidden max-h-[92vh] flex flex-col"
         onEscapeKeyDown={(e) => { if (participantsOpenRef.current || rangoOpenRef.current) e.preventDefault(); }}>
         <DialogHeader className="px-6 pt-6 pb-2">
           <DialogTitle className="font-heading text-xl">{!isEdit ? 'Nueva actividad' : (modo === 'ver' ? 'Detalle de actividad' : 'Editar actividad')}</DialogTitle>
@@ -429,9 +448,13 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
         <div className="flex-1 min-h-0 overflow-y-auto">
           {isEdit && modo === 'ver' ? <DetalleActividad activity={activity} /> : (
           <fieldset disabled={readOnly} className="px-6 pb-2 space-y-4 min-w-0 border-0">
-            <div className="space-y-1.5">
+            <div className="space-y-1.5" ref={(el) => { camposRef.current.titulo = el; }}>
               <Label>Título</Label>
-              <Input data-testid="activity-form-title-input" value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Ej. Reunión de seguimiento" className="h-11" />
+              <Input data-testid="activity-form-title-input" value={form.title}
+                onChange={(e) => { set('title', e.target.value); limpiarError('titulo'); }}
+                placeholder="Ej. Reunión de seguimiento" aria-invalid={!!errores.titulo || undefined}
+                className={`h-11 ${errores.titulo ? 'border-[#dc2626] focus-visible:ring-[#dc2626]' : ''}`} />
+              {errores.titulo && <p className="text-xs text-[#dc2626]" data-testid="activity-form-title-error">{errores.titulo}</p>}
             </div>
 
             <div className="space-y-1.5">
@@ -458,11 +481,11 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
             </div>
 
             {/* Fecha · Inicio · Fin. En celular la fecha ocupa todo el ancho y
-                las horas van debajo, lado a lado. "Varios días" cambia el input
-                de fecha por un campo con calendario de rango. */}
-            <div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <div className="space-y-1.5 col-span-2 sm:col-span-1 min-w-0">
+                las horas van debajo, lado a lado. El mismo calendario sirve
+                para un solo día y para "Varios días" (rango). */}
+            <div ref={(el) => { camposRef.current.fecha = el; camposRef.current.hora = el; }}>
+              <div className="grid grid-cols-2 md:grid-cols-[1.25fr_1fr_1fr] gap-3">
+                <div className="space-y-1.5 col-span-2 md:col-span-1 min-w-0">
                   <div className="flex h-5 items-center justify-between gap-2">
                     <Label>Fecha</Label>
                     {!readOnly && (
@@ -472,22 +495,27 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
                       </button>
                     )}
                   </div>
-                  {variosDias ? (
-                    <RangeDatePicker start={form.date} end={form.end_date} disabled={readOnly} autoOpen={abrirRango}
-                      onChange={({ start, end }) => setForm((f) => ({ ...f, date: start, end_date: end }))}
-                      onOpenChange={(o) => { rangoOpenRef.current = o; if (!o) setAbrirRango(false); }} />
-                  ) : (
-                    <Input data-testid="activity-form-date-picker" type="date" value={form.date}
-                      onChange={(e) => setForm((f) => ({ ...f, date: e.target.value, end_date: e.target.value }))} className="h-11" />
-                  )}
+                  <CalendarioFecha key={variosDias ? 'rango' : 'dia'} modo={variosDias ? 'rango' : 'dia'}
+                    start={form.date} end={variosDias ? form.end_date : form.date} disabled={readOnly}
+                    autoOpen={abrirRango} invalido={!!errores.fecha}
+                    onChange={({ start, end }) => {
+                      limpiarError('fecha');
+                      // varios días que terminan el mismo día: vuelve a "un solo día"
+                      if (variosDias && end && end === start) { setVariosDias(false); setAbrirRango(false); }
+                      setForm((f) => ({ ...f, date: start, end_date: end }));
+                    }}
+                    onOpenChange={(o) => { rangoOpenRef.current = o; if (!o) setAbrirRango(false); }} />
+                  {errores.fecha && <p className="text-xs text-[#dc2626]">{errores.fecha}</p>}
                 </div>
                 <div className="space-y-1.5 min-w-0">
                   <Label className="flex h-5 items-center">Inicio</Label>
-                  <Input type="time" value={form.start_time} onChange={(e) => set('start_time', e.target.value)} disabled={todoElDia} className="h-11" />
+                  <Input type="time" value={form.start_time} onChange={(e) => cambiarInicio(e.target.value)} disabled={todoElDia}
+                    aria-invalid={!!errores.hora || undefined} className={`h-11 ${errores.hora ? 'border-[#dc2626]' : ''}`} />
                 </div>
                 <div className="space-y-1.5 min-w-0">
                   <Label className="flex h-5 items-center">Fin</Label>
-                  <Input type="time" value={form.end_time} onChange={(e) => set('end_time', e.target.value)} disabled={todoElDia} className="h-11" />
+                  <Input type="time" value={form.end_time} onChange={(e) => { set('end_time', e.target.value); limpiarError('hora'); }} disabled={todoElDia}
+                    aria-invalid={!!errores.hora || undefined} className={`h-11 ${errores.hora ? 'border-[#dc2626]' : ''}`} />
                 </div>
               </div>
               {!readOnly && (
@@ -496,8 +524,8 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
                   Todo el día <span className="text-xs text-muted-foreground">(8:00 a. m. a 6:00 p. m.)</span>
                 </label>
               )}
-              {horaInvalida && (
-                <p className="text-xs text-[#dc2626] mt-1.5" data-testid="activity-form-time-error">La hora de fin debe ser mayor a la de inicio</p>
+              {errores.hora && (
+                <p className="text-xs text-[#dc2626] mt-1.5" data-testid="activity-form-time-error">{errores.hora}</p>
               )}
             </div>
 
@@ -524,7 +552,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
             </div>
 
             {roomBlocked && (
-              <div className="flex items-start gap-2 rounded-xl border border-[rgba(220,38,38,0.35)] bg-[rgba(220,38,38,0.08)] px-4 py-3" data-testid="activity-form-monday-warning">
+              <div ref={(el) => { camposRef.current.sala = el; }} className="flex items-start gap-2 rounded-xl border border-[rgba(220,38,38,0.35)] bg-[rgba(220,38,38,0.08)] px-4 py-3" data-testid="activity-form-monday-warning">
                 <AlertTriangle className="h-4 w-4 text-[#dc2626] shrink-0 mt-0.5" />
                 <p className="text-xs text-[#dc2626]">
                   {isMondaySelected
@@ -555,7 +583,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
                 {/* Una sola línea y solo cuando aporta algo: regla personalizada
                     (con su fin; tocarla la vuelve a abrir) o un conflicto en rojo. */}
                 {repeticionChoca ? (
-                  <p className="text-xs text-[#dc2626]" data-testid="activity-form-recurrence-error">
+                  <p ref={(el) => { camposRef.current.repeticion = el; }} className="text-xs text-[#dc2626]" data-testid="activity-form-recurrence-error">
                     La actividad dura {duracionDias + 1} días y se repetiría antes de terminar. Cambiá la repetición.
                   </p>
                 ) : repKey === 'custom' && reglaCustom && (
@@ -638,7 +666,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
                 onClick={() => (isEdit ? setRecarga((n) => n + 1) : onOpenChange(false))}>
                 Cancelar
               </Button>
-              <Button onClick={save} disabled={saving || bloqueado} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="activity-form-submit-button">
+              <Button onClick={save} disabled={saving} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="activity-form-submit-button">
                 {saving ? 'Guardando…' : (isEdit ? 'Guardar cambios' : 'Crear actividad')}
               </Button>
             </>
