@@ -16,6 +16,10 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
+// Colores fijos para los calendarios del equipo (fuera del componente: es una
+// referencia estable y no entra como dependencia de los hooks).
+const TEAM_COLORS = ['#0d9488', '#712146', '#ec9032', '#64748b', '#16a34a', '#dc2626', '#3cbef6', '#1e395e'];
+
 export default function Agenda() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
@@ -32,7 +36,6 @@ export default function Agenda() {
   const [tareas, setTareas] = useState([]); // tareas con fecha límite (todo el día) en el rango
   const navTareas = useNavigate();
 
-  const TEAM_COLORS = ['#0d9488', '#712146', '#ec9032', '#64748b', '#16a34a', '#dc2626', '#3cbef6', '#1e395e'];
   const colorFor = useCallback((id) => {
     const i = team.findIndex((m) => m.id === id);
     return TEAM_COLORS[(i >= 0 ? i : 0) % TEAM_COLORS.length];
