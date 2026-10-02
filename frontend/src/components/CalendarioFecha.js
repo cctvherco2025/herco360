@@ -65,10 +65,21 @@ export default function CalendarioFecha({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => () => onOpenChange?.(false), []);
 
-  // al abrir, que el calendario quede a la vista (en celular el modal se desplaza)
+  // El calendario tiene su propio ancho (no el del campo, que puede ser angosto)
+  // y se alinea a la izquierda o a la derecha del campo para no salirse de la
+  // pantalla. Queda dentro del modal (no en un portal), para no cerrarlo al tocar.
   const popRef = useRef(null);
+  const [alinearDer, setAlinearDer] = useState(false);
   useEffect(() => {
-    if (open) requestAnimationFrame(() => popRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+    if (!open) return;
+    const b = btnRef.current?.getBoundingClientRect();
+    if (b) {
+      const ancho = Math.min(300, window.innerWidth - 16);
+      const cont = btnRef.current?.closest('[role="dialog"]');
+      const limiteDer = (cont ? cont.getBoundingClientRect().right : window.innerWidth) - 8;
+      setAlinearDer(b.left + ancho > limiteDer);
+    }
+    requestAnimationFrame(() => popRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   }, [open]);
 
   // cerrar al tocar fuera o con Escape
@@ -131,7 +142,8 @@ export default function CalendarioFecha({
 
       {open && (
         <div ref={popRef} role="dialog" aria-label={rango ? 'Elegir días' : 'Elegir fecha'}
-          className="absolute left-0 z-40 mt-1.5 w-full rounded-2xl border bg-popover p-3 text-popover-foreground shadow-lg md:w-[290px]"
+          className={`absolute z-50 mt-1.5 rounded-2xl border bg-popover p-3 text-popover-foreground shadow-xl ${alinearDer ? 'right-0' : 'left-0'}`}
+          style={{ width: 'min(300px, calc(100vw - 1rem))' }}
           data-testid="date-calendar">
           <div className="mb-2 flex items-center justify-between">
             <button type="button" onClick={() => setMes(new Date(mes.getFullYear(), mes.getMonth() - 1, 1))} aria-label="Mes anterior"

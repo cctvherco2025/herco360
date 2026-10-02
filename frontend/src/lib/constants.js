@@ -200,7 +200,7 @@ export function canManagePromos(user) {
 // Igual que core.can_admin_promos.
 // Promociones del mes: tiendas que participan según la sucursal del perfil
 // (mismo mapa que core.PROMO_TIENDAS en el servidor).
-export const PROMO_TIENDAS = { H1: 'Herco Max', H2: 'Herco Centro' };
+export const PROMO_TIENDAS = { H1: 'Herco Max', H2: 'Herco Centro', H6: 'Herco JT' };
 export const tiendaPromos = (user) => PROMO_TIENDAS[(user?.sucursal || '').trim()] || '';
 // Revisa Promociones del mes de su tienda: jefe o gerente de tienda.
 export function esRevisorTienda(user) {
@@ -215,6 +215,15 @@ export function esCoordinadorTienda(user) {
 }
 // Formulario → Tickets: quien contesta, quien revisa o quien administra Promociones.
 export const puedeVerTickets = (user) => esCoordinadorTienda(user) || esRevisorTienda(user) || canAdminPromos(user);
+
+// ---- Tareas de tienda (módulo aparte de Tickets) ----
+// Supervisor = admin o Director comercial (ven y validan todas las tiendas);
+// mismo criterio que _es_supervisor en backend/tareas.py.
+export const esSupervisorTareas = (user) => user?.role === 'admin' || (user?.position || '').trim() === 'Director comercial';
+export const puedeVerTareas = (user) => esRevisorTienda(user) || esCoordinadorTienda(user) || esSupervisorTareas(user);
+// Crean gerente y jefe de tienda.
+export const puedeCrearTareas = (user) => esRevisorTienda(user);
+export const PRIORIDADES_TAREA = ['alta', 'media', 'baja'];
 
 export function canAdminPromos(user) {
   if (!user) return false;

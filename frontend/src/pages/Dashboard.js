@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { CalendarDays, Users, Clock, Activity, ArrowRight, Plus, ChevronLeft, ChevronRight, Bookmark, Bell, Percent } from 'lucide-react';
+import { CalendarDays, Users, Clock, Activity, ArrowRight, Plus, ChevronLeft, ChevronRight, Bookmark, Bell, Percent, ListChecks, Check } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { greetingEs, fullDateEs, timeAgoEs, capitalize, ymd, MESES_CORTO } from '@/lib/time';
+import { greetingEs, fullDateEs, timeAgoEs, capitalize, ymd, MESES_CORTO, fmtHora } from '@/lib/time';
 import { catStyle, ROOM_STATES, puedeVerTickets } from '@/lib/constants';
 import ActivityModal from '@/components/ActivityModal';
 import { WeekView, DayView, MonthView, startOfWeek, addDays } from '@/components/CalendarViews';
@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { periodoLabel } from '@/pages/PromocionesHome';
 import { ESTADO_TAREA, estadoVisible } from '@/components/promociones/PromoRevision';
 import { PlazoChip } from '@/lib/promoPlazos';
+import { PrioridadTarea, FechaLimite } from '@/pages/Tareas';
 
 // Promociones del mes en Inicio: al coordinador de tienda, lo que falta por
 // contestar y lo que ya contestó; al jefe y al gerente de tienda (revisan),
@@ -47,7 +48,7 @@ function PromosPendientes() {
           <div className="rounded-xl border border-[#dc2626]/40 bg-[rgba(220,38,38,0.05)] p-3.5 flex flex-wrap items-center gap-3" data-testid="dashboard-tickets">
             <p className="flex-1 min-w-[180px] text-sm font-medium">
               {tickets} ticket{tickets === 1 ? '' : 's'} por atender
-              <span className="block text-xs text-muted-foreground font-normal">{jefe ? 'Correcciones por validar en piso' : 'Inconsistencias por corregir'}</span>
+              <span className="block text-xs text-muted-foreground font-normal">{jefe ? 'Correcciones por validar' : 'Inconsistencias por corregir'}</span>
             </p>
             <Button size="sm" className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" onClick={() => navigate('/formularios/tickets')}>Ver tickets</Button>
           </div>
@@ -92,6 +93,55 @@ function PromosPendientes() {
   );
 }
 
+// Tareas en Inicio: al coordinador, lo suyo por hacer (pendientes y devueltas,
+// vencidas arriba); al gerente/jefe, lo que espera su validación.
+function TareasInicio() {
+  const navigate = useNavigate();
+  const [data, setData] = useState(null);
+  useEffect(() => { api.get('/tareas/inicio').then(({ data: d }) => setData(d)).catch(() => {}); }, []);
+  if (!data?.rol || !data.tareas.length) return null;
+  const rev = data.rol === 'revisor';
+  return (
+    <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.18 }}
+      className="rounded-[18px] bg-card border shadow-card p-5 mb-6" data-testid="dashboard-tareas-card">
+      <div className="flex items-center gap-2.5 mb-3">
+        <span className="h-9 w-9 rounded-full grid place-items-center bg-[rgba(0,165,223,0.12)]"><ListChecks className="h-4 w-4 text-[#00a5df]" /></span>
+        <div>
+          <h2 className="font-heading font-semibold">Tareas</h2>
+          <p className="text-xs text-muted-foreground">{rev ? 'Por validar' : 'Lo que tienes que hacer'}</p>
+        </div>
+        <button onClick={() => navigate('/tareas')} className="ml-auto text-xs font-medium text-[#00a5df] hover:underline">Ver todas →</button>
+      </div>
+      <div className="space-y-2">
+        {data.tareas.slice(0, 6).map((t) => {
+          const terminada = !rev && t.mi_estado === 'validada';
+          const etiqueta = rev ? 'Validar'
+            : t.mi_estado === 'validada' ? 'Validada'
+            : t.mi_estado === 'hecha' ? 'Esperando validación'
+            : t.mi_estado === 'devuelta' ? 'Corregir' : 'Abrir';
+          return (
+            <button key={t.id} onClick={() => navigate(`/tareas/${t.id}`)}
+              className={`w-full text-left rounded-xl border p-3 flex flex-wrap items-center gap-x-3 gap-y-1 hover:shadow-card transition-shadow ${t.vencida ? 'border-[#dc2626]/40 bg-[rgba(220,38,38,0.04)]' : ''} ${terminada ? 'opacity-60' : ''}`}
+              data-testid="dashboard-tarea-row">
+              <span className="flex-1 min-w-[160px]">
+                <span className="block text-sm font-medium truncate">{t.titulo}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {rev ? `${t.por_validar} ${t.por_validar === 1 ? 'parte marcada hecha' : 'partes marcadas hechas'} · ${t.tienda}` : `Asignó ${t.creado_por?.name}`}
+                </span>
+              </span>
+              <PrioridadTarea prioridad={t.prioridad} />
+              {!rev && <FechaLimite fecha={t.fecha_limite} vencida={t.vencida} />}
+              <span className={`inline-flex items-center gap-1 text-xs font-medium ${terminada ? 'text-[#16a34a]' : 'text-[#00a5df]'}`}>
+                {terminada && <Check className="h-3.5 w-3.5" strokeWidth={3} />}{etiqueta}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}
+
 function KpiCard({ icon: Icon, label, value, sub, color, tint, onClick, testid, delay }) {
   return (
     <motion.button initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay }}
@@ -118,6 +168,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [weekActs, setWeekActs] = useState([]);
+  const [tareasCal, setTareasCal] = useState([]);
   const [view, setView] = useState('Semana');
   const [anchor, setAnchor] = useState(new Date());
   const [modalOpen, setModalOpen] = useState(false);
@@ -132,6 +183,10 @@ export default function Dashboard() {
       setData(dash.data);
       setWeekActs(acts.data);
     } catch (e) {}
+    try {
+      const { data: ts } = await api.get(`/tareas/agenda?start=${ymd(addDays(startOfWeek(new Date()), -7))}&end=${ymd(addDays(startOfWeek(new Date()), 42))}`);
+      setTareasCal(ts);
+    } catch (e) { setTareasCal([]); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -173,6 +228,7 @@ export default function Dashboard() {
       </div>
 
       <PromosPendientes />
+      <TareasInicio />
 
       {/* Today + Recent */}
       <div className="lg:col-span-3 rounded-[18px] bg-card border shadow-card p-5">
@@ -195,8 +251,8 @@ export default function Dashboard() {
               return (
                 <button key={a.id} onClick={() => openEvent(a)} className="w-full flex gap-4 rounded-xl p-3 hover:bg-muted/50 transition-colors text-left">
                   <div className="flex flex-col items-center pt-0.5">
-                    <span className="text-sm font-semibold text-[#1e395e] dark:text-[#3cbef6]">{a.start_time}</span>
-                    <span className="text-xs text-muted-foreground">{a.end_time}</span>
+                    <span className="text-sm font-semibold text-[#1e395e] dark:text-[#3cbef6]">{fmtHora(a.start_time)}</span>
+                    <span className="text-xs text-muted-foreground">{fmtHora(a.end_time)}</span>
                   </div>
                   <div className="relative flex flex-col items-center">
                     <span className="h-3 w-3 rounded-full mt-1" style={{ background: solid }} />
@@ -270,9 +326,9 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="overflow-hidden">
-          {view === 'Semana' && <WeekView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onNuevoEnDia={(ds) => openNew(ds)} />}
-          {view === 'Día' && <DayView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onNuevoEnDia={(ds) => openNew(ds)} />}
-          {view === 'Mes' && <MonthView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} />}
+          {view === 'Semana' && <WeekView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onNuevoEnDia={(ds) => openNew(ds)} tareas={tareasCal} onTareaClick={(t) => navigate(`/tareas/${t.id}`)} />}
+          {view === 'Día' && <DayView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onNuevoEnDia={(ds) => openNew(ds)} tareas={tareasCal} onTareaClick={(t) => navigate(`/tareas/${t.id}`)} />}
+          {view === 'Mes' && <MonthView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} tareas={tareasCal} onTareaClick={(t) => navigate(`/tareas/${t.id}`)} />}
         </div>
       </motion.div>*/}
 

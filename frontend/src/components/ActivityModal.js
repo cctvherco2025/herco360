@@ -6,7 +6,7 @@ import {
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { ACTIVITY_COLORS, DEFAULT_ACTIVITY_COLOR } from '@/lib/constants';
-import { ymd } from '@/lib/time';
+import { ymd, fmtHora } from '@/lib/time';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,10 +60,7 @@ const empty = (date, time) => ({
 });
 
 // ── Vista de detalle (se muestra al abrir una actividad existente) ──
-const aHora12 = (t) => {
-  const [h, m] = (t || '00:00').split(':').map(Number);
-  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'a. m.' : 'p. m.'}`;
-};
+const aHora12 = (t) => fmtHora(t);
 const aFechaLocal = (s) => { const [y, m, d] = (s || '').split('-').map(Number); return y ? new Date(y, m - 1, d) : null; };
 const fechaLarga = (s, conAnio = true) => {
   const d = aFechaLocal(s);

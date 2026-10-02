@@ -22,6 +22,7 @@ from core import db, now_local, APP_UTC_OFFSET_HOURS
 from notifications import create_notification
 import recurrence as rec
 import promo_plazos
+import tareas
 
 logger = logging.getLogger("reminders")
 
@@ -181,6 +182,7 @@ async def _loop() -> None:
         # Promociones del mes: recordatorios y vencimientos de tareas y tickets
         try:
             await promo_plazos.revisar_vencimientos()
+            await tareas.revisar_tareas()
         except asyncio.CancelledError:
             raise
         except Exception as e:  # pragma: no cover

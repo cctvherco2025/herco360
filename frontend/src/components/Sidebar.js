@@ -3,14 +3,14 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun, Boxes, FileText,
-  Palmtree, Network, Video, ClipboardCheck, ClipboardList, ChevronDown, Percent, Ticket,
+  Palmtree, Network, Video, ClipboardCheck, ClipboardList, ChevronDown, Percent, Ticket, ListChecks,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import {
   canAccessInventory, canAccessReports, canAccessOrgChart, canAccessCams, canAccessFlos, canAccessRutina,
-  canAccessFormulariosPrincipal, canAccessPromocionesMes, canAccessVacaciones, puedeVerTickets,
+  canAccessFormulariosPrincipal, canAccessPromocionesMes, canAccessVacaciones, puedeVerTickets, puedeVerTareas,
 } from '@/lib/constants';
 import { Logo } from '@/components/Logo';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -44,7 +44,10 @@ function NavItem({ item, onNavigate }) {
             <motion.span layoutId="sidebar-active" className="absolute left-0 inset-y-0 my-auto h-6 w-1 rounded-full bg-[#00a5df]" />
           )}
           <item.icon className="h-[18px] w-[18px] shrink-0" />
-          {item.label}
+          <span className="flex-1">{item.label}</span>
+          {item.count > 0 && (
+            <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#dc2626] text-white text-[11px] font-semibold grid place-items-center">{item.count}</span>
+          )}
         </>
       )}
     </NavLink>
@@ -133,6 +136,12 @@ function SidebarContent({ onNavigate }) {
     if (!verTickets) return;
     api.get('/tickets/contador').then(({ data }) => setTicketsPendientes(data.pendientes || 0)).catch(() => {});
   }, [verTickets, location.pathname]);
+  const verTareas = puedeVerTareas(user);
+  const [tareasPendientes, setTareasPendientes] = useState(0);
+  useEffect(() => {
+    if (!verTareas) return;
+    api.get('/tareas/contador').then(({ data }) => setTareasPendientes(data.pendientes || 0)).catch(() => {});
+  }, [verTareas, location.pathname]);
 
   // Build nav: insert "Inventario" y "Reportes" (Tienda-only) right after Sala de Juntas
   const navItems = [...baseNavItems];
@@ -168,6 +177,11 @@ function SidebarContent({ onNavigate }) {
   if (formularioChildren.length > 0) {
     const idx = navItems.findIndex((n) => n.to === '/reportes-cams');
     navItems.splice(idx >= 0 ? idx + 1 : 4, 0, { label: 'Formulario', icon: ClipboardCheck, testid: 'sidebar-nav-formulario', children: formularioChildren });
+  }
+  if (verTareas) {
+    const idx = navItems.findIndex((n) => n.label === 'Formulario');
+    navItems.splice(idx >= 0 ? idx + 1 : navItems.length - 1, 0,
+      { to: '/tareas', label: 'Tareas', icon: ListChecks, testid: 'sidebar-nav-tareas', count: tareasPendientes });
   }
   if (canAccessOrgChart(user)) {
     const idx = navItems.findIndex((n) => n.to === '/usuarios');

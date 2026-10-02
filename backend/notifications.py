@@ -18,6 +18,7 @@ _PUSH_URL_BY_TYPE = {
     'user': '/usuarios',
     'promociones': '/formularios/promociones',
     'ticket': '/formularios/tickets',
+    'tarea': '/tareas',
 }
 
 
@@ -28,7 +29,7 @@ def _fire_push(user_id, title, message, related_type, ttl=None):
             'title': title or 'HERCO360',
             'body': message or '',
             'url': _PUSH_URL_BY_TYPE.get(related_type, '/notificaciones'),
-            'icon': '/icon-192.png',
+            'icon': '/icon-192-maskable.png',
             'tag': related_type or 'general',
         }
         task = asyncio.create_task(push.send_push_to_user(user_id, payload, ttl=ttl))
@@ -62,6 +63,13 @@ NOTIFICATION_META = {
     'ticket_cerrado': {'title': 'Ticket cerrado', 'icon': 'ClipboardCheck', 'color': '#16a34a'},
     'ticket_reabierto': {'title': 'Ticket reabierto', 'icon': 'ClipboardCheck', 'color': '#dc2626'},
     'ticket_mensaje': {'title': 'Mensaje en ticket', 'icon': 'Bell', 'color': '#00a5df'},
+    'tarea_asignada': {'title': 'Nueva tarea asignada', 'icon': 'ClipboardList', 'color': '#00a5df'},
+    'tarea_hecha': {'title': 'Tarea por validar', 'icon': 'ClipboardList', 'color': '#ec9032'},
+    'tarea_validada': {'title': 'Tarea validada', 'icon': 'ClipboardList', 'color': '#16a34a'},
+    'tarea_devuelta': {'title': 'Tarea devuelta', 'icon': 'ClipboardList', 'color': '#dc2626'},
+    'tarea_cancelada': {'title': 'Tarea cancelada', 'icon': 'ClipboardList', 'color': '#64748b'},
+    'tarea_mensaje': {'title': 'Mensaje en tarea', 'icon': 'Bell', 'color': '#00a5df'},
+    'tarea_recordatorio': {'title': 'Tarea por vencer', 'icon': 'Clock', 'color': '#ec9032'},
     'promo_recordatorio': {'title': 'Plazo por vencer', 'icon': 'Clock', 'color': '#ec9032'},
     'promo_vencida': {'title': 'Plazo vencido', 'icon': 'Clock', 'color': '#dc2626'},
 }

@@ -14,6 +14,7 @@ import promo_tareas
 import tickets
 import storage
 import reminders
+import tareas
 import push
 
 ROOT_DIR = Path(__file__).parent
@@ -76,6 +77,7 @@ api_router.include_router(routes_diagnostico.router)
 api_router.include_router(routes_groups.router)
 api_router.include_router(promo_tareas.router)
 api_router.include_router(tickets.router)
+api_router.include_router(tareas.router)
 
 app.include_router(api_router)
 

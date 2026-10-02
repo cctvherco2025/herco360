@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Plus, ChevronLeft, ChevronRight, CalendarDays, Check, X as XIcon, Eye, EyeOff, Users as UsersIcon, Palmtree } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { canAccessVacaciones } from '@/lib/constants';
-import { fullDateEs, capitalize, ymd, MESES, MESES_CORTO } from '@/lib/time';
+import { fullDateEs, capitalize, ymd, MESES, MESES_CORTO, fmtHora } from '@/lib/time';
 import ActivityModal from '@/components/ActivityModal';
 import { confirmar } from '@/components/ConfirmDialog';
 import { opcionesAlcance } from '@/lib/alcance';
@@ -29,6 +29,8 @@ export default function Agenda() {
   const [team, setTeam] = useState([]);
   const [visible, setVisible] = useState({});
   const [teamEvents, setTeamEvents] = useState({});
+  const [tareas, setTareas] = useState([]); // tareas con fecha límite (todo el día) en el rango
+  const navTareas = useNavigate();
 
   const TEAM_COLORS = ['#0d9488', '#712146', '#ec9032', '#64748b', '#16a34a', '#dc2626', '#3cbef6', '#1e395e'];
   const colorFor = useCallback((id) => {
@@ -43,6 +45,7 @@ export default function Agenda() {
     const s = ymd(addDays(startOfWeek(anchor), -7));
     const e = ymd(addDays(startOfWeek(anchor), 49));
     try { const { data } = await api.get(`/activities?start=${s}&end=${e}`); setActivities(data); } catch (err) {}
+    try { const { data } = await api.get(`/tareas/agenda?start=${s}&end=${e}`); setTareas(data); } catch (err) { setTareas([]); }
   }, [anchor]);
 
   const fetchMember = useCallback(async (id) => {
@@ -205,9 +208,9 @@ export default function Agenda() {
             </Tabs>
           </div>
           <div className="overflow-hidden">
-            {view === 'Semana' && <WeekView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} onNuevoEnDia={(ds) => openNew(ds)} />}
-            {view === 'Día' && <DayView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} onNuevoEnDia={(ds) => openNew(ds)} />}
-            {view === 'Mes' && <MonthView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onEventMove={moveEvent} />}
+            {view === 'Semana' && <WeekView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} onNuevoEnDia={(ds) => openNew(ds)} tareas={tareas} onTareaClick={(t) => navTareas(`/tareas/${t.id}`)} />}
+            {view === 'Día' && <DayView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} onNuevoEnDia={(ds) => openNew(ds)} tareas={tareas} onTareaClick={(t) => navTareas(`/tareas/${t.id}`)} />}
+            {view === 'Mes' && <MonthView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onEventMove={moveEvent} tareas={tareas} onTareaClick={(t) => navTareas(`/tareas/${t.id}`)} />}
           </div>
         </motion.div>
 
@@ -257,7 +260,7 @@ export default function Agenda() {
                       <span className="text-sm font-medium truncate">{a.title}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {esVariosDias(a) ? `${rangoCortoCal(a)} · ${a.start_time}` : `${capitalize(fullDateEs(a.date))} · ${a.start_time}`}
+                      {esVariosDias(a) ? `${rangoCortoCal(a)} · ${fmtHora(a.start_time)}` : `${capitalize(fullDateEs(a.date))} · ${fmtHora(a.start_time)}`}
                     </p>
                     {invite && (
                       <div className="flex gap-2 mt-2">

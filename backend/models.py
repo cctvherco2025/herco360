@@ -35,6 +35,7 @@ class ProfileUpdate(BaseModel):
     sucursal: Optional[str] = None
     avatar_url: Optional[str] = None
     phone: Optional[str] = None
+    time_format: Optional[str] = None  # '12h' | '24h' (preferencia de visualización)
 
 
 class RoleUpdate(BaseModel):

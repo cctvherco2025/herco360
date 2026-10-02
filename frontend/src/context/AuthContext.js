@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import api from '../lib/api';
+import { setTimeFormat } from '@/lib/time';
 
 const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
@@ -23,6 +24,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   useEffect(() => { loadMe(); }, [loadMe]);
+  useEffect(() => { setTimeFormat(user?.time_format || '24h'); }, [user]);
 
   const login = async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });

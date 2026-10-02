@@ -149,6 +149,8 @@ async def update_me(data: ProfileUpdate, user=Depends(get_current_user)):
         if nuevo is not None and nuevo.strip() != (user.get(campo) or '').strip():
             raise HTTPException(status_code=403,
                                 detail='Tu cargo, área y tienda los cambia un administrador')
+    if 'time_format' in updates and updates['time_format'] not in ('12h', '24h'):
+        updates.pop('time_format')
     if updates:
         await db.users.update_one({'id': user['id']}, {'$set': updates})
     updated = await db.users.find_one({'id': user['id']}, {'_id': 0, 'password_hash': 0})

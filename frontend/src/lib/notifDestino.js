@@ -11,6 +11,7 @@ export function destinoNotificacion(n) {
       if (!n.related_id) return '/formularios/promociones';
       return `/formularios/custom/${n.related_id}${n.type === 'promo_enviada' ? '?tab=revision' : ''}`;
     case 'ticket': return n.related_id ? `/formularios/tickets/${n.related_id}` : '/formularios/tickets';
+    case 'tarea': return n.related_id ? `/tareas/${n.related_id}` : '/tareas';
     default: return null;
   }
 }

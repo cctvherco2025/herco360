@@ -11,7 +11,7 @@ import {
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { canAccessCams } from '@/lib/constants';
-import { ymd } from '@/lib/time';
+import { ymd, fmtHora } from '@/lib/time';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -227,7 +227,7 @@ export default function ReportesCams() {
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(120,120,120,0.2)" />
                 <XAxis dataKey="h" tick={{ fontSize: 11 }} interval={1} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v) => [`${v}`, 'Entradas']} labelFormatter={(l) => `${l}:00`} />
+                <Tooltip formatter={(v) => [`${v}`, 'Entradas']} labelFormatter={(l) => fmtHora(`${l}:00`, { corto: true })} />
                 <Bar dataKey="v" fill="#00a5df" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>

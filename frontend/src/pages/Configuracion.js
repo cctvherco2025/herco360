@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { User as UserIcon, Palette, Save, Moon, Sun, Shield, Bell, BellRing, BellOff, Info } from 'lucide-react';
+import { User as UserIcon, Palette, Save, Moon, Sun, Shield, Bell, BellRing, BellOff, Info, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { setTimeFormat } from '@/lib/time';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { pushSupported, getPushState, enablePush, disablePush, sendTestPush } from '@/lib/push';
 
@@ -139,6 +140,13 @@ function NotificationsSettings() {
 export default function Configuracion() {
   const { user, refreshUser } = useAuth();
   const { theme, isDark, setTheme } = useTheme();
+  const [horaFmt, setHoraFmt] = useState(user?.time_format === '12h' ? '12h' : '24h');
+  useEffect(() => { setHoraFmt(user?.time_format === '12h' ? '12h' : '24h'); }, [user]);
+  const cambiarHora = async (v) => {
+    setHoraFmt(v); setTimeFormat(v);
+    try { await api.patch('/users/me', { time_format: v }); await refreshUser(); }
+    catch (e) { toast.error('No se pudo guardar la preferencia'); }
+  };
   // Cargo, área y tienda deciden los permisos: solo los cambia un admin.
   const [form, setForm] = useState({ name: user?.name || '', phone: user?.phone || '' });
   const [saving, setSaving] = useState(false);
@@ -250,6 +258,24 @@ export default function Configuracion() {
                 <Moon className="h-5 w-5 text-[#3cbef6] mb-2" />
                 <p className="font-medium text-sm">Modo oscuro</p>
                 <p className="text-xs text-muted-foreground">Elegante tipo Linear</p>
+              </button>
+            </div>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.05 }}
+            className="mt-4 rounded-[18px] bg-card border shadow-card p-6" data-testid="config-hora-card">
+            <h3 className="font-heading font-semibold flex items-center gap-2 mb-1"><Clock className="h-4 w-4 text-[#00a5df]" /> Formato de hora</h3>
+            <p className="text-xs text-muted-foreground mb-4">Cómo se muestra la hora en toda la app.</p>
+            <div className="grid grid-cols-2 gap-4 max-w-md">
+              <button onClick={() => cambiarHora('12h')} className={`rounded-xl border-2 p-4 text-left transition-colors ${horaFmt === '12h' ? 'border-[#00a5df]' : 'border-border'}`} data-testid="hora-12-option">
+                <p className="font-medium text-sm">12 horas</p>
+                <p className="text-xs text-muted-foreground">a. m. / p. m.</p>
+                <p className="mt-2 font-heading text-lg font-semibold">9:00 a. m.</p>
+              </button>
+              <button onClick={() => cambiarHora('24h')} className={`rounded-xl border-2 p-4 text-left transition-colors ${horaFmt === '24h' ? 'border-[#00a5df]' : 'border-border'}`} data-testid="hora-24-option">
+                <p className="font-medium text-sm">24 horas</p>
+                <p className="text-xs text-muted-foreground">Formato militar</p>
+                <p className="mt-2 font-heading text-lg font-semibold">09:00</p>
               </button>
             </div>
           </motion.div>

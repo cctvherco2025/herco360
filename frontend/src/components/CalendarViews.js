@@ -1,10 +1,10 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, ChevronRight, Plus } from 'lucide-react';
+import { X, ChevronRight, Plus, ListChecks, Check } from 'lucide-react';
 import useEsMovil from '@/lib/useEsMovil';
 import { catStyle, ACTIVITY_COLORS } from '@/lib/constants';
-import { ymd, DIAS, DIAS_CORTO, MESES_CORTO } from '@/lib/time';
+import { ymd, DIAS, DIAS_CORTO, MESES_CORTO, fmtHora, fmtRangoHoras } from '@/lib/time';
 import { useTheme } from '@/context/ThemeContext';
 
 const START_HOUR = 7;
@@ -108,7 +108,7 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
         </span>
         {variosDias && (
           <span className="block text-[9px] font-medium leading-[14px] truncate opacity-80" style={{ color: solid }}>
-            {rangoCortoCal(ev)} · {ev.start_time} - {ev.end_time}
+            {rangoCortoCal(ev)} · {fmtRangoHoras(ev.start_time, ev.end_time)}
           </span>
         )}
         {ev.owner_name && (
@@ -118,7 +118,7 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
         )}
         {!compact && !ev.owner_name && !variosDias && (
           <span className="block text-[10px] leading-[14px] text-muted-foreground truncate">
-            {ev.start_time} - {ev.end_time}
+            {fmtRangoHoras(ev.start_time, ev.end_time)}
           </span>
         )}
       </span>
@@ -173,6 +173,29 @@ const PillMas = ({ n }) => (
   <span className="inline-block shrink-0 rounded-full border border-border bg-card px-1.5 text-[10px] font-bold leading-[16px] text-foreground">+{n} más</span>
 );
 
+// Tareas de tienda "todo el día": franja arriba de la cuadrícula, en la agenda
+// del responsable y de quien la creó. Al tocarla abre la tarea (onTareaClick).
+const CHIP_TAREA_H = 20;
+const PRIO_COLOR = { alta: '#dc2626', media: '#ec9032', baja: '#64748b' };
+export const tareasDeDia = (tareas, ds) => (tareas || []).filter((t) => t.fecha_limite === ds);
+
+function ChipTarea({ t, onClick }) {
+  // terminada (cerrada): gris con ✓, para distinguirla de lo pendiente.
+  const terminada = t.estado === 'cerrada';
+  const color = terminada ? '#94a3b8' : (t.vencida ? '#dc2626' : (PRIO_COLOR[t.prioridad] || PRIO_COLOR.media));
+  const Icon = terminada ? Check : ListChecks;
+  return (
+    <button type="button" onClick={(e) => { e.stopPropagation(); onClick?.(t); }}
+      title={`Tarea${terminada ? ' (terminada)' : ''}: ${t.titulo}${t.fecha_limite ? ` · ${terminada ? 'era para' : 'vence'} ${t.fecha_limite}` : ''}`}
+      className="flex w-full items-center gap-1 overflow-hidden rounded-md border px-1 text-left font-semibold leading-none"
+      style={{ height: CHIP_TAREA_H - 2, background: `${color}22`, borderColor: color, color, opacity: terminada ? 0.85 : 1 }}
+      data-testid="calendar-tarea-chip">
+      <Icon className="h-3 w-3 shrink-0" strokeWidth={terminada ? 3 : 2} />
+      <span className={`truncate text-[10px] ${terminada ? 'font-medium' : ''}`}>{t.titulo}</span>
+    </button>
+  );
+}
+
 function BloqueGrupo({ evs, isDark, onClick, abierto }) {
   const primera = evs[0];
   const { solid, tint } = evStyle(primera, isDark);
@@ -191,7 +214,7 @@ function BloqueGrupo({ evs, isDark, onClick, abierto }) {
         // resaltado mientras su panel está abierto
         boxShadow: abierto ? `0 0 0 2px ${solid}` : undefined, zIndex: abierto ? 20 : undefined,
       }}
-      title={evs.map((e) => `${e.start_time} ${e.title}`).join('\n')}
+      title={evs.map((e) => `${fmtHora(e.start_time)} ${e.title}`).join('\n')}
       data-testid="calendar-event-group">
       {/* una rayita apilada por cada actividad del grupo, con su color */}
       <span className="mr-1.5 flex w-[4px] shrink-0 flex-col gap-[2px]">
@@ -208,7 +231,7 @@ function BloqueGrupo({ evs, isDark, onClick, abierto }) {
             {seRepite(primera) && <IconoRepite />}{primera.title}
           </span>
           <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-            <span className="text-[10px] font-medium leading-[14px] opacity-80" style={{ color: solid }}>{primera.start_time}</span>
+            <span className="text-[10px] font-medium leading-[14px] opacity-80" style={{ color: solid }}>{fmtHora(primera.start_time)}</span>
             <PillMas n={evs.length - 1} />
           </span>
         </span>
@@ -266,7 +289,7 @@ function ContenidoGrupo({ grupo, isDark, onClose, onPick, onNuevo, movil, primer
             <span className="w-1 shrink-0 rounded-full" style={{ background: colores[i] }} />
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-semibold leading-snug break-words">{ev.title}</span>
-              <span className="mt-0.5 block text-xs text-muted-foreground">{ev.start_time} – {ev.end_time}</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">{fmtRangoHoras(ev.start_time, ev.end_time)}</span>
               <span className="mt-1.5 flex min-w-0">{ev.owner_name
                 ? <span className="truncate text-xs text-muted-foreground">{ev.owner_name}</span>
                 : <Participantes ev={ev} />}</span>
@@ -479,7 +502,7 @@ function BarraVariosDias({ seg, isDark, onClick, style }) {
   const { solid, tint } = evStyle(ev, isDark);
   return (
     <button type="button" onClick={(e) => { e.stopPropagation(); onClick?.(ev); }}
-      title={`${ev.title} · ${rangoCortoCal(ev)} · ${ev.start_time} – ${ev.end_time}`}
+      title={`${ev.title} · ${rangoCortoCal(ev)} · ${fmtRangoHoras(ev.start_time, ev.end_time)}`}
       className={`absolute flex items-center gap-1 overflow-hidden border px-1.5 text-left text-[10px] font-semibold leading-none shadow-xs hover:shadow-card pointer-events-auto ${
         seg.abreIzq ? 'rounded-l-none' : 'rounded-l-md'} ${seg.abreDer ? 'rounded-r-none' : 'rounded-r-md'}`}
       style={{ ...style, height: LANE_H - 4, background: tint, borderColor: solid, color: solid, borderStyle: ev.pending ? 'dashed' : 'solid' }}
@@ -500,7 +523,7 @@ function TimeRail({ offset = 0 }) {
     <div className="w-12 shrink-0" style={{ paddingTop: 34 + offset }}>
       {hours.map((h) => (
         <div key={h} style={{ height: HOUR_H }} className="relative">
-          <span className="absolute -top-2 right-2 text-[10px] text-muted-foreground">{String(h).padStart(2, '0')}:00</span>
+          <span className="absolute -top-2 right-2 text-[10px] text-muted-foreground">{fmtHora(`${String(h).padStart(2, '0')}:00`, { corto: true })}</span>
         </div>
       ))}
     </div>
@@ -603,7 +626,7 @@ function useResizableColumns(gridRef, numCols) {
   return { colWidths, startResize, resetPair, resetAll };
 }
 
-export const WeekView = React.forwardRef(function WeekView({ anchor, activities, onEventClick, onSlotClick, onEventMove, onNuevoEnDia }, ref) {
+export const WeekView = React.forwardRef(function WeekView({ anchor, activities, onEventClick, onSlotClick, onEventMove, onNuevoEnDia, tareas = [], onTareaClick }, ref) {
   const { isDark } = useTheme();
   const [dragEv, setDragEv] = React.useState(null);
   const [grupo, setGrupo] = React.useState(null); // { dia, evs } de la hoja abierta
@@ -624,10 +647,14 @@ export const WeekView = React.forwardRef(function WeekView({ anchor, activities,
 
   const todayStr = ymd(new Date());
   const railHours = END_HOUR - START_HOUR + 1;
+  // banda de "todo el día" (tareas): misma altura en todas las columnas para
+  // que las cuadrículas de horas queden alineadas.
+  const maxTareas = Math.max(0, ...days.map((d) => tareasDeDia(tareas, ymd(d)).length));
+  const bandaH = maxTareas > 0 ? maxTareas * CHIP_TAREA_H + 4 : 0;
 
   return (
     <div className="flex overflow-x-auto no-scrollbar">
-      <TimeRail />
+      <TimeRail offset={bandaH} />
       <div
         ref={gridRef}
         className="relative flex-1 grid min-w-[640px]"
@@ -643,6 +670,11 @@ export const WeekView = React.forwardRef(function WeekView({ anchor, activities,
                 <span className="text-[10px] font-medium text-muted-foreground">{DIAS_CORTO[day.getDay()]}</span>
                 <span className={`text-xs font-semibold grid place-items-center h-6 w-6 rounded-full ${isToday ? 'bg-[#1e395e] text-white' : 'text-foreground'}`}>{day.getDate()}</span>
               </div>
+              {bandaH > 0 && (
+                <div className="space-y-0.5 border-b px-0.5 py-0.5" style={{ height: bandaH }}>
+                  {tareasDeDia(tareas, ds).map((t) => <ChipTarea key={t.id} t={t} onClick={onTareaClick} />)}
+                </div>
+              )}
               <div className="relative" style={{ height: railHours * HOUR_H }}
                 onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); onSlotClick?.(ds, timeFromOffset(e.clientY - r.top)); }}
                 onDragOver={(e) => { if (dragEv) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
@@ -665,7 +697,7 @@ export const WeekView = React.forwardRef(function WeekView({ anchor, activities,
   );
 });
 
-export function DayView({ anchor, activities, onEventClick, onSlotClick, onEventMove, onNuevoEnDia }) {
+export function DayView({ anchor, activities, onEventClick, onSlotClick, onEventMove, onNuevoEnDia, tareas = [], onTareaClick }) {
   const { isDark } = useTheme();
   const [dragEv, setDragEv] = React.useState(null);
   const [grupo, setGrupo] = React.useState(null);
@@ -673,11 +705,18 @@ export function DayView({ anchor, activities, onEventClick, onSlotClick, onEvent
   const ds = ymd(anchor);
   const dayEvents = activities.filter((a) => ocupaDia(a, ds));
   const railHours = END_HOUR - START_HOUR + 1;
+  const tareasDia = tareasDeDia(tareas, ds);
+  const bandaH = tareasDia.length ? tareasDia.length * CHIP_TAREA_H + 4 : 0;
   return (
     <div className="flex">
-      <TimeRail />
+      <TimeRail offset={bandaH} />
       <div className="flex-1">
         <div className="h-[34px]" />
+        {bandaH > 0 && (
+          <div className="space-y-0.5 border-b px-0.5 py-0.5" style={{ height: bandaH }}>
+            {tareasDia.map((t) => <ChipTarea key={t.id} t={t} onClick={onTareaClick} />)}
+          </div>
+        )}
         <div className="relative" style={{ height: railHours * HOUR_H }}
           onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); onSlotClick?.(ds, timeFromOffset(e.clientY - r.top)); }}
           onDragOver={(e) => { if (dragEv) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
@@ -697,7 +736,7 @@ export function DayView({ anchor, activities, onEventClick, onSlotClick, onEvent
   );
 }
 
-export function MonthView({ anchor, activities, onEventClick, onSlotClick, onEventMove }) {
+export function MonthView({ anchor, activities, onEventClick, onSlotClick, onEventMove, tareas = [], onTareaClick }) {
   const { isDark } = useTheme();
   const [dragEv, setDragEv] = React.useState(null);
   const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
@@ -760,6 +799,7 @@ export function MonthView({ anchor, activities, onEventClick, onSlotClick, onEve
               </div>
               {/* espacio reservado para las barras de varios días de la semana */}
               <div className="space-y-1 mt-0.5" style={{ paddingTop: franja }}>
+                {tareasDeDia(tareas, ds).map((t) => <ChipTarea key={t.id} t={t} onClick={onTareaClick} />)}
                 {dayEvents.slice(0, 3).map((ev) => {
                   const { solid, tint } = evStyle(ev, isDark);
                   return (
@@ -770,7 +810,7 @@ export function MonthView({ anchor, activities, onEventClick, onSlotClick, onEve
                       onClick={(e) => { e.stopPropagation(); onEventClick?.(ev); }}
                       className={`w-full flex items-center gap-1 rounded-md px-1.5 py-0.5 text-left hover:opacity-90 ${onEventMove ? 'cursor-grab active:cursor-grabbing' : ''}`} style={{ background: tint, border: ev.pending ? `1px dashed ${solid}` : 'none' }}>
                       <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: solid }} />
-                      <span className="text-[10px] font-medium truncate" style={{ color: solid }}>{ev.start_time} {seRepite(ev) && <IconoRepite />}{ev.title}</span>
+                      <span className="text-[10px] font-medium truncate" style={{ color: solid }}>{fmtHora(ev.start_time)} {seRepite(ev) && <IconoRepite />}{ev.title}</span>
                     </button>
                   );
                 })}

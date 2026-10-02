@@ -6,7 +6,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { ROOM_STATES } from '@/lib/constants';
-import { capitalize, fullDateEs, ymd, MESES, MESES_CORTO } from '@/lib/time';
+import { capitalize, fullDateEs, ymd, MESES, MESES_CORTO, fmtHora, fmtRangoHoras } from '@/lib/time';
 import { WeekView, DayView, MonthView, startOfWeek, addDays } from '@/components/CalendarViews';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -219,7 +219,7 @@ export default function SalaDeJuntas() {
           <div className="flex flex-col items-start sm:items-end gap-2">
             <StatusBadge status={status} size="lg" />
             {room?.current_reservation && (
-              <p className="text-xs text-[#5b667a]">{room.current_reservation.title} · {room.current_reservation.start_time}-{room.current_reservation.end_time}</p>
+              <p className="text-xs text-[#5b667a]">{room.current_reservation.title} · {fmtRangoHoras(room.current_reservation.start_time, room.current_reservation.end_time)}</p>
             )}
           </div>
         </div>
@@ -279,7 +279,7 @@ export default function SalaDeJuntas() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium truncate">{r.title}</p>
-                    <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> {capitalize(fullDateEs(r.date))} · {r.start_time} - {r.end_time}</p>
+                    <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> {capitalize(fullDateEs(r.date))} · {fmtRangoHoras(r.start_time, r.end_time)}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">Reservada por {r.reserved_by_name}</p>
                   </div>
                   <StatusBadge status={r.status} />
@@ -304,7 +304,7 @@ export default function SalaDeJuntas() {
               <div key={r.id} className="rounded-xl border p-4 flex items-start justify-between gap-3 opacity-80">
                 <div className="min-w-0">
                   <p className="font-medium truncate">{r.title}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{capitalize(fullDateEs(r.date))} · {r.start_time} - {r.end_time}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{capitalize(fullDateEs(r.date))} · {fmtRangoHoras(r.start_time, r.end_time)}</p>
                 </div>
                 <StatusBadge status={r.status} />
               </div>
@@ -351,7 +351,7 @@ export default function SalaDeJuntas() {
                   <StatusBadge status={r.status} />
                 </div>
                 <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-                  <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {r.start_time} - {r.end_time}</span>
+                  <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {fmtRangoHoras(r.start_time, r.end_time)}</span>
                   <span className="inline-flex items-center gap-1 truncate"><UsersIcon className="h-3.5 w-3.5" /> {r.reserved_by_name || 'Invitado'}</span>
                 </div>
               </button>
@@ -379,7 +379,7 @@ export default function SalaDeJuntas() {
               <div className="rounded-xl border bg-muted/40 p-4 space-y-2">
                 <p className="text-sm inline-flex items-center gap-2"><UsersIcon className="h-4 w-4 text-[#1e395e] dark:text-[#3cbef6]" /> <span className="text-muted-foreground">Reservada por:</span> <span className="font-medium text-foreground">{detailRes.reserved_by_name || 'Invitado'}</span>{detailRes.is_guest && <span className="text-[10px] rounded-full bg-muted px-1.5 py-0.5">Invitado</span>}</p>
                 <p className="text-sm inline-flex items-center gap-2"><Calendar className="h-4 w-4 text-[#00a5df]" /> <span className="text-foreground">{capitalize(fullDateEs(detailRes.date))}</span></p>
-                <p className="text-sm inline-flex items-center gap-2"><Clock className="h-4 w-4 text-[#00a5df]" /> <span className="text-foreground">{detailRes.start_time} - {detailRes.end_time}</span></p>
+                <p className="text-sm inline-flex items-center gap-2"><Clock className="h-4 w-4 text-[#00a5df]" /> <span className="text-foreground">{fmtRangoHoras(detailRes.start_time, detailRes.end_time)}</span></p>
                 {detailRes.notes && <p className="text-sm text-muted-foreground pt-1 border-t">{detailRes.notes}</p>}
               </div>
               {detailRes.locked && (

@@ -9,7 +9,7 @@ import {
 import { API } from '@/lib/api';
 import { Logo } from '@/components/Logo';
 import { ROOM_STATES } from '@/lib/constants';
-import { capitalize, fullDateEs, ymd, MESES, MESES_CORTO } from '@/lib/time';
+import { capitalize, fullDateEs, ymd, MESES, MESES_CORTO, fmtHora, fmtRangoHoras } from '@/lib/time';
 import { WeekView, DayView, MonthView, startOfWeek, addDays } from '@/components/CalendarViews';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -245,7 +245,7 @@ export default function SalaPublica() {
                   <div className="min-w-0">
                     <p className="font-medium truncate">{m.title}</p>
                     <p className="text-xs text-muted-foreground mt-0.5 inline-flex items-center gap-1.5">
-                      <Clock className="h-3.5 w-3.5" /> {capitalize(fullDateEs(m.date))} · {m.start_time} - {m.end_time}
+                      <Clock className="h-3.5 w-3.5" /> {capitalize(fullDateEs(m.date))} · {fmtRangoHoras(m.start_time, m.end_time)}
                     </p>
                   </div>
                   <Button size="sm" variant="ghost" onClick={() => cancelMine(m)}
@@ -343,7 +343,7 @@ export default function SalaPublica() {
                   <StatusBadge status={r.status} />
                 </div>
                 <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-                  <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {r.start_time} - {r.end_time}</span>
+                  <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {fmtRangoHoras(r.start_time, r.end_time)}</span>
                   <span className="inline-flex items-center gap-1 truncate"><UsersIcon className="h-3.5 w-3.5" /> {r.reserved_by_name || 'Invitado'}</span>
                 </div>
               </button>
@@ -375,7 +375,7 @@ export default function SalaPublica() {
                   <span className="font-medium text-foreground">{detailRes.reserved_by_name || 'Invitado'}</span>
                 </p>
                 <p className="text-sm inline-flex items-center gap-2"><Calendar className="h-4 w-4 text-[#00a5df]" /> <span className="text-foreground">{capitalize(fullDateEs(detailRes.date))}</span></p>
-                <p className="text-sm inline-flex items-center gap-2"><Clock className="h-4 w-4 text-[#00a5df]" /> <span className="text-foreground">{detailRes.start_time} - {detailRes.end_time}</span></p>
+                <p className="text-sm inline-flex items-center gap-2"><Clock className="h-4 w-4 text-[#00a5df]" /> <span className="text-foreground">{fmtRangoHoras(detailRes.start_time, detailRes.end_time)}</span></p>
               </div>
               {detailRes.locked && (
                 <div className="rounded-xl bg-[rgba(113,33,70,0.1)] text-[#712146] text-xs font-medium px-3 py-2 flex items-center gap-2">
