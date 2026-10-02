@@ -236,7 +236,7 @@ function RevisionTarea({ id, onBack }) {
                   <SelectContent>{tipos.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                 </Select>
                 <Input value={ln.comentario || ''} onChange={(ev) => setCampo(e.id, 'comentario', ev.target.value)}
-                  placeholder="Qué encontraste en piso" className="h-10" data-testid="promo-revision-comentario" />
+                  placeholder="Qué encontraste" className="h-10" data-testid="promo-revision-comentario" />
               </div>
             ) : (
               <p className="text-sm"><span className="font-semibold text-[#b45309] dark:text-[#fbbf24]">{ln.tipo}</span>{ln.comentario ? ` · ${ln.comentario}` : ''}</p>

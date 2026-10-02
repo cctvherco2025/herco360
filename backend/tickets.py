@@ -279,7 +279,7 @@ async def enviar_correccion(ticket_id: str, texto: str = Form(''), user=Depends(
     if faltan:
         raise HTTPException(status_code=400, detail=f'Marca como corregida y sube la foto de: {", ".join(faltan[:3])}'
                                                     + ('…' if len(faltan) > 3 else ''))
-    texto = (texto or '').strip()[:2000] or 'Corregido en piso. Adjunté las fotos.'
+    texto = (texto or '').strip()[:2000] or 'Corregido. Adjunté las fotos.'
     plazos = t.get('plazos')
     r = await db.tickets.update_one({'id': t['id'], 'estado': 'abierto'}, {
         '$set': {'estado': 'corregido', 'updated_at': now_iso(), 'aviso': None, 'vencido': False,
@@ -288,7 +288,7 @@ async def enviar_correccion(ticket_id: str, texto: str = Form(''), user=Depends(
     if r.matched_count == 0:
         raise HTTPException(status_code=409, detail='El ticket cambió; vuelve a abrirlo')
     await _avisar(await _revisores_ids(t['tienda']), 'ticket_corregido',
-                  f"{t['numero']}: {user['name']} corrigió {t['categoria']} de {t['tienda']}. Valídalo en piso.", t, user)
+                  f"{t['numero']}: {user['name']} corrigió {t['categoria']} de {t['tienda']}. Valídalo.", t, user)
     return await detalle(t['id'], user)
 
 
@@ -302,7 +302,7 @@ async def cerrar(ticket_id: str, texto: str = Form(''), user=Depends(get_current
         raise HTTPException(status_code=409, detail='El ticket ya está cerrado')
     ahora = now_iso()
     msgs = ([_mensaje(user, texto.strip()[:2000], 'revisor')] if (texto or '').strip() else []) + \
-        [_sistema(f"{user['name']} validó en piso y cerró el ticket.")]
+        [_sistema(f"{user['name']} validó y cerró el ticket.")]
     r = await db.tickets.update_one({'id': t['id'], 'estado': t['estado']}, {
         '$set': {'estado': 'cerrado', 'cerrado_por': {'id': user['id'], 'name': user['name']},
                  'cerrado_at': ahora, 'updated_at': ahora, 'vence': None},

@@ -186,7 +186,7 @@ export default function TicketDetalle() {
               {t.soy_revisor && (
                 <div className="rounded-xl bg-muted/50 p-3 space-y-2">
                   <p className="text-xs text-muted-foreground">
-                    {t.estado === 'corregido' ? 'Verifica en piso. Para reabrir, escribe arriba qué sigue mal.' : 'Esperando la corrección del coordinador. Si ya lo verificaste en piso, puedes cerrarlo.'}
+                    {t.estado === 'corregido' ? 'Verifica la corrección. Para reabrir, escribe arriba qué sigue mal.' : 'Esperando la corrección del coordinador. Si ya lo verificaste, puedes cerrarlo.'}
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {t.estado === 'corregido' && (

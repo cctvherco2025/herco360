@@ -806,7 +806,7 @@ async def submit_response(
                 continue  # una jefa que contesta su propia categoría no se avisa a sí misma
             await create_notification(
                 r['id'], 'promo_enviada',
-                f"{user['name']} {verbo} {categoria} de {sucursal_reportada} ({mes}). Revísalo en piso.",
+                f"{user['name']} {verbo} {categoria} de {sucursal_reportada} ({mes}). Revísalo.",
                 related_id=form_id, related_type='promociones',
                 actor_name=user['name'], actor_avatar=user.get('avatar_url'))
     return serialize_doc(doc)

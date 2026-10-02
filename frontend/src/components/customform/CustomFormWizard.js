@@ -316,7 +316,7 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
               {t.estado === 'con_observaciones' && obs.length > 0 && (
                 <div className="mt-2 space-y-1.5">
                   <p className="text-xs text-muted-foreground">
-                    {t.revision?.revisor_name} encontró {obs.length} inconsistencia{obs.length === 1 ? '' : 's'}. Corrígelas en piso y sube la foto en el ticket.
+                    {t.revision?.revisor_name} encontró {obs.length} inconsistencia{obs.length === 1 ? '' : 's'}. Corrígelas y sube la foto en el ticket.
                     {t.ticket_id && <> <Link to={`/formularios/tickets/${t.ticket_id}`} className="font-semibold text-[#00a5df] hover:underline">Abrir ticket</Link></>}
                   </p>
                   {obs.map(([iid, l]) => (

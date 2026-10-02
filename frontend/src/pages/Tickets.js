@@ -52,7 +52,7 @@ export default function Tickets() {
         <h1 className="font-heading text-2xl sm:text-3xl font-semibold flex items-center gap-2">
           <Ticket className="h-7 w-7 text-[#00a5df]" /> Tickets
         </h1>
-        <p className="text-muted-foreground text-sm mt-0.5">Inconsistencias de Promociones del mes: se corrigen en piso y las valida el jefe o el gerente de tienda.</p>
+        <p className="text-muted-foreground text-sm mt-0.5">Inconsistencias de Promociones del mes: se corrigen y las valida el jefe o el gerente de tienda.</p>
       </div>
 
       <div className="flex flex-wrap gap-1.5 mb-4" role="tablist">
