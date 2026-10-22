@@ -5,7 +5,8 @@ from core import (db, get_current_user, require_admin, serialize_doc, now_iso,
                   can_access_inventory, can_access_reports, can_access_cams, can_access_formulario,
                   can_access_rutina, can_access_formularios_principal, can_access_promociones_mes,
                   can_create_custom_formulario, can_edit_rutina_schema, can_edit_flos_schema,
-                  can_access_vacaciones, can_admin_promos)
+                  can_access_vacaciones, can_admin_promos, can_fill_guardias,
+                  can_fill_recorridos, can_fill_etiquetas)
 from models import ProfileUpdate, RoleUpdate, AdminUserCreate, AdminUserUpdate, ModuleAccessUpdate
 from notifications import create_notification, log_activity
 from routes_groups import quitar_de_grupos
@@ -45,6 +46,9 @@ def _effective_access(u):
         'formulario_schema': can_edit_flos_schema(u),
         'vacaciones': can_access_vacaciones(u),
         'promociones_admin': can_admin_promos(u),
+        'guardias': can_fill_guardias(u),
+        'recorridos': can_fill_recorridos(u),
+        'etiquetas': can_fill_etiquetas(u),
     }
 
 

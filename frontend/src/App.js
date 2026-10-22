@@ -32,6 +32,9 @@ import '@/App.css';
 const ReportesCams = lazyWithRetry(() => import('@/pages/ReportesCams'), 'ReportesCams');
 const Formulario = lazyWithRetry(() => import('@/pages/Formulario'), 'Formulario');
 const RutinaOperativa = lazyWithRetry(() => import('@/pages/RutinaOperativa'), 'RutinaOperativa');
+const RevisionGuardias = lazyWithRetry(() => import('@/pages/RevisionGuardias'), 'RevisionGuardias');
+const RecorridosPreventivos = lazyWithRetry(() => import('@/pages/RecorridosPreventivos'), 'RecorridosPreventivos');
+const AuditoriaEtiquetas = lazyWithRetry(() => import('@/pages/AuditoriaEtiquetas'), 'AuditoriaEtiquetas');
 const CustomFormBuilderPage = lazyWithRetry(() => import('@/pages/CustomFormBuilderPage'), 'CustomFormBuilderPage');
 const CustomFormPage = lazyWithRetry(() => import('@/pages/CustomFormPage'), 'CustomFormPage');
 const PromoPublishWizardPage = lazyWithRetry(() => import('@/pages/PromoPublishWizardPage'), 'PromoPublishWizardPage');
@@ -69,6 +72,9 @@ function App() {
               <Route path="/formularios/promociones/nuevo" element={<Suspense fallback={<PageFallback />}><PromoPublishWizardPage /></Suspense>} />
               <Route path="/formulario" element={<Suspense fallback={<PageFallback />}><Formulario /></Suspense>} />
               <Route path="/rutina-operativa" element={<Suspense fallback={<PageFallback />}><RutinaOperativa /></Suspense>} />
+              <Route path="/revision-guardias" element={<Suspense fallback={<PageFallback />}><RevisionGuardias /></Suspense>} />
+              <Route path="/recorridos-preventivos" element={<Suspense fallback={<PageFallback />}><RecorridosPreventivos /></Suspense>} />
+              <Route path="/auditoria-etiquetas" element={<Suspense fallback={<PageFallback />}><AuditoriaEtiquetas /></Suspense>} />
               <Route path="/formularios/nuevo" element={<Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense>} />
               <Route path="/formularios/custom/:id/editar" element={<Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense>} />
               <Route path="/formularios/custom/:id" element={<Suspense fallback={<PageFallback />}><CustomFormPage /></Suspense>} />

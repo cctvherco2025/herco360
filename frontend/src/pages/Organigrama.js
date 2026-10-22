@@ -187,6 +187,9 @@ function AccessManager() {
     { key: 'formulario_schema', label: 'Editar puntajes FLOS', color: C.navy },
     { key: 'vacaciones', label: 'Vacaciones', color: C.green },
     { key: 'promociones_admin', label: 'Administrar Promociones del mes', color: C.orange },
+    { key: 'guardias', label: 'Registrar Revisión de Guardias', color: C.navy },
+    { key: 'recorridos', label: 'Registrar Recorridos Preventivos', color: C.orange },
+    { key: 'etiquetas', label: 'Registrar Auditoría de Etiquetas', color: C.green },
   ];
 
   return (
@@ -198,7 +201,7 @@ function AccessManager() {
             <h2 className="font-heading text-lg font-semibold text-foreground flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4" style={{ color: C.orange }} /> Gestión de accesos a módulos
             </h2>
-            <p className="text-[12px] text-muted-foreground">Da o quita acceso a Inventario, Reportes, Reportes CAMS, cada permiso del módulo Formularios (principal, Evaluación FLOS, Rutina Operativa, Promociones del mes, Crear personalizado) y quién puede editar los puntajes de Rutina Operativa y de la auditoría FLOS, por usuario.</p>
+            <p className="text-[12px] text-muted-foreground">Da o quita acceso a Inventario, Reportes, Reportes CAMS, cada permiso del módulo Formularios (principal, Evaluación FLOS, Rutina Operativa, Promociones del mes, Crear personalizado), quién puede editar los puntajes de Rutina Operativa y de la auditoría FLOS, y quién registra Revisión de Guardias, Recorridos Preventivos y Auditoría de Etiquetas, por usuario.</p>
           </div>
         </div>
         <div className="relative w-full sm:w-72">

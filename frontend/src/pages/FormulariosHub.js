@@ -2,10 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { ClipboardCheck, ClipboardList, FileText, ChevronRight, Plus, Users, Building2, User as UserIcon, Percent } from 'lucide-react';
+import { ClipboardCheck, ClipboardList, FileText, ChevronRight, Plus, Users, Building2, User as UserIcon, Percent, ShieldCheck, Route as RouteIcon, Tags } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { canAccessFlos, canAccessRutina, canAccessFormulariosPrincipal, canAccessPromocionesMes, canCreateCustomFormulario } from '@/lib/constants';
+import { canAccessFlos, canAccessRutina, canAccessFormulariosPrincipal, canAccessPromocionesMes, canCreateCustomFormulario, canAccessGuardias, canAccessRecorridos, canAccessEtiquetas } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 
 // Evaluaciones fijas del sistema. Cuando se sume otra igual de "oficial" se
@@ -16,6 +16,9 @@ import { Button } from '@/components/ui/button';
 const BUILT_IN = [
   { to: '/formulario', label: 'Evaluación FLOS', desc: 'Frenteo · Limpieza · Orden · Surtido', icon: ClipboardCheck, color: '#00a5df', access: canAccessFlos },
   { to: '/rutina-operativa', label: 'Rutina Operativa', desc: 'Evaluación mensual de gestión — Gerentes', icon: ClipboardList, color: '#ec9032', access: canAccessRutina },
+  { to: '/revision-guardias', label: 'Revisión de Guardias', desc: 'Supervisión de guardias de seguridad — ECCP', icon: ShieldCheck, color: '#1e395e', access: canAccessGuardias },
+  { to: '/recorridos-preventivos', label: 'Recorridos Preventivos', desc: 'Irregularidades en tienda, evidencias y seguimiento — ECCP', icon: RouteIcon, color: '#ec9032', access: canAccessRecorridos },
+  { to: '/auditoria-etiquetas', label: 'Auditoría de Etiquetas', desc: 'Auditoría semanal de etiquetas de precios — ECCP', icon: Tags, color: '#16a34a', access: canAccessEtiquetas },
   { to: '/formularios/promociones', label: 'Promociones del mes', desc: 'Seguimiento a la disponibilidad y correcta exhibición de promociones en tienda', icon: Percent, color: '#16a34a', access: canAccessPromocionesMes },
 ];
 

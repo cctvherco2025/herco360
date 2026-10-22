@@ -3,14 +3,14 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun, Boxes, FileText,
-  Palmtree, Network, Video, ClipboardCheck, ClipboardList, ChevronDown, Percent, Ticket, ListChecks,
+  Palmtree, Network, Video, ClipboardCheck, ClipboardList, ChevronDown, Percent, Ticket, ListChecks, ShieldCheck, Route as RouteIcon, Tags,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import {
   canAccessInventory, canAccessReports, canAccessOrgChart, canAccessCams, canAccessFlos, canAccessRutina,
-  canAccessFormulariosPrincipal, canAccessPromocionesMes, canAccessVacaciones, puedeVerTickets, puedeVerTareas,
+  canAccessFormulariosPrincipal, canAccessPromocionesMes, canAccessVacaciones, puedeVerTickets, puedeVerTareas, canAccessGuardias, canAccessRecorridos, canAccessEtiquetas,
 } from '@/lib/constants';
 import { Logo } from '@/components/Logo';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -167,6 +167,15 @@ function SidebarContent({ onNavigate }) {
   }
   if (canAccessRutina(user)) {
     formularioChildren.push({ to: '/rutina-operativa', label: 'Rutina Operativa', icon: ClipboardList, testid: 'sidebar-nav-rutina-operativa' });
+  }
+  if (canAccessGuardias(user)) {
+    formularioChildren.push({ to: '/revision-guardias', label: 'Revisión de Guardias', icon: ShieldCheck, testid: 'sidebar-nav-revision-guardias' });
+  }
+  if (canAccessRecorridos(user)) {
+    formularioChildren.push({ to: '/recorridos-preventivos', label: 'Recorridos Preventivos', icon: RouteIcon, testid: 'sidebar-nav-recorridos-preventivos' });
+  }
+  if (canAccessEtiquetas(user)) {
+    formularioChildren.push({ to: '/auditoria-etiquetas', label: 'Auditoría de Etiquetas', icon: Tags, testid: 'sidebar-nav-auditoria-etiquetas' });
   }
   if (canAccessPromocionesMes(user)) {
     formularioChildren.push({ to: '/formularios/promociones', label: 'Promociones del mes', icon: Percent, testid: 'sidebar-nav-promociones-mes' });

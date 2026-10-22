@@ -139,6 +139,7 @@ GATED_MODULES = (
     'inventario', 'reportes', 'cams', 'formulario', 'rutina',
     'formularios_principal', 'promociones_mes', 'formularios_custom',
     'rutina_schema', 'formulario_schema', 'vacaciones', 'promociones_admin',
+    'guardias', 'recorridos', 'etiquetas',
 )
 
 
@@ -429,7 +430,8 @@ def can_access_formularios_principal(user) -> bool:
     ov = _module_override(user, 'formularios_principal')
     if ov is not None:
         return bool(ov)
-    return can_access_formulario(user) or can_access_rutina(user)
+    return (can_access_formulario(user) or can_access_rutina(user) or can_access_guardias(user)
+            or can_access_recorridos(user) or can_access_etiquetas(user))
 
 
 async def require_formularios_principal_access(user=Depends(get_current_user)):
@@ -488,3 +490,126 @@ def can_fill_rutina(user) -> bool:
         return True
     cargo = (user.get('position') or '').strip()
     return cargo in ('Director comercial', 'Gerente')
+
+
+# ---- Revisión de Guardias (ECCP) ----
+# Registrar: Coordinador y Jefe del área ECCP por defecto; se puede dar o
+# quitar por usuario desde Organigrama (module_access.guardias). Admin y
+# Director comercial NO registran por el solo hecho de serlo (solo si además
+# son Coordinador/Jefe ECCP), pero ven, editan y eliminan todo.
+def can_fill_guardias(user) -> bool:
+    if not user:
+        return False
+    ov = _module_override(user, 'guardias')
+    if ov is not None:
+        return bool(ov)
+    cargo = (user.get('position') or '').strip()
+    area = (user.get('area') or '').strip()
+    return area == 'ECCP' and cargo in ('Coordinador', 'Jefe')
+
+
+def can_admin_guardias(user) -> bool:
+    if not user:
+        return False
+    return user.get('role') == 'admin' or (user.get('position') or '').strip() == 'Director comercial'
+
+
+def can_access_guardias(user) -> bool:
+    return can_fill_guardias(user) or can_admin_guardias(user)
+
+
+async def require_guardias_access(user=Depends(get_current_user)):
+    if not can_access_guardias(user):
+        raise HTTPException(status_code=403, detail='No tienes acceso a Revisión de Guardias')
+    return user
+
+
+async def require_guardias_fill(user=Depends(get_current_user)):
+    if not can_fill_guardias(user):
+        raise HTTPException(status_code=403, detail='Solo los coordinadores ECCP pueden registrar evaluaciones de guardias')
+    return user
+
+
+async def require_guardias_admin(user=Depends(get_current_user)):
+    if not can_admin_guardias(user):
+        raise HTTPException(status_code=403, detail='Solo un administrador puede editar o eliminar evaluaciones de guardias')
+    return user
+
+
+# ---- Recorridos Preventivos en Tienda (ECCP) ----
+# Mismo esquema que Revisión de Guardias, con su propio permiso asignable
+# ('recorridos'): registra Coordinador/Jefe ECCP; administra admin/Director.
+def can_fill_recorridos(user) -> bool:
+    if not user:
+        return False
+    ov = _module_override(user, 'recorridos')
+    if ov is not None:
+        return bool(ov)
+    cargo = (user.get('position') or '').strip()
+    area = (user.get('area') or '').strip()
+    return area == 'ECCP' and cargo in ('Coordinador', 'Jefe')
+
+
+def can_admin_recorridos(user) -> bool:
+    return can_admin_guardias(user)
+
+
+def can_access_recorridos(user) -> bool:
+    return can_fill_recorridos(user) or can_admin_recorridos(user)
+
+
+async def require_recorridos_access(user=Depends(get_current_user)):
+    if not can_access_recorridos(user):
+        raise HTTPException(status_code=403, detail='No tienes acceso a Recorridos Preventivos')
+    return user
+
+
+async def require_recorridos_fill(user=Depends(get_current_user)):
+    if not can_fill_recorridos(user):
+        raise HTTPException(status_code=403, detail='Solo los coordinadores ECCP pueden registrar recorridos')
+    return user
+
+
+async def require_recorridos_admin(user=Depends(get_current_user)):
+    if not can_admin_recorridos(user):
+        raise HTTPException(status_code=403, detail='Solo un administrador puede hacer esta acción en Recorridos Preventivos')
+    return user
+
+
+# ---- Auditoría de Etiquetas de Precios (ECCP) ----
+# Mismo esquema que Guardias/Recorridos con su propio permiso ('etiquetas').
+def can_fill_etiquetas(user) -> bool:
+    if not user:
+        return False
+    ov = _module_override(user, 'etiquetas')
+    if ov is not None:
+        return bool(ov)
+    cargo = (user.get('position') or '').strip()
+    area = (user.get('area') or '').strip()
+    return area == 'ECCP' and cargo in ('Coordinador', 'Jefe')
+
+
+def can_admin_etiquetas(user) -> bool:
+    return can_admin_guardias(user)
+
+
+def can_access_etiquetas(user) -> bool:
+    return can_fill_etiquetas(user) or can_admin_etiquetas(user)
+
+
+async def require_etiquetas_access(user=Depends(get_current_user)):
+    if not can_access_etiquetas(user):
+        raise HTTPException(status_code=403, detail='No tienes acceso a Auditoría de Etiquetas')
+    return user
+
+
+async def require_etiquetas_fill(user=Depends(get_current_user)):
+    if not can_fill_etiquetas(user):
+        raise HTTPException(status_code=403, detail='Solo los coordinadores ECCP pueden registrar auditorías de etiquetas')
+    return user
+
+
+async def require_etiquetas_admin(user=Depends(get_current_user)):
+    if not can_admin_etiquetas(user):
+        raise HTTPException(status_code=403, detail='Solo un administrador puede hacer esta acción en Auditoría de Etiquetas')
+    return user

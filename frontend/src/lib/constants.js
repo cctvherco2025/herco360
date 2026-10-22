@@ -253,7 +253,8 @@ export function canAccessFormulariosPrincipal(user) {
   if (cargo === 'Director comercial') return true;
   const ov = (user.module_access || {}).formularios_principal;
   if (ov !== undefined && ov !== null) return !!ov;
-  return canAccessFlos(user) || canAccessRutina(user);
+  return canAccessFlos(user) || canAccessRutina(user) || canAccessGuardias(user) || canAccessRecorridos(user)
+    || canAccessEtiquetas(user);
 }
 
 // formularios.promocionesMes: tarjeta y pantalla "Promociones del mes".
@@ -277,4 +278,63 @@ export function canCreateCustomFormulario(user) {
   const cargo = (user.position || '').trim();
   if (cargo === 'Director comercial') return true;
   return !!(user.module_access || {}).formularios_custom;
+}
+
+// Revisión de Guardias (ECCP) — igual que core.can_fill_guardias /
+// can_admin_guardias. Registrar: Coordinador y Jefe del área ECCP, o quien
+// tenga el permiso 'guardias' desde Organigrama. Admin y Director comercial
+// ven, editan y eliminan todo, pero no registran (salvo que además sean
+// Coordinador/Jefe ECCP).
+export function canFillGuardias(user) {
+  if (!user) return false;
+  const ov = (user.module_access || {}).guardias;
+  if (ov !== undefined && ov !== null) return !!ov;
+  const cargo = (user.position || '').trim();
+  return (user.area || '').trim() === 'ECCP' && (cargo === 'Coordinador' || cargo === 'Jefe');
+}
+
+export function canAdminGuardias(user) {
+  if (!user) return false;
+  return user.role === 'admin' || (user.position || '').trim() === 'Director comercial';
+}
+
+export function canAccessGuardias(user) {
+  return canFillGuardias(user) || canAdminGuardias(user);
+}
+
+// Recorridos Preventivos en Tienda (ECCP) — igual que core.can_fill_recorridos
+// / can_admin_recorridos: mismo esquema que Guardias con su propio permiso
+// asignable ('recorridos').
+export function canFillRecorridos(user) {
+  if (!user) return false;
+  const ov = (user.module_access || {}).recorridos;
+  if (ov !== undefined && ov !== null) return !!ov;
+  const cargo = (user.position || '').trim();
+  return (user.area || '').trim() === 'ECCP' && (cargo === 'Coordinador' || cargo === 'Jefe');
+}
+
+export function canAdminRecorridos(user) {
+  return canAdminGuardias(user);
+}
+
+export function canAccessRecorridos(user) {
+  return canFillRecorridos(user) || canAdminRecorridos(user);
+}
+
+// Auditoría de Etiquetas de Precios (ECCP) — igual que core.can_fill_etiquetas
+// / can_admin_etiquetas, con su propio permiso asignable ('etiquetas').
+export function canFillEtiquetas(user) {
+  if (!user) return false;
+  const ov = (user.module_access || {}).etiquetas;
+  if (ov !== undefined && ov !== null) return !!ov;
+  const cargo = (user.position || '').trim();
+  return (user.area || '').trim() === 'ECCP' && (cargo === 'Coordinador' || cargo === 'Jefe');
+}
+
+export function canAdminEtiquetas(user) {
+  return canAdminGuardias(user);
+}
+
+export function canAccessEtiquetas(user) {
+  return canFillEtiquetas(user) || canAdminEtiquetas(user);
 }
