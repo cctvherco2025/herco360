@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight, Camera, Upload, X, Info,
-  TrendingUp, TrendingDown, Send, FileDown, RotateCcw,
+  TrendingUp, TrendingDown, Send, FileDown, RotateCcw, Check, Plus,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -43,7 +43,7 @@ export default function RutinaWizard({ onSubmitted }) {
   const { user } = useAuth();
   const [schema, setSchema] = useState(null); // secciones, cargadas de GET /rutina/schema
   const [schemaError, setSchemaError] = useState(false);
-  const [phase, setPhase] = useState('intro'); // intro | walk | resumen
+  const [phase, setPhase] = useState('intro'); // intro | walk | resumen (solo después de enviar)
   const [meta, setMeta] = useState(emptyMeta());
   const [answers, setAnswers] = useState({}); // id -> option index
   const [notes, setNotes] = useState({});
@@ -54,6 +54,7 @@ export default function RutinaWizard({ onSubmitted }) {
   const [uploading, setUploading] = useState(null);
   const [zoomSrc, setZoomSrc] = useState(null);
   const [hasDraft, setHasDraft] = useState(false);
+  const [sent, setSent] = useState(null); // lo que se acaba de enviar: { summary, rows, meta }
   const camInputs = useRef({});
 
   const canFill = canFillRutina(user);
@@ -116,7 +117,7 @@ export default function RutinaWizard({ onSubmitted }) {
   const removePhoto = (id, localId) => setPhotos((p) => ({ ...p, [id]: (p[id] || []).filter((ph) => ph.localId !== localId) }));
 
   const goto = (i) => setCursor(Math.max(0, Math.min(STEPS - 1, i)));
-  const next = () => (cursor < STEPS - 1 ? goto(cursor + 1) : setPhase('resumen'));
+  const next = () => (cursor < STEPS - 1 ? goto(cursor + 1) : submit());
   const prev = () => goto(cursor - 1);
 
   const beginWalk = () => {
@@ -147,16 +148,27 @@ export default function RutinaWizard({ onSubmitted }) {
   }), [flat, answers, touched, notes, photos]);
 
   const exportPdf = async () => {
+    if (!sent) return;
     try {
       await generateRutinaPdf({
-        meta: { sucursal: meta.sucursal, gerente: user?.name, mesLabel: monthLabel(meta.mes), fecha: meta.fecha },
-        rows: buildRows(), summary,
+        meta: { sucursal: sent.meta.sucursal, gerente: user?.name, mesLabel: monthLabel(sent.meta.mes), fecha: sent.meta.fecha },
+        rows: sent.rows, summary: sent.summary,
       });
     } catch (e) { toast.error('No se pudo generar el PDF'); }
   };
 
+  const nuevaEvaluacion = () => { setSent(null); setPhase('intro'); };
+
   const submit = async () => {
     if (summary.touchedCount === 0) { toast.error('Responde al menos una pregunta antes de enviar'); return; }
+    const faltan = STEPS - summary.touchedCount;
+    if (!(await confirmar({
+      titulo: '¿Enviar la evaluación?',
+      mensaje: faltan > 0
+        ? <>Respondiste <b>{summary.touchedCount} de {STEPS}</b> preguntas. Las <b>{faltan}</b> sin responder cuentan como 0 puntos.</>
+        : <>Respondiste las <b>{STEPS}</b> preguntas. Al enviarla verás el resumen.</>,
+      textoConfirmar: 'Enviar',
+    }))) return;
     setSubmitting(true);
     try {
       const entries = flat.filter((it) => touched.has(it.id)).map((it) => {
@@ -174,9 +186,10 @@ export default function RutinaWizard({ onSubmitted }) {
       });
       await api.post('/rutina/evaluaciones', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Rutina Operativa enviada correctamente');
+      setSent({ summary, rows: buildRows(), meta });
       clearDraft();
       setMeta(emptyMeta()); setAnswers({}); setNotes({}); setTouched(new Set());
-      setPhotos({}); setCursor(0); setPhase('intro'); setHasDraft(false);
+      setPhotos({}); setCursor(0); setPhase('resumen'); setHasDraft(false);
       onSubmitted?.();
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'No se pudo enviar la evaluación');
@@ -243,34 +256,34 @@ export default function RutinaWizard({ onSubmitted }) {
           <Button onClick={beginWalk} className="h-11 rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="rutina-begin-button">
             {hasDraft ? 'Continuar evaluación' : 'Comenzar evaluación'} <ChevronRight className="h-4 w-4 ml-1" />
           </Button>
-          {hasDraft && <Button variant="ghost" onClick={() => setPhase('resumen')} className="rounded-xl">Ver resumen</Button>}
         </div>
       </motion.div>
     );
   }
 
+  // El resumen solo se ve después de enviar (antes muchos lo miraban y no enviaban).
+  if (phase === 'resumen' && sent) {
+    return (
+      <div className="max-w-[880px] mx-auto">
+        <Resumen summary={sent.summary} totalSteps={STEPS} onExport={exportPdf} onNew={nuevaEvaluacion} />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-[880px] mx-auto">
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-1 rounded-xl border bg-card p-1">
-          <button onClick={() => setPhase('walk')} data-testid="rutina-tab-walk"
-            className={`px-3.5 py-1.5 text-sm font-medium rounded-lg transition-colors ${phase === 'walk' ? 'bg-[#1e395e] text-white' : 'text-muted-foreground hover:bg-muted'}`}>Evaluación</button>
-          <button onClick={() => setPhase('resumen')} data-testid="rutina-tab-resumen"
-            className={`px-3.5 py-1.5 text-sm font-medium rounded-lg transition-colors ${phase === 'resumen' ? 'bg-[#1e395e] text-white' : 'text-muted-foreground hover:bg-muted'}`}>Resumen</button>
-        </div>
+      <div className="flex items-center justify-end mb-4">
         <Button variant="ghost" size="sm" onClick={resetAll} className="text-muted-foreground" data-testid="rutina-reset-button">
           <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Reiniciar
         </Button>
       </div>
 
-      {phase === 'walk' && (
-        <WalkCard
-          flat={flat} cursor={cursor} steps={STEPS} answers={answers} notes={notes} photos={photos} uploading={uploading}
-          onSelect={selectOption} onNote={setNote} onFiles={handleFiles} onRemovePhoto={removePhoto}
-          onPrev={prev} onNext={next} onGoto={goto} onZoom={setZoomSrc} camInputs={camInputs}
-        />
-      )}
-      {phase === 'resumen' && <Resumen summary={summary} totalSteps={STEPS} onExport={exportPdf} onSubmit={submit} submitting={submitting} />}
+      <WalkCard
+        flat={flat} cursor={cursor} steps={STEPS} answers={answers} notes={notes} photos={photos} uploading={uploading}
+        submitting={submitting}
+        onSelect={selectOption} onNote={setNote} onFiles={handleFiles} onRemovePhoto={removePhoto}
+        onPrev={prev} onNext={next} onGoto={goto} onZoom={setZoomSrc} camInputs={camInputs}
+      />
 
       <ZoomDialog src={zoomSrc} onClose={() => setZoomSrc(null)} />
     </div>
@@ -278,7 +291,7 @@ export default function RutinaWizard({ onSubmitted }) {
 }
 
 /* ───────────────────── Recorrido (paso a paso) ─────────── */
-function WalkCard({ flat, cursor, steps, answers, notes, photos, uploading, onSelect, onNote, onFiles, onRemovePhoto, onPrev, onNext, onGoto, onZoom, camInputs }) {
+function WalkCard({ flat, cursor, steps, answers, notes, photos, uploading, submitting, onSelect, onNote, onFiles, onRemovePhoto, onPrev, onNext, onGoto, onZoom, camInputs }) {
   const it = flat[cursor];
   const idx = answers[it.id];
   const pics = photos[it.id] || [];
@@ -371,9 +384,15 @@ function WalkCard({ flat, cursor, steps, answers, notes, photos, uploading, onSe
         <Button variant="outline" className="rounded-xl" onClick={onPrev} disabled={cursor === 0} data-testid="rutina-prev-button">
           <ChevronLeft className="h-4 w-4 mr-1" /> Anterior
         </Button>
-        <Button onClick={onNext} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="rutina-next-button">
-          {cursor === steps - 1 ? 'Ver resumen' : 'Siguiente'} <ChevronRight className="h-4 w-4 ml-1" />
-        </Button>
+        {cursor === steps - 1 ? (
+          <Button onClick={onNext} disabled={submitting} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="rutina-submit-button">
+            <Send className="h-4 w-4 mr-1.5" /> {submitting ? 'Enviando…' : 'Enviar evaluación'}
+          </Button>
+        ) : (
+          <Button onClick={onNext} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="rutina-next-button">
+            Siguiente <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -391,10 +410,13 @@ function Tile({ icon: IconEl, label, value, sub, color, tint }) {
   );
 }
 
-function Resumen({ summary, totalSteps, onExport, onSubmit, submitting }) {
+function Resumen({ summary, totalSteps, onExport, onNew }) {
   const tone = rutinaTone(summary.pct);
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+      <div className="flex items-center gap-2 rounded-xl bg-[rgba(22,163,74,0.12)] text-[#16a34a] text-sm font-medium px-3 py-2 mb-4" data-testid="rutina-sent-banner">
+        <Check className="h-4 w-4 shrink-0" /> Evaluación enviada. Este es el resumen.
+      </div>
       <div className="rounded-[18px] bg-card border shadow-card p-6 text-center mb-4">
         <p className="font-heading text-5xl font-bold" style={{ color: RUTINA_TONE_COLOR[tone] }}>{summary.pct}%</p>
         <p className="text-sm font-medium mt-1" style={{ color: RUTINA_TONE_COLOR[tone] }}>{summary.statusLabel}</p>
@@ -428,8 +450,8 @@ function Resumen({ summary, totalSteps, onExport, onSubmit, submitting }) {
         <Button variant="outline" className="rounded-xl" onClick={onExport} data-testid="rutina-export-pdf">
           <FileDown className="h-4 w-4 mr-1.5" /> Exportar PDF
         </Button>
-        <Button className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white ml-auto" onClick={onSubmit} disabled={submitting} data-testid="rutina-submit-button">
-          <Send className="h-4 w-4 mr-1.5" /> {submitting ? 'Enviando…' : 'Enviar evaluación'}
+        <Button className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white ml-auto" onClick={onNew} data-testid="rutina-new-button">
+          <Plus className="h-4 w-4 mr-1.5" /> Nueva evaluación
         </Button>
       </div>
     </motion.div>

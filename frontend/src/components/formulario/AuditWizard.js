@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight, Camera, Upload, X, ImageIcon, Info, Check,
   Sparkles, LayoutGrid, PackageSearch, AlignStartVertical, FileDown, Send,
-  TrendingUp, TrendingDown, AlertTriangle, ClipboardList, RotateCcw,
+  TrendingUp, TrendingDown, AlertTriangle, ClipboardList, RotateCcw, Plus,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -42,7 +42,7 @@ export default function AuditWizard({ onSubmitted }) {
   const { user } = useAuth();
   const [schema, setSchema] = useState(null); // dimensiones, cargadas de GET /formulario/schema
   const [schemaError, setSchemaError] = useState(false);
-  const [phase, setPhase] = useState('intro'); // intro | walk | verdict | plan
+  const [phase, setPhase] = useState('intro'); // intro | walk | verdict | plan (verdict y plan solo después de enviar)
   const [meta, setMeta] = useState(() => emptyMeta(user));
   const [scores, setScores] = useState({});
   const [comments, setComments] = useState({});
@@ -55,6 +55,7 @@ export default function AuditWizard({ onSubmitted }) {
   const [refId, setRefId] = useState(null);
   const [zoomSrc, setZoomSrc] = useState(null);
   const [hasDraft, setHasDraft] = useState(false);
+  const [sent, setSent] = useState(null); // lo que se acaba de enviar: { summary, rows, meta, generalComment, generalPhotos }
   const camInputs = useRef({});
 
   const flat = useMemo(() => flattenFlosSchema(schema), [schema]);
@@ -137,7 +138,7 @@ export default function AuditWizard({ onSubmitted }) {
   };
 
   const goto = (i) => setCursor(Math.max(0, Math.min(STEPS - 1, i)));
-  const next = () => (cursor < STEPS - 1 ? goto(cursor + 1) : setPhase('verdict'));
+  const next = () => (cursor < STEPS - 1 ? goto(cursor + 1) : submit());
   const prev = () => goto(cursor - 1);
 
   const beginWalk = () => {
@@ -168,21 +169,32 @@ export default function AuditWizard({ onSubmitted }) {
   }));
 
   const exportPdf = async () => {
+    if (!sent) return;
     try {
       await generateFlosPdf({
-        meta: { sucursal: meta.sucursal, linea: meta.linea, auditor: user?.name, fecha: meta.fecha },
-        rows: buildRows(),
-        generalComment: generalComment.trim(),
-        generalPhotos: photos.__general__ || [],
-        summary,
+        meta: { sucursal: sent.meta.sucursal, linea: sent.meta.linea, auditor: user?.name, fecha: sent.meta.fecha },
+        rows: sent.rows,
+        generalComment: sent.generalComment,
+        generalPhotos: sent.generalPhotos,
+        summary: sent.summary,
       });
     } catch (e) {
       toast.error('No se pudo generar el PDF');
     }
   };
 
+  const nuevaAuditoria = () => { setSent(null); setPhase('intro'); };
+
   const submit = async () => {
     if (summary.touchedCount === 0) { toast.error('Califica al menos un criterio antes de enviar'); return; }
+    const faltan = flat.length - summary.touchedCount;
+    if (!(await confirmar({
+      titulo: '¿Enviar la auditoría?',
+      mensaje: faltan > 0
+        ? <>Calificaste <b>{summary.touchedCount} de {flat.length}</b> criterios. Los <b>{faltan}</b> sin calificar no se envían.</>
+        : <>Calificaste los <b>{flat.length}</b> criterios. Al enviarla verás el resumen y el plan de acción.</>,
+      textoConfirmar: 'Enviar',
+    }))) return;
     setSubmitting(true);
     try {
       const entries = flat.filter((v) => touched.has(v.id)).map((v) => ({
@@ -199,9 +211,13 @@ export default function AuditWizard({ onSubmitted }) {
       });
       await api.post('/formulario/auditorias', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Auditoría enviada correctamente');
+      setSent({
+        summary, rows: buildRows(), meta,
+        generalComment: generalComment.trim(), generalPhotos: photos.__general__ || [],
+      });
       clearDraft();
       setMeta(emptyMeta(user)); setScores({}); setComments({}); setTouched(new Set());
-      setPhotos({}); setGeneralComment(''); setCursor(0); setPhase('intro'); setHasDraft(false);
+      setPhotos({}); setGeneralComment(''); setCursor(0); setPhase('verdict'); setHasDraft(false);
       onSubmitted?.();
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'No se pudo enviar la auditoría');
@@ -225,26 +241,41 @@ export default function AuditWizard({ onSubmitted }) {
   if (phase === 'intro') {
     return (
       <IntroForm meta={meta} setMeta={setMeta} onBegin={beginWalk} hasDraft={hasDraft}
-        onViewSummary={() => setPhase('verdict')} user={user} criteriaCount={flat.length} />
+        user={user} criteriaCount={flat.length} />
+    );
+  }
+
+  // El resumen y el plan solo se ven después de enviar (antes muchos los miraban y no enviaban).
+  if (sent && (phase === 'verdict' || phase === 'plan')) {
+    return (
+      <div className="max-w-[880px] mx-auto">
+        <PhaseNav phase={phase} setPhase={setPhase} />
+        <div className="flex items-center gap-2 rounded-xl bg-[rgba(22,163,74,0.12)] text-[#16a34a] text-sm font-medium px-3 py-2 mb-4" data-testid="flos-sent-banner">
+          <Check className="h-4 w-4 shrink-0" /> Auditoría enviada. Este es el resumen.
+        </div>
+        {phase === 'verdict' && <Verdict summary={sent.summary} totalCriteria={flat.length} onExport={exportPdf} onNew={nuevaAuditoria} />}
+        {phase === 'plan' && <PlanView summary={sent.summary} onExport={exportPdf} onNew={nuevaAuditoria} />}
+      </div>
     );
   }
 
   return (
     <div className="max-w-[880px] mx-auto">
-      <PhaseNav phase={phase} setPhase={setPhase} onReset={resetAll} />
+      <div className="flex items-center justify-end mb-4">
+        <Button variant="ghost" size="sm" onClick={resetAll} className="text-muted-foreground" data-testid="flos-reset-button">
+          <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Reiniciar
+        </Button>
+      </div>
 
-      {phase === 'walk' && (
-        <WalkCard
-          flat={flat} cursor={cursor} steps={STEPS} closer={CLOSER}
-          scores={scores} comments={comments} photos={photos} uploading={uploading} touched={touched}
-          onScore={setScore} onComment={setComment} onFiles={handleFiles} onRemovePhoto={removePhoto}
-          generalComment={generalComment} setGeneralComment={setGeneralComment}
-          onPrev={prev} onNext={next} onGoto={goto}
-          onOpenRef={setRefId} onZoom={setZoomSrc} camInputs={camInputs}
-        />
-      )}
-      {phase === 'verdict' && <Verdict summary={summary} totalCriteria={flat.length} onExport={exportPdf} onSubmit={submit} submitting={submitting} />}
-      {phase === 'plan' && <PlanView summary={summary} onExport={exportPdf} onSubmit={submit} submitting={submitting} />}
+      <WalkCard
+        flat={flat} cursor={cursor} steps={STEPS} closer={CLOSER}
+        scores={scores} comments={comments} photos={photos} uploading={uploading} touched={touched}
+        submitting={submitting}
+        onScore={setScore} onComment={setComment} onFiles={handleFiles} onRemovePhoto={removePhoto}
+        generalComment={generalComment} setGeneralComment={setGeneralComment}
+        onPrev={prev} onNext={next} onGoto={goto}
+        onOpenRef={setRefId} onZoom={setZoomSrc} camInputs={camInputs}
+      />
 
       <RefDialog flat={flat} id={refId} onClose={() => setRefId(null)} />
       <ZoomDialog src={zoomSrc} onClose={() => setZoomSrc(null)} />
@@ -253,7 +284,7 @@ export default function AuditWizard({ onSubmitted }) {
 }
 
 /* ───────────────────────── Intro ───────────────────────── */
-function IntroForm({ meta, setMeta, onBegin, hasDraft, onViewSummary, user, criteriaCount }) {
+function IntroForm({ meta, setMeta, onBegin, hasDraft, user, criteriaCount }) {
   const set = (k) => (e) => setMeta((m) => ({ ...m, [k]: e.target.value }));
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
@@ -296,40 +327,32 @@ function IntroForm({ meta, setMeta, onBegin, hasDraft, onViewSummary, user, crit
         <Button onClick={onBegin} className="h-11 rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="flos-begin-button">
           {hasDraft ? 'Continuar recorrido' : 'Comenzar recorrido'} <ChevronRight className="h-4 w-4 ml-1" />
         </Button>
-        {hasDraft && <Button variant="ghost" onClick={onViewSummary} className="rounded-xl">Ver resumen</Button>}
       </div>
     </motion.div>
   );
 }
 
-/* ───────────────────── Nav entre fases ─────────────────── */
-function PhaseNav({ phase, setPhase, onReset }) {
+/* ──────────── Nav Resumen / Plan (después de enviar) ───── */
+function PhaseNav({ phase, setPhase }) {
   const tabs = [
-    { k: 'walk', label: 'Recorrido' },
     { k: 'verdict', label: 'Resumen' },
     { k: 'plan', label: 'Plan' },
   ];
   return (
-    <div className="flex items-center justify-between gap-2 sm:gap-3 mb-4">
-      <div className="flex items-center gap-1 rounded-xl border bg-card p-1 min-w-0">
-        {tabs.map((t) => (
-          <button key={t.k} onClick={() => setPhase(t.k)} data-testid={`flos-tab-${t.k}`}
-            className={`px-2.5 sm:px-3.5 py-1.5 text-sm font-medium rounded-lg transition-colors ${phase === t.k ? 'bg-[#1e395e] text-white' : 'text-muted-foreground hover:bg-muted'}`}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-      {/* en celular solo el ícono, para que las 3 pestañas quepan */}
-      <Button variant="ghost" size="sm" onClick={onReset} className="text-muted-foreground shrink-0" title="Reiniciar" aria-label="Reiniciar" data-testid="flos-reset-button">
-        <RotateCcw className="h-3.5 w-3.5 sm:mr-1.5" /> <span className="hidden sm:inline">Reiniciar</span>
-      </Button>
+    <div className="flex items-center gap-1 rounded-xl border bg-card p-1 w-fit mb-4">
+      {tabs.map((t) => (
+        <button key={t.k} onClick={() => setPhase(t.k)} data-testid={`flos-tab-${t.k}`}
+          className={`px-3.5 py-1.5 text-sm font-medium rounded-lg transition-colors ${phase === t.k ? 'bg-[#1e395e] text-white' : 'text-muted-foreground hover:bg-muted'}`}>
+          {t.label}
+        </button>
+      ))}
     </div>
   );
 }
 
 /* ───────────────────── Recorrido (paso a paso) ─────────── */
 function WalkCard({
-  flat, cursor, steps, closer, scores, comments, photos, uploading, touched,
+  flat, cursor, steps, closer, scores, comments, photos, uploading, touched, submitting,
   onScore, onComment, onFiles, onRemovePhoto,
   generalComment, setGeneralComment, onPrev, onNext, onGoto, onOpenRef, onZoom, camInputs,
 }) {
@@ -447,9 +470,15 @@ function WalkCard({
         <Button variant="outline" className="rounded-xl" onClick={onPrev} disabled={cursor === 0} data-testid="flos-prev-button">
           <ChevronLeft className="h-4 w-4 mr-1" /> Anterior
         </Button>
-        <Button onClick={onNext} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="flos-next-button">
-          {cursor === steps - 1 ? 'Ver resumen' : 'Siguiente'} <ChevronRight className="h-4 w-4 ml-1" />
-        </Button>
+        {cursor === steps - 1 ? (
+          <Button onClick={onNext} disabled={submitting} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="flos-submit-button">
+            <Send className="h-4 w-4 mr-1.5" /> {submitting ? 'Enviando…' : 'Enviar auditoría'}
+          </Button>
+        ) : (
+          <Button onClick={onNext} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="flos-next-button">
+            Siguiente <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -467,20 +496,20 @@ function Tile({ icon: IconEl, label, value, sub, color, tint }) {
   );
 }
 
-function ActionBar({ onExport, onSubmit, submitting }) {
+function ActionBar({ onExport, onNew }) {
   return (
     <div className="flex flex-wrap gap-2 mt-5">
       <Button variant="outline" className="rounded-xl" onClick={onExport} data-testid="flos-export-pdf">
         <FileDown className="h-4 w-4 mr-1.5" /> Exportar PDF
       </Button>
-      <Button className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white ml-auto" onClick={onSubmit} disabled={submitting} data-testid="flos-submit-button">
-        <Send className="h-4 w-4 mr-1.5" /> {submitting ? 'Enviando…' : 'Enviar auditoría'}
+      <Button className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white ml-auto" onClick={onNew} data-testid="flos-new-button">
+        <Plus className="h-4 w-4 mr-1.5" /> Nueva auditoría
       </Button>
     </div>
   );
 }
 
-function Verdict({ summary, totalCriteria, onExport, onSubmit, submitting }) {
+function Verdict({ summary, totalCriteria, onExport, onNew }) {
   const tone = flosTone(summary.pct);
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
@@ -514,13 +543,13 @@ function Verdict({ summary, totalCriteria, onExport, onSubmit, submitting }) {
         </div>
       </div>
 
-      <ActionBar onExport={onExport} onSubmit={onSubmit} submitting={submitting} />
+      <ActionBar onExport={onExport} onNew={onNew} />
     </motion.div>
   );
 }
 
 /* ────────────────────── Plan de acción ─────────────────── */
-function PlanView({ summary, onExport, onSubmit, submitting }) {
+function PlanView({ summary, onExport, onNew }) {
   const chipCls = { hi: 'bg-[rgba(220,38,38,0.1)] text-[#dc2626]', md: 'bg-[rgba(236,144,50,0.12)] text-[#ec9032]', lo: 'bg-[rgba(22,163,74,0.1)] text-[#16a34a]' };
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
@@ -556,7 +585,7 @@ function PlanView({ summary, onExport, onSubmit, submitting }) {
         </div>
       )}
 
-      <ActionBar onExport={onExport} onSubmit={onSubmit} submitting={submitting} />
+      <ActionBar onExport={onExport} onNew={onNew} />
     </motion.div>
   );
 }

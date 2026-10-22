@@ -48,7 +48,7 @@ export default function Formulario() {
         </TabsList>
 
         <TabsContent value="nueva">
-          <AuditWizard key={wizardKey} onSubmitted={() => { setHistoryKey((k) => k + 1); setTab('historial'); }} />
+          <AuditWizard key={wizardKey} onSubmitted={() => setHistoryKey((k) => k + 1)} />
         </TabsContent>
         <TabsContent value="historial">
           <Historial refreshKey={historyKey} />

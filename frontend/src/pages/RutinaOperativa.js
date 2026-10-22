@@ -48,7 +48,7 @@ export default function RutinaOperativa() {
         </TabsList>
 
         <TabsContent value="nueva">
-          <RutinaWizard key={wizardKey} onSubmitted={() => { setHistoryKey((k) => k + 1); setTab('historial'); }} />
+          <RutinaWizard key={wizardKey} onSubmitted={() => setHistoryKey((k) => k + 1)} />
         </TabsContent>
         <TabsContent value="historial">
           <Historial refreshKey={historyKey} />
