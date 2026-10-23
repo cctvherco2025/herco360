@@ -9,7 +9,7 @@ from pathlib import Path
 from core import client, require_admin, new_id
 from seed import (seed_if_needed, migrate_activity_colors, seed_inventory, bootstrap_admins,
                   migrate_room_info, migrate_activity_reminders, migrate_activity_ranges)
-import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard, routes_inventory, routes_reports, routes_public, routes_vacations, routes_push, routes_cams, routes_formulario, routes_rutina, routes_formularios_custom, routes_diagnostico, routes_groups, routes_guardias, routes_recorridos, routes_etiquetas
+import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard, routes_inventory, routes_reports, routes_public, routes_vacations, routes_push, routes_cams, routes_formulario, routes_rutina, routes_formularios_custom, routes_diagnostico, routes_groups, routes_guardias, routes_recorridos, routes_etiquetas, routes_activos, mantenimiento
 import promo_tareas
 import tickets
 import storage
@@ -20,14 +20,14 @@ import push
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-app = FastAPI(title='HERCO360 API')
+app = FastAPI(title='HERCO OPS API')
 
 api_router = APIRouter(prefix='/api')
 
 
 @api_router.get('/')
 async def root():
-    return {'message': 'HERCO360 API', 'status': 'ok'}
+    return {'message': 'HERCO OPS API', 'status': 'ok'}
 
 
 @api_router.get('/admin/storage-health')
@@ -75,6 +75,8 @@ api_router.include_router(routes_rutina.router)
 api_router.include_router(routes_guardias.router)
 api_router.include_router(routes_recorridos.router)
 api_router.include_router(routes_etiquetas.router)
+api_router.include_router(routes_activos.router)
+api_router.include_router(mantenimiento.router)
 api_router.include_router(routes_formularios_custom.router)
 api_router.include_router(routes_diagnostico.router)
 api_router.include_router(routes_groups.router)
@@ -112,6 +114,9 @@ async def startup():
         await migrate_room_info()
         await migrate_activity_reminders()
         await migrate_activity_ranges()
+        await routes_activos.ensure_indexes()
+        await routes_activos.ensure_defaults()
+        await mantenimiento.ensure_indexes()
     except Exception as e:
         logger.error(f'Seed error: {e}')
     try:

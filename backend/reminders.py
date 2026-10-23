@@ -23,6 +23,7 @@ from notifications import create_notification
 import recurrence as rec
 import promo_plazos
 import tareas
+import mantenimiento
 
 logger = logging.getLogger("reminders")
 
@@ -187,6 +188,13 @@ async def _loop() -> None:
             raise
         except Exception as e:  # pragma: no cover
             logger.warning(f"promo plazos error: {e}")
+        # Mantenimiento preventivo: ciclos nuevos, tareas disponibles, vencidas
+        try:
+            await mantenimiento.revisar()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # pragma: no cover
+            logger.warning(f"mantenimiento error: {e}")
         await asyncio.sleep(POLL_SECONDS)
 
 

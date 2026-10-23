@@ -1,12 +1,14 @@
 """User management routes."""
 from fastapi import APIRouter, HTTPException, Depends
+from typing import List
+from pydantic import BaseModel
 from core import (db, get_current_user, require_admin, serialize_doc, now_iso,
                   hash_password, new_id, require_access_manager, GATED_MODULES,
                   can_access_inventory, can_access_reports, can_access_cams, can_access_formulario,
                   can_access_rutina, can_access_formularios_principal, can_access_promociones_mes,
                   can_create_custom_formulario, can_edit_rutina_schema, can_edit_flos_schema,
                   can_access_vacaciones, can_admin_promos, can_fill_guardias,
-                  can_fill_recorridos, can_fill_etiquetas)
+                  can_fill_recorridos, can_fill_etiquetas, can_admin_activos)
 from models import ProfileUpdate, RoleUpdate, AdminUserCreate, AdminUserUpdate, ModuleAccessUpdate
 from notifications import create_notification, log_activity
 from routes_groups import quitar_de_grupos
@@ -49,6 +51,7 @@ def _effective_access(u):
         'guardias': can_fill_guardias(u),
         'recorridos': can_fill_recorridos(u),
         'etiquetas': can_fill_etiquetas(u),
+        'activos': can_admin_activos(u),
     }
 
 
@@ -161,6 +164,24 @@ async def update_me(data: ProfileUpdate, user=Depends(get_current_user)):
     return serialize_doc(updated)
 
 
+class VistosInput(BaseModel):
+    claves: List[str]
+    quitar: bool = False
+
+
+@router.post('/me/vistos')
+async def marcar_vistos(data: VistosInput, user=Depends(get_current_user)):
+    """Novedades y recorridos guiados que la persona ya vio (se guardan en su
+    usuario para que no le vuelvan a salir en otro dispositivo). `quitar`
+    los vuelve a mostrar (p. ej. repetir un recorrido)."""
+    claves = [c.strip()[:60] for c in data.claves if c and c.strip()][:50]
+    if claves:
+        op = {'$pull': {'vistos': {'$in': claves}}} if data.quitar else {'$addToSet': {'vistos': {'$each': claves}}}
+        await db.users.update_one({'id': user['id']}, op)
+    doc = await db.users.find_one({'id': user['id']}, {'_id': 0, 'vistos': 1})
+    return {'vistos': (doc or {}).get('vistos', [])}
+
+
 @router.post('/{user_id}/approve')
 async def approve_user(user_id: str, admin=Depends(require_admin)):
     target = await db.users.find_one({'id': user_id})
@@ -168,7 +189,7 @@ async def approve_user(user_id: str, admin=Depends(require_admin)):
         raise HTTPException(status_code=404, detail='Usuario no encontrado')
     await db.users.update_one({'id': user_id}, {'$set': {'status': 'approved'}})
     await create_notification(user_id, 'usuario_aprobado',
-                              'Tu cuenta fue aprobada. ¡Bienvenido a HERCO360!',
+                              'Tu cuenta fue aprobada. ¡Bienvenido a HERCO OPS!',
                               related_id=user_id, related_type='user',
                               actor_name=admin['name'], actor_avatar=admin.get('avatar_url'))
     await log_activity(admin['id'], admin['name'], admin.get('avatar_url'),

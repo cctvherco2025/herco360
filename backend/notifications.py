@@ -19,6 +19,8 @@ _PUSH_URL_BY_TYPE = {
     'promociones': '/formularios/promociones',
     'ticket': '/formularios/tickets',
     'tarea': '/tareas',
+    'mant_tarea': '/mantenimiento',
+    'mant_plan': '/mantenimiento/planificaciones',
 }
 
 
@@ -26,7 +28,7 @@ def _fire_push(user_id, title, message, related_type, ttl=None):
     """Schedule a best-effort Web Push for this notification. Never raises."""
     try:
         payload = {
-            'title': title or 'HERCO360',
+            'title': title or 'HERCO OPS',
             'body': message or '',
             'url': _PUSH_URL_BY_TYPE.get(related_type, '/notificaciones'),
             'icon': '/icon-192-maskable.png',
@@ -72,6 +74,15 @@ NOTIFICATION_META = {
     'tarea_recordatorio': {'title': 'Tarea por vencer', 'icon': 'Clock', 'color': '#ec9032'},
     'promo_recordatorio': {'title': 'Plazo por vencer', 'icon': 'Clock', 'color': '#ec9032'},
     'promo_vencida': {'title': 'Plazo vencido', 'icon': 'Clock', 'color': '#dc2626'},
+    'mant_tarea_asignada': {'title': 'Mantenimiento por hacer', 'icon': 'Wrench', 'color': '#00a5df'},
+    'mant_tarea_recordatorio': {'title': 'Mantenimiento por vencer', 'icon': 'Clock', 'color': '#ec9032'},
+    'mant_tarea_vencida': {'title': 'Mantenimiento vencido', 'icon': 'Clock', 'color': '#dc2626'},
+    'mant_tarea_cancelada': {'title': 'Mantenimiento cancelado', 'icon': 'Wrench', 'color': '#64748b'},
+    'mant_tarea_reprogramada': {'title': 'Mantenimiento con nueva fecha', 'icon': 'Clock', 'color': '#00a5df'},
+    'mant_falla': {'title': 'Falla en mantenimiento', 'icon': 'AlertTriangle', 'color': '#dc2626'},
+    'mant_ciclo_incompleto': {'title': 'Ciclo con tareas incompletas', 'icon': 'Wrench', 'color': '#ec9032'},
+    'mant_plan_activado': {'title': 'Planificación activada', 'icon': 'Wrench', 'color': '#16a34a'},
+    'mant_plan_finalizado': {'title': 'Planificación terminada', 'icon': 'Wrench', 'color': '#64748b'},
 }
 
 

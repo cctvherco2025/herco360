@@ -139,7 +139,7 @@ GATED_MODULES = (
     'inventario', 'reportes', 'cams', 'formulario', 'rutina',
     'formularios_principal', 'promociones_mes', 'formularios_custom',
     'rutina_schema', 'formulario_schema', 'vacaciones', 'promociones_admin',
-    'guardias', 'recorridos', 'etiquetas',
+    'guardias', 'recorridos', 'etiquetas', 'activos',
 )
 
 
@@ -612,4 +612,23 @@ async def require_etiquetas_fill(user=Depends(get_current_user)):
 async def require_etiquetas_admin(user=Depends(get_current_user)):
     if not can_admin_etiquetas(user):
         raise HTTPException(status_code=403, detail='Solo un administrador puede hacer esta acción en Auditoría de Etiquetas')
+    return user
+
+
+# ---- Activos (de cualquier categoría: CCTV, herramientas, vehículos…) ----
+# Administrar (crear categorías y manejar todos los activos): admin, Director
+# comercial o el permiso asignable 'activos' (Organigrama). Cada categoría
+# tiene además sus responsables, que registran y editan solo sus activos;
+# eso se valida en routes_activos.py contra la base.
+def can_admin_activos(user) -> bool:
+    if not user:
+        return False
+    if user.get('role') == 'admin' or (user.get('position') or '').strip() == 'Director comercial':
+        return True
+    return bool(_module_override(user, 'activos'))
+
+
+async def require_activos_admin(user=Depends(get_current_user)):
+    if not can_admin_activos(user):
+        raise HTTPException(status_code=403, detail='Solo quien administra Activos puede hacer esta acción')
     return user
