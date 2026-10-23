@@ -3,7 +3,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun, Boxes, FileText,
-  Palmtree, Network, Video, ClipboardCheck, ClipboardList, ChevronDown, Percent, Ticket, ListChecks, ShieldCheck, Route as RouteIcon, Tags,
+  Palmtree, Network, Video, ClipboardCheck, ClipboardList, ChevronDown, Percent, Ticket, ListChecks, ShieldCheck, Route as RouteIcon, Tags, Package, Wrench, CalendarRange,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -12,7 +12,9 @@ import {
   canAccessInventory, canAccessReports, canAccessOrgChart, canAccessCams, canAccessFlos, canAccessRutina,
   canAccessFormulariosPrincipal, canAccessPromocionesMes, canAccessVacaciones, puedeVerTickets, puedeVerTareas, canAccessGuardias, canAccessRecorridos, canAccessEtiquetas,
 } from '@/lib/constants';
-import { Logo } from '@/components/Logo';
+import { Logo, AppWordmark } from '@/components/Logo';
+import { NovedadPunto } from '@/components/Novedad';
+import { useVistos, NOVEDADES } from '@/lib/novedades';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 const baseNavItems = [
@@ -25,12 +27,14 @@ const baseNavItems = [
 ];
 
 function NavItem({ item, onNavigate }) {
+  const { vistos, marcar } = useVistos();
   return (
     <NavLink
       to={item.to}
       end={item.end}
       data-testid={item.testid}
-      onClick={() => onNavigate?.()}
+      data-tour={item.tour}
+      onClick={() => { onNavigate?.(); if (item.nuevo && !vistos.includes(item.nuevo)) marcar(item.nuevo); }}
       className={({ isActive }) =>
         `group relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
           isActive
@@ -45,6 +49,7 @@ function NavItem({ item, onNavigate }) {
           )}
           <item.icon className="h-[18px] w-[18px] shrink-0" />
           <span className="flex-1">{item.label}</span>
+          {item.nuevo && <NovedadPunto clave={item.nuevo} />}
           {item.count > 0 && (
             <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#dc2626] text-white text-[11px] font-semibold grid place-items-center">{item.count}</span>
           )}
@@ -64,6 +69,8 @@ function NavGroup({ item, onNavigate }) {
   const childActive = item.children.some((c) => location.pathname === c.to || location.pathname.startsWith(`${c.to}/`));
   const [open, setOpen] = useState(childActive);
   const pendientes = item.children.reduce((n, c) => n + (c.count || 0), 0);
+  const { vistos, marcar } = useVistos();
+  const hayNuevo = item.children.some((c) => c.nuevo && NOVEDADES[c.nuevo] && !vistos.includes(c.nuevo));
 
   useEffect(() => { if (childActive) setOpen(true); }, [childActive]);
 
@@ -73,12 +80,19 @@ function NavGroup({ item, onNavigate }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         data-testid={item.testid}
+        data-tour={item.tour}
         aria-expanded={open}
         className={`group relative w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors hover:bg-[rgba(60,190,246,0.08)] ${
           childActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
         }`}>
         <item.icon className="h-[18px] w-[18px] shrink-0" />
         <span className="flex-1 text-left">{item.label}</span>
+        {hayNuevo && !open && (
+          <span className="relative inline-flex h-2.5 w-2.5" aria-label="Tiene novedades">
+            <span className="absolute inset-0 rounded-full bg-[#00a5df] opacity-60 animate-ping" />
+            <span className="relative h-2.5 w-2.5 rounded-full bg-[#00a5df]" />
+          </span>
+        )}
         {pendientes > 0 && !open && (
           <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#dc2626] text-white text-[11px] font-semibold grid place-items-center">{pendientes}</span>
         )}
@@ -91,7 +105,8 @@ function NavGroup({ item, onNavigate }) {
             transition={{ duration: 0.2 }} className="overflow-hidden">
             <div className="ml-[22px] mt-0.5 mb-1 space-y-0.5 border-l border-border pl-2">
               {item.children.map((c) => (
-                <NavLink key={c.to} to={c.to} data-testid={c.testid} onClick={() => onNavigate?.()}
+                <NavLink key={c.to} to={c.to} end={c.end} data-testid={c.testid} data-tour={c.tour}
+                  onClick={() => { onNavigate?.(); if (c.nuevo && !vistos.includes(c.nuevo)) marcar(c.nuevo); }}
                   className={({ isActive }) =>
                     `relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
                       isActive
@@ -107,6 +122,7 @@ function NavGroup({ item, onNavigate }) {
                       )}
                       <c.icon className="h-4 w-4 shrink-0" />
                       <span className="flex-1">{c.label}</span>
+                      {c.nuevo && <NovedadPunto clave={c.nuevo} />}
                       {c.count > 0 && (
                         <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#dc2626] text-white text-[11px] font-semibold grid place-items-center"
                           data-testid={`${c.testid}-count`}>{c.count}</span>
@@ -142,6 +158,18 @@ function SidebarContent({ onNavigate }) {
     if (!verTareas) return;
     api.get('/tareas/contador').then(({ data }) => setTareasPendientes(data.pendientes || 0)).catch(() => {});
   }, [verTareas, location.pathname]);
+  // Activos: lo ven los administradores y los responsables de alguna categoría.
+  const [verActivos, setVerActivos] = useState(false);
+  useEffect(() => {
+    if (!user?.id) return;
+    api.get('/activos/acceso').then(({ data }) => setVerActivos(!!data.ver)).catch(() => setVerActivos(false));
+  }, [user?.id, user?.module_access]);
+  // Mantenimiento: mis tareas (con contador), planificaciones y checklists.
+  const [mant, setMant] = useState({});
+  useEffect(() => {
+    if (!user?.id) return;
+    api.get('/mantenimiento/acceso').then(({ data }) => setMant(data || {})).catch(() => setMant({}));
+  }, [user?.id, user?.module_access, location.pathname]);
 
   // Build nav: insert "Inventario" y "Reportes" (Tienda-only) right after Sala de Juntas
   const navItems = [...baseNavItems];
@@ -169,13 +197,13 @@ function SidebarContent({ onNavigate }) {
     formularioChildren.push({ to: '/rutina-operativa', label: 'Rutina Operativa', icon: ClipboardList, testid: 'sidebar-nav-rutina-operativa' });
   }
   if (canAccessGuardias(user)) {
-    formularioChildren.push({ to: '/revision-guardias', label: 'Revisión de Guardias', icon: ShieldCheck, testid: 'sidebar-nav-revision-guardias' });
+    formularioChildren.push({ to: '/revision-guardias', label: 'Revisión de Guardias', icon: ShieldCheck, testid: 'sidebar-nav-revision-guardias', nuevo: 'guardias' });
   }
   if (canAccessRecorridos(user)) {
-    formularioChildren.push({ to: '/recorridos-preventivos', label: 'Recorridos Preventivos', icon: RouteIcon, testid: 'sidebar-nav-recorridos-preventivos' });
+    formularioChildren.push({ to: '/recorridos-preventivos', label: 'Recorridos Preventivos', icon: RouteIcon, testid: 'sidebar-nav-recorridos-preventivos', nuevo: 'recorridos' });
   }
   if (canAccessEtiquetas(user)) {
-    formularioChildren.push({ to: '/auditoria-etiquetas', label: 'Auditoría de Etiquetas', icon: Tags, testid: 'sidebar-nav-auditoria-etiquetas' });
+    formularioChildren.push({ to: '/auditoria-etiquetas', label: 'Auditoría de Etiquetas', icon: Tags, testid: 'sidebar-nav-auditoria-etiquetas', nuevo: 'etiquetas' });
   }
   if (canAccessPromocionesMes(user)) {
     formularioChildren.push({ to: '/formularios/promociones', label: 'Promociones del mes', icon: Percent, testid: 'sidebar-nav-promociones-mes' });
@@ -192,6 +220,20 @@ function SidebarContent({ onNavigate }) {
     navItems.splice(idx >= 0 ? idx + 1 : navItems.length - 1, 0,
       { to: '/tareas', label: 'Tareas', icon: ListChecks, testid: 'sidebar-nav-tareas', count: tareasPendientes });
   }
+  // Grupo Activos: el registro de activos y su mantenimiento preventivo.
+  const activosChildren = [];
+  if (verActivos) activosChildren.push({ to: '/activos', label: 'Activos', icon: Package, testid: 'sidebar-nav-activos', nuevo: 'activos', tour: 'menu-activos' });
+  if (mant.mis_tareas) {
+    activosChildren.push({ to: '/mantenimiento', end: true, label: 'Mis mantenimientos', icon: Wrench, testid: 'sidebar-nav-mis-mantenimientos', count: mant.pendientes, nuevo: 'mis-mantenimientos', tour: 'menu-mis-mantenimientos' });
+  }
+  if (mant.ver_planes) activosChildren.push({ to: '/mantenimiento/planificaciones', label: 'Planificaciones', icon: CalendarRange, testid: 'sidebar-nav-planificaciones', nuevo: 'planificaciones', tour: 'menu-planificaciones' });
+  if (mant.planificar) activosChildren.push({ to: '/mantenimiento/checklists', label: 'Checklists', icon: ListChecks, testid: 'sidebar-nav-checklists', nuevo: 'checklists', tour: 'menu-checklists' });
+  if (activosChildren.length) {
+    const tareas = navItems.findIndex((n) => n.to === '/tareas');
+    const idx = tareas >= 0 ? tareas : navItems.findIndex((n) => n.label === 'Formulario');
+    navItems.splice(idx >= 0 ? idx + 1 : navItems.length - 1, 0,
+      activosChildren.length === 1 ? activosChildren[0] : { label: 'Activos', icon: Package, testid: 'sidebar-nav-grupo-activos', tour: 'menu-grupo-activos', children: activosChildren });
+  }
   if (canAccessOrgChart(user)) {
     const idx = navItems.findIndex((n) => n.to === '/usuarios');
     navItems.splice(idx >= 0 ? idx + 1 : navItems.length - 1, 0, { to: '/organigrama', label: 'Jerarquía y permisos', icon: Network, testid: 'sidebar-nav-organigrama' });
@@ -207,6 +249,7 @@ function SidebarContent({ onNavigate }) {
     <div className="flex h-full flex-col">
       <div className="px-5 pt-5 pb-3">
         <Logo size="md" />
+        <AppWordmark className="mt-2.5" />
       </div>
 
       <button

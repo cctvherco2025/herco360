@@ -190,6 +190,7 @@ function AccessManager() {
     { key: 'guardias', label: 'Registrar Revisión de Guardias', color: C.navy },
     { key: 'recorridos', label: 'Registrar Recorridos Preventivos', color: C.orange },
     { key: 'etiquetas', label: 'Registrar Auditoría de Etiquetas', color: C.green },
+    { key: 'activos', label: 'Administrar Activos (todas las categorías)', color: C.navy },
   ];
 
   return (
@@ -201,7 +202,7 @@ function AccessManager() {
             <h2 className="font-heading text-lg font-semibold text-foreground flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4" style={{ color: C.orange }} /> Gestión de accesos a módulos
             </h2>
-            <p className="text-[12px] text-muted-foreground">Da o quita acceso a Inventario, Reportes, Reportes CAMS, cada permiso del módulo Formularios (principal, Evaluación FLOS, Rutina Operativa, Promociones del mes, Crear personalizado), quién puede editar los puntajes de Rutina Operativa y de la auditoría FLOS, y quién registra Revisión de Guardias, Recorridos Preventivos y Auditoría de Etiquetas, por usuario.</p>
+            <p className="text-[12px] text-muted-foreground">Da o quita acceso a Inventario, Reportes, Reportes CAMS, cada permiso del módulo Formularios (principal, Evaluación FLOS, Rutina Operativa, Promociones del mes, Crear personalizado), quién puede editar los puntajes de Rutina Operativa y de la auditoría FLOS, quién registra Revisión de Guardias, Recorridos Preventivos y Auditoría de Etiquetas, y quién administra Activos, por usuario.</p>
           </div>
         </div>
         <div className="relative w-full sm:w-72">
@@ -284,7 +285,7 @@ export default function Organigrama() {
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-heading text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
-            Jerarquía organizacional y acceso al sistema <span style={{ color: C.cyan }}>HERCO CCTV</span>
+            Jerarquía organizacional y acceso al sistema <span style={{ color: C.cyan }}>HERCO OPS</span>
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">Estructura de mando y matriz de permisos por rol (RBAC)</p>
         </div>

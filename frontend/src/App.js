@@ -35,6 +35,15 @@ const RutinaOperativa = lazyWithRetry(() => import('@/pages/RutinaOperativa'), '
 const RevisionGuardias = lazyWithRetry(() => import('@/pages/RevisionGuardias'), 'RevisionGuardias');
 const RecorridosPreventivos = lazyWithRetry(() => import('@/pages/RecorridosPreventivos'), 'RecorridosPreventivos');
 const AuditoriaEtiquetas = lazyWithRetry(() => import('@/pages/AuditoriaEtiquetas'), 'AuditoriaEtiquetas');
+const Activos = lazyWithRetry(() => import('@/pages/Activos'), 'Activos');
+const ActivoDetalle = lazyWithRetry(() => import('@/pages/ActivoDetalle'), 'ActivoDetalle');
+const ActivosCategorias = lazyWithRetry(() => import('@/pages/ActivosCategorias'), 'ActivosCategorias');
+const MisMantenimientos = lazyWithRetry(() => import('@/pages/MisMantenimientos'), 'MisMantenimientos');
+const MantTarea = lazyWithRetry(() => import('@/pages/MantTarea'), 'MantTarea');
+const MantPlanes = lazyWithRetry(() => import('@/pages/MantPlanes'), 'MantPlanes');
+const MantPlanForm = lazyWithRetry(() => import('@/pages/MantPlanForm'), 'MantPlanForm');
+const MantPlanDetalle = lazyWithRetry(() => import('@/pages/MantPlanDetalle'), 'MantPlanDetalle');
+const MantChecklists = lazyWithRetry(() => import('@/pages/MantChecklists'), 'MantChecklists');
 const CustomFormBuilderPage = lazyWithRetry(() => import('@/pages/CustomFormBuilderPage'), 'CustomFormBuilderPage');
 const CustomFormPage = lazyWithRetry(() => import('@/pages/CustomFormPage'), 'CustomFormPage');
 const PromoPublishWizardPage = lazyWithRetry(() => import('@/pages/PromoPublishWizardPage'), 'PromoPublishWizardPage');
@@ -75,6 +84,16 @@ function App() {
               <Route path="/revision-guardias" element={<Suspense fallback={<PageFallback />}><RevisionGuardias /></Suspense>} />
               <Route path="/recorridos-preventivos" element={<Suspense fallback={<PageFallback />}><RecorridosPreventivos /></Suspense>} />
               <Route path="/auditoria-etiquetas" element={<Suspense fallback={<PageFallback />}><AuditoriaEtiquetas /></Suspense>} />
+              <Route path="/activos" element={<Suspense fallback={<PageFallback />}><Activos /></Suspense>} />
+              <Route path="/activos/categorias" element={<Suspense fallback={<PageFallback />}><ActivosCategorias /></Suspense>} />
+              <Route path="/activos/:id" element={<Suspense fallback={<PageFallback />}><ActivoDetalle /></Suspense>} />
+              <Route path="/mantenimiento" element={<Suspense fallback={<PageFallback />}><MisMantenimientos /></Suspense>} />
+              <Route path="/mantenimiento/tareas/:id" element={<Suspense fallback={<PageFallback />}><MantTarea /></Suspense>} />
+              <Route path="/mantenimiento/planificaciones" element={<Suspense fallback={<PageFallback />}><MantPlanes /></Suspense>} />
+              <Route path="/mantenimiento/planificaciones/nueva" element={<Suspense fallback={<PageFallback />}><MantPlanForm /></Suspense>} />
+              <Route path="/mantenimiento/planificaciones/:id/editar" element={<Suspense fallback={<PageFallback />}><MantPlanForm /></Suspense>} />
+              <Route path="/mantenimiento/planificaciones/:id" element={<Suspense fallback={<PageFallback />}><MantPlanDetalle /></Suspense>} />
+              <Route path="/mantenimiento/checklists" element={<Suspense fallback={<PageFallback />}><MantChecklists /></Suspense>} />
               <Route path="/formularios/nuevo" element={<Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense>} />
               <Route path="/formularios/custom/:id/editar" element={<Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense>} />
               <Route path="/formularios/custom/:id" element={<Suspense fallback={<PageFallback />}><CustomFormPage /></Suspense>} />

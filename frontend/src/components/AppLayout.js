@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import PushPrompt from '@/components/PushPrompt';
+import { RecorridoProvider } from '@/components/Tour';
 
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -17,6 +18,7 @@ export default function AppLayout() {
   }, [location.pathname]);
 
   return (
+    <RecorridoProvider>
     <div className="min-h-screen bg-background">
       <Sidebar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
       <div className="lg:pl-[296px] transition-[padding] duration-300">
@@ -27,5 +29,6 @@ export default function AppLayout() {
       </div>
       <PushPrompt />
     </div>
+    </RecorridoProvider>
   );
 }

@@ -1,14 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Bell, CheckCheck, UserPlus, UserCheck, CalendarPlus, UserX, Bookmark, Ban, Palmtree, CalendarCheck, CalendarX, Clock, Percent, ClipboardCheck } from 'lucide-react';
+import { Bell, CheckCheck, UserPlus, UserCheck, CalendarPlus, UserX, Bookmark, Ban, Palmtree, CalendarCheck, CalendarX, Clock, Percent, ClipboardCheck, ClipboardList, Wrench, AlertTriangle } from 'lucide-react';
 import api from '@/lib/api';
 import { timeAgoEs } from '@/lib/time';
 import { destinoNotificacion } from '@/lib/notifDestino';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 
-const ICONS = { UserPlus, UserCheck, CalendarPlus, UserX, Bookmark, Ban, Bell, Palmtree, CalendarCheck, CalendarX, Clock, Percent, ClipboardCheck };
+const ICONS = { UserPlus, UserCheck, CalendarPlus, UserX, Bookmark, Ban, Bell, Palmtree, CalendarCheck, CalendarX, Clock, Percent, ClipboardCheck, ClipboardList, Wrench, AlertTriangle };
 
 export default function Notificaciones() {
   const navigate = useNavigate();

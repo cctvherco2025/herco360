@@ -338,3 +338,13 @@ export function canAdminEtiquetas(user) {
 export function canAccessEtiquetas(user) {
   return canFillEtiquetas(user) || canAdminEtiquetas(user);
 }
+
+// Activos — igual que core.can_admin_activos: administran (categorías y todos
+// los activos) admin, Director comercial o el permiso asignable 'activos'.
+// Quién ve el módulo depende además de ser responsable de alguna categoría:
+// eso lo responde GET /activos/acceso.
+export function canAdminActivos(user) {
+  if (!user) return false;
+  if (user.role === 'admin' || (user.position || '').trim() === 'Director comercial') return true;
+  return !!(user.module_access || {}).activos;
+}
