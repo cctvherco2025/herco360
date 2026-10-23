@@ -1,6 +1,19 @@
 import React from 'react';
 import logoImg from '@/assets/herco-logo.png';
 
+// Nombre de la plataforma (lo que ven los usuarios; lo interno sigue como herco360).
+export const APP_NAME = 'HERCO OPS';
+export const APP_FULL_NAME = 'Operations Management System';
+export const APP_TAGLINE = 'Toda tu operación, en un solo lugar';
+
+// Nombre + descripción bajo el logo (barra lateral).
+export const AppWordmark = ({ className = '' }) => (
+  <div className={`leading-tight ${className}`} data-testid="app-wordmark">
+    <p className="font-heading text-[15px] font-bold tracking-wide text-[#1e395e] dark:text-white">{APP_NAME}</p>
+    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{APP_FULL_NAME}</p>
+  </div>
+);
+
 // Official HERCO logo rendered inside a clean white "brand tile"
 // so the dark navy wordmark stays legible in both light and dark themes.
 export const Logo = ({ size = 'md', className = '' }) => {

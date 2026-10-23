@@ -10,10 +10,10 @@ self.addEventListener('push', (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch (e) {
-    data = { title: 'HERCO360', body: event.data ? event.data.text() : '' };
+    data = { title: 'HERCO OPS', body: event.data ? event.data.text() : '' };
   }
 
-  const title = data.title || 'HERCO360';
+  const title = data.title || 'HERCO OPS';
   const options = {
     body: data.body || '',
     icon: data.icon || '/icon-192-maskable.png',       // large colour logo (el "universo")

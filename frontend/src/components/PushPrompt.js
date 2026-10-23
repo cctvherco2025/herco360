@@ -114,7 +114,7 @@ export default function PushPrompt() {
               <span className="h-12 w-12 rounded-full grid place-items-center bg-[rgba(0,165,223,0.14)] mb-1 mx-auto sm:mx-0">
                 <BellRing className="h-6 w-6 text-[#00a5df]" />
               </span>
-              <DialogTitle className="font-heading">Instala HERCO360 para recibir notificaciones</DialogTitle>
+              <DialogTitle className="font-heading">Instala HERCO OPS para recibir notificaciones</DialogTitle>
             </DialogHeader>
             <p className="text-sm text-muted-foreground -mt-1">
               En iPhone las notificaciones solo funcionan con la app instalada en tu pantalla de inicio:
@@ -130,7 +130,7 @@ export default function PushPrompt() {
               </li>
               <li className="flex items-center gap-2">
                 <span className="h-6 w-6 rounded-full bg-muted grid place-items-center text-xs font-bold shrink-0">3</span>
-                Abre HERCO360 desde el ícono y activa las notificaciones.
+                Abre HERCO OPS desde el ícono y activa las notificaciones.
               </li>
             </ol>
             <DialogFooter>

@@ -569,7 +569,7 @@ async def informe_excel(desde: str, hasta: str, sucursal: Optional[str] = None,
             if len(fs) > 1:
                 extras.append(f'+{len(fs) - 1} captura(s)/evidencia')
             if extras:
-                obs = (obs + '\n' if obs else '') + f'({", ".join(extras)} en HERCO360)'
+                obs = (obs + '\n' if obs else '') + f'({", ".join(extras)} en HERCO OPS)'
             ws.append([None, None, e['numero'], RESULTADOS.get(e['resultado'], e['resultado']),
                        e.get('precio_exhibido'), e.get('precio_sistema'), e.get('diferencia'), obs])
             for c in ws[row][2:]:

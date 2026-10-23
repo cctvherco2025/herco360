@@ -374,7 +374,7 @@ export async function generateFlosPdf({ meta, rows, generalComment, generalPhoto
     doc.line(MARGIN, PAGE_H - 34, PAGE_W - MARGIN, PAGE_H - 34);
     doc.setFillColor(...hexToRgb(CYAN)); doc.circle(MARGIN + 3, PAGE_H - 22, 2.4, 'F');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(120, 128, 140);
-    doc.text('HERCO360 · Auditoría FLOS', MARGIN + 11, PAGE_H - 19);
+    doc.text('HERCO OPS · Auditoría FLOS', MARGIN + 11, PAGE_H - 19);
     doc.setFont('helvetica', 'normal');
     doc.text(`Página ${i} de ${total}`, PAGE_W - MARGIN, PAGE_H - 19, { align: 'right' });
   }

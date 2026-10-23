@@ -38,7 +38,7 @@ async def register(data: RegisterInput):
         'created_at': now_iso(),
     }
     await db.users.insert_one(user)
-    await notify_admins('usuario_pendiente', f"{data.name} pidió acceso a HERCO360: apruébalo en Usuarios",
+    await notify_admins('usuario_pendiente', f"{data.name} pidió acceso a HERCO OPS: apruébalo en Usuarios",
                         related_id=user['id'], related_type='user',
                         actor_name=data.name, actor_avatar=user['avatar_url'])
     return {'message': 'Cuenta creada. Un administrador debe aprobarla antes de que puedas entrar.',

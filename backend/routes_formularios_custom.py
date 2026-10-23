@@ -245,7 +245,7 @@ async def promo_template(user=Depends(require_promo_access)):
         ['Promoción', 'Obligatoria. El nombre de cada promoción o producto — cada fila se convierte en una pregunta del formulario.'],
         ['Categoría / Descuento / Vigencia', 'Opcionales. Se muestran como referencia junto a cada pregunta; puedes agregar, quitar o renombrar estas columnas libremente.'],
         [''],
-        ['Nota', 'La estructura de columnas no está fija: al subir tu Excel, HERCO360 detecta las columnas reales y te deja elegir cuál es el nombre de la promoción.'],
+        ['Nota', 'La estructura de columnas no está fija: al subir tu Excel, HERCO OPS detecta las columnas reales y te deja elegir cuál es el nombre de la promoción.'],
         ['Nota', 'Cada promoción se pregunta como "¿La promoción está visible en tienda?" con opciones Sí / No / No aplica, más un campo de notas para observaciones.'],
     ]:
         ws2.append(row)
@@ -257,7 +257,7 @@ async def promo_template(user=Depends(require_promo_access)):
     buf.seek(0)
     return StreamingResponse(
         buf, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        headers={'Content-Disposition': 'attachment; filename="plantilla_promociones_herco360.xlsx"'},
+        headers={'Content-Disposition': 'attachment; filename="plantilla_promociones_herco_ops.xlsx"'},
     )
 
 

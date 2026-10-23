@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { Eye, EyeOff, ArrowRight, Mail, Lock, User, Briefcase, Building } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { Logo } from '@/components/Logo';
+import { Logo, AppWordmark, APP_NAME, APP_FULL_NAME } from '@/components/Logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -39,7 +39,7 @@ export default function Register() {
     setLoading(true);
     try {
       const data = await register(form);
-      if (data?.token) { toast.success('Cuenta creada. ¡Bienvenido a HERCO360!'); navigate('/'); }
+      if (data?.token) { toast.success(`Cuenta creada. ¡Bienvenido a ${APP_NAME}!`); navigate('/'); }
       else {
         // la cuenta queda pendiente hasta que un administrador la apruebe
         toast.success(data?.message || 'Cuenta creada. Un administrador debe aprobarla antes de que puedas entrar.', { duration: 8000 });
@@ -62,18 +62,18 @@ export default function Register() {
             Únete al equipo <span className="text-[#00a5df]">HERCO</span>.
           </motion.h1>
           <p className="mt-5 text-[#5b667a] text-lg">
-            Crea tu cuenta y accede de inmediato a la plataforma corporativa HERCO CCTV.
+            Crea tu cuenta y accede a {APP_NAME}, toda tu operación en un solo lugar.
           </p>
         </div>
-        <p className="text-sm text-[#8a8b8b]">© 2026 HERCO — Plataforma Corporativa HERCO CCTV</p>
+        <p className="text-sm text-[#8a8b8b]">© 2026 HERCO — {APP_NAME} · {APP_FULL_NAME}</p>
       </div>
 
       <div className="flex items-center justify-center p-6 sm:p-10">
         <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }}
           className="w-full max-w-md glass rounded-[24px] border border-white/60 dark:border-white/10 shadow-float p-8">
-          <div className="lg:hidden mb-6 flex justify-center"><Logo size="md" /></div>
+          <div className="lg:hidden mb-6 flex flex-col items-center gap-2.5"><Logo size="md" /><AppWordmark className="text-center" /></div>
           <h2 className="font-heading text-2xl font-semibold text-foreground">Crear cuenta</h2>
-          <p className="text-sm text-muted-foreground mt-1">Registra tus datos para unirte a HERCO CCTV</p>
+          <p className="text-sm text-muted-foreground mt-1">Registra tus datos para unirte a <span className="whitespace-nowrap">{APP_NAME}</span></p>
 
           <form onSubmit={submit} className="mt-7 space-y-4">
             <div className="space-y-1.5">

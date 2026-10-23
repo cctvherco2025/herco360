@@ -162,7 +162,7 @@ function ImportCard({ onImported }) {
 
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" className="rounded-xl" data-testid="inv-download-template"
-          onClick={() => downloadFile('/inventory/template', 'plantilla_articulos_herco360.xlsx')}>
+          onClick={() => downloadFile('/inventory/template', 'plantilla_articulos_herco_ops.xlsx')}>
           <FileDown className="h-4 w-4 mr-1.5" /> Descargar plantilla
         </Button>
         <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={onPick} data-testid="inv-import-file" />
@@ -245,7 +245,7 @@ function ImageImportCard({ onImported }) {
 
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" className="rounded-xl" data-testid="img-download-template"
-          onClick={() => downloadFile('/inventory/images-template', 'plantilla_imagenes_herco360.xlsx')}>
+          onClick={() => downloadFile('/inventory/images-template', 'plantilla_imagenes_herco_ops.xlsx')}>
           <FileDown className="h-4 w-4 mr-1.5" /> Descargar plantilla
         </Button>
         <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={onPick} data-testid="img-import-file" />

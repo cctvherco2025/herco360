@@ -150,7 +150,7 @@ export async function generateCustomFormPdf({ formTitulo, meta, rows, hasScoring
   doc.text(titleLines[0], titleX, 46);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5);
   doc.setTextColor(210, 224, 240);
-  doc.text('HERCO360 · Formulario personalizado', titleX, 63);
+  doc.text('HERCO OPS · Formulario personalizado', titleX, 63);
   doc.setFontSize(8.5); doc.setTextColor(180, 200, 224);
   doc.text(`Generado el ${new Date().toLocaleString('es-HN')}`, titleX, 78);
   y = 122;
@@ -275,7 +275,7 @@ export async function generateCustomFormPdf({ formTitulo, meta, rows, hasScoring
     doc.line(MARGIN, PAGE_H - 34, PAGE_W - MARGIN, PAGE_H - 34);
     doc.setFillColor(...hexToRgb(CYAN)); doc.circle(MARGIN + 3, PAGE_H - 22, 2.4, 'F');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(120, 128, 140);
-    doc.text('HERCO360 · Formulario', MARGIN + 11, PAGE_H - 19);
+    doc.text('HERCO OPS · Formulario', MARGIN + 11, PAGE_H - 19);
     doc.setFont('helvetica', 'normal');
     doc.text(`Página ${i} de ${total}`, PAGE_W - MARGIN, PAGE_H - 19, { align: 'right' });
   }

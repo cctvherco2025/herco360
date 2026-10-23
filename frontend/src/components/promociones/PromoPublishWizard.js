@@ -142,7 +142,7 @@ async function downloadTemplate() {
     const m = disp.match(/filename="?([^"]+)"?/);
     const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
     const a = document.createElement('a');
-    a.href = blobUrl; a.download = m ? m[1] : 'plantilla_promociones_herco360.xlsx';
+    a.href = blobUrl; a.download = m ? m[1] : 'plantilla_promociones_herco_ops.xlsx';
     document.body.appendChild(a); a.click(); a.remove();
     window.URL.revokeObjectURL(blobUrl);
   } catch (e) { toast.error('No se pudo descargar la plantilla'); }

@@ -327,7 +327,7 @@ async def export_stock(format: str = 'xlsx', sucursal: str = None, user=Depends(
     if format == 'pdf':
         from reportlab.lib.units import mm
         data = [[r.get('article', ''), r.get('sucursal', ''), r.get('quantity', 0)] for r in rows]
-        buf = _build_pdf('HERCO360 - Reporte de Inventario', ['Artículo', 'Sucursal', 'Cantidad'],
+        buf = _build_pdf('HERCO OPS - Reporte de Inventario', ['Artículo', 'Sucursal', 'Cantidad'],
                          data, [200 * mm, 30 * mm, 30 * mm])
         return _stream(buf, 'application/pdf', f'inventario{suffix}_{_ts()}.pdf')
     buf = _build_stock_xlsx(rows)
@@ -345,7 +345,7 @@ async def export_movements(format: str = 'xlsx', sucursal: str = None, user=Depe
                  r.get('article', ''), r.get('sucursal', ''),
                  (-r.get('quantity', 0) if r.get('type') == 'salida' else r.get('quantity', 0)),
                  r.get('description', ''), r.get('solicitante', '')] for r in rows]
-        buf = _build_pdf('HERCO360 - Reporte de Movimientos',
+        buf = _build_pdf('HERCO OPS - Reporte de Movimientos',
                          ['Fecha', 'Tipo', 'Artículo', 'Sucursal', 'Cant.', 'Descripción', 'Solicitante'],
                          data, [28 * mm, 18 * mm, 90 * mm, 20 * mm, 16 * mm, 60 * mm, 35 * mm])
         return _stream(buf, 'application/pdf', f'movimientos_{_ts()}.pdf')
@@ -386,7 +386,7 @@ async def import_template(user=Depends(require_inventory_access)):
     ws2.column_dimensions['B'].width = 80
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     return _stream(buf, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                   'plantilla_articulos_herco360.xlsx')
+                   'plantilla_articulos_herco_ops.xlsx')
 
 
 @router.post('/import')
@@ -583,7 +583,7 @@ async def images_template(user=Depends(require_inventory_access)):
     ws2.column_dimensions['A'].width = 80
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     return _stream(buf, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                   'plantilla_imagenes_herco360.xlsx')
+                   'plantilla_imagenes_herco_ops.xlsx')
 
 
 @router.post('/import-images')

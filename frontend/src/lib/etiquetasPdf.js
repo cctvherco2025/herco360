@@ -254,7 +254,7 @@ export async function generateEtiquetasPdf({ auditorias, cfg = DEFAULT_ETQ_CONFI
     doc.line(MARGIN, PAGE_H - 32, PAGE_W - MARGIN, PAGE_H - 32);
     doc.setFillColor(...hexToRgb(CYAN)); doc.circle(MARGIN + 3, PAGE_H - 20, 2.4, 'F');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(120, 128, 140);
-    doc.text('HERCO360 · Auditoría de Etiquetas de Precios', MARGIN + 11, PAGE_H - 17);
+    doc.text('HERCO OPS · Auditoría de Etiquetas de Precios', MARGIN + 11, PAGE_H - 17);
     doc.setFont('helvetica', 'normal');
     doc.text(`Página ${i} de ${total}`, PAGE_W - MARGIN, PAGE_H - 17, { align: 'right' });
   }

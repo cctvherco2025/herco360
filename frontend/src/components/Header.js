@@ -109,7 +109,7 @@ export default function Header({ onMenuClick }) {
                   ))}
                 </div>
               )}
-              {!q && <p className="text-sm text-muted-foreground text-center py-6">Escribe para buscar en HERCO CCTV</p>}
+              {!q && <p className="text-sm text-muted-foreground text-center py-6">Escribe para buscar en HERCO OPS</p>}
             </div>
           </PopoverContent>
         </Popover>
@@ -119,7 +119,7 @@ export default function Header({ onMenuClick }) {
         {/* Notifications */}
         <Popover open={notifOpen} onOpenChange={setNotifOpen}>
           <PopoverTrigger asChild>
-            <button data-testid="topbar-notifications-button" className="relative p-2.5 rounded-xl hover:bg-muted text-muted-foreground transition-colors">
+            <button data-testid="topbar-notifications-button" data-tour="campana" className="relative p-2.5 rounded-xl hover:bg-muted text-muted-foreground transition-colors">
               <Bell className="h-5 w-5" />
               {unread > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[#ec9032] text-white text-[10px] font-bold grid place-items-center">{unread}</span>

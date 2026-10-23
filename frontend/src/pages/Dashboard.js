@@ -216,7 +216,7 @@ export default function Dashboard() {
         <h1 className="font-heading text-3xl sm:text-4xl font-semibold text-foreground">
           {greetingEs()}, {user?.name?.split(' ')[0]} <span className="inline-block">👋</span>
         </h1>
-        <p className="text-muted-foreground mt-1">{capitalize(fullDateEs())}. Bienvenido a HERCO CCTV.</p>
+        <p className="text-muted-foreground mt-1">{capitalize(fullDateEs())}. Bienvenido a HERCO OPS.</p>
       </motion.div>
 
       {/* KPI cards */}
