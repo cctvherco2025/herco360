@@ -14,7 +14,7 @@ import {
 } from '@/lib/constants';
 import { Logo, AppWordmark } from '@/components/Logo';
 import { NovedadPunto } from '@/components/Novedad';
-import { useVistos, NOVEDADES } from '@/lib/novedades';
+import { useVistos, NOVEDADES, abrirNovedad } from '@/lib/novedades';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 const baseNavItems = [
@@ -70,7 +70,15 @@ function NavGroup({ item, onNavigate }) {
   const [open, setOpen] = useState(childActive);
   const pendientes = item.children.reduce((n, c) => n + (c.count || 0), 0);
   const { vistos, marcar } = useVistos();
-  const hayNuevo = item.children.some((c) => c.nuevo && NOVEDADES[c.nuevo] && !vistos.includes(c.nuevo));
+  const primeraNueva = item.children.find((c) => c.nuevo && NOVEDADES[c.nuevo] && !vistos.includes(c.nuevo));
+  const hayNuevo = !!primeraNueva;
+  // el punto del grupo plegado: despliega el grupo y abre la primera novedad
+  // cuando el submenú ya terminó de abrirse (así el globo apunta a su ítem)
+  const verNovedad = (e) => {
+    e.stopPropagation();
+    setOpen(true);
+    setTimeout(() => abrirNovedad(primeraNueva.nuevo), 320);
+  };
 
   useEffect(() => { if (childActive) setOpen(true); }, [childActive]);
 
@@ -88,7 +96,8 @@ function NavGroup({ item, onNavigate }) {
         <item.icon className="h-[18px] w-[18px] shrink-0" />
         <span className="flex-1 text-left">{item.label}</span>
         {hayNuevo && !open && (
-          <span className="relative inline-flex h-2.5 w-2.5" aria-label="Tiene novedades">
+          <span role="button" tabIndex={0} onClick={verNovedad} onKeyDown={(e) => { if (e.key === 'Enter') verNovedad(e); }}
+            className="relative inline-flex h-2.5 w-2.5 cursor-pointer" aria-label="Ver novedades" data-testid={`${item.testid}-novedad`}>
             <span className="absolute inset-0 rounded-full bg-[#00a5df] opacity-60 animate-ping" />
             <span className="relative h-2.5 w-2.5 rounded-full bg-[#00a5df]" />
           </span>

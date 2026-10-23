@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 
@@ -74,4 +74,17 @@ export function useNovedad(clave) {
   const visible = !!clave && listo && !!NOVEDADES[clave] && !vistos.includes(clave) && hoy() <= HASTA;
   const vista = useCallback(() => { if (visible) marcar(clave); }, [visible, marcar, clave]);
   return { visible, vista, info: NOVEDADES[clave] };
+}
+
+// Una sola novedad abierta a la vez en toda la app (nunca dos globos encima).
+let abierta = null;
+const suscritos = new Set();
+export function abrirNovedad(clave) {
+  abierta = clave;
+  suscritos.forEach((f) => f(abierta));
+}
+export function useNovedadAbierta() {
+  const [valor, setValor] = useState(abierta);
+  useEffect(() => { suscritos.add(setValor); return () => { suscritos.delete(setValor); }; }, []);
+  return valor;
 }

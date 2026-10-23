@@ -46,7 +46,7 @@ function Proximos({ planId, reloadKey, onCambio }) {
     : api.post(`/mantenimiento/planes/${planId}/reprogramar`, { ...body, ciclo: sel.ciclo, definicion_id: sel.definicion_id }))
     .then(() => { load(); onCambio(); });
   return (
-    <Card title={<span className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-[#00a5df]" /> Próximos mantenimientos{data.puede_gestionar && <NovedadPunto clave="cambiar-fecha" />}</span>}>
+    <Card title={<span data-novedad-ancla="" className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-[#00a5df]" /> Próximos mantenimientos{data.puede_gestionar && <NovedadPunto clave="cambiar-fecha" />}</span>}>
       <div className="rounded-xl border divide-y">
         {lista.map((x) => (
           <div key={`${x.ciclo}-${x.definicion_id}`} className="flex items-center gap-3 px-3 py-2.5" data-testid="plan-proximo">

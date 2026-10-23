@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useLayoutEffect, useCallback, createContext, useContext } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, createContext, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { X, HelpCircle, Route as RouteIcon, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import useEsMovil from '@/lib/useEsMovil';
+import Coachmark from '@/components/Coachmark';
 import { useVistos } from '@/lib/novedades';
 
 /* Recorridos guiados: oscurecen la pantalla, resaltan una parte real (un
@@ -25,22 +25,42 @@ function buscar(target) {
 }
 
 const PAD = 6;
-const ANCHO = 340;
+// Parte del elemento que se resalta: si es más alto de lo que cabe junto al
+// globo (una lista, un formulario), solo la parte que deja lugar al globo
+// debajo (o arriba si abajo no hay lugar), para que el globo no la tape.
+function altoGlobo() {
+  const g = document.querySelector('[data-testid="tour-globo"]');
+  return (g ? g.offsetHeight : 340) + 12 + 16; // globo + separación + margen
+}
+function recorte(el) {
+  const r = el.getBoundingClientRect();
+  const H = window.innerHeight;
+  const necesita = altoGlobo();
+  const top = Math.max(r.top, 0);
+  const abajo = H - top - necesita; // alto que queda para resaltar si el globo va debajo
+  let alto;
+  if (r.bottom + necesita <= H || abajo >= 120) alto = Math.min(r.bottom, top + Math.max(abajo, 0)) - r.top;
+  else alto = Math.min(r.bottom, H - 16) - r.top; // el globo va arriba
+  if (r.top + alto >= r.bottom - 0.5) return r;
+  return { top: r.top, left: r.left, right: r.right, width: r.width, height: alto, bottom: r.top + alto, x: r.left, y: r.top };
+}
+const esAlto = (el) => el.getBoundingClientRect().height > window.innerHeight - 84 - altoGlobo();
 const ESPERA_MAX = 4000; // ms que se espera a que aparezca el elemento de una pantalla nueva
 
 function Globo({ pasos, onCerrar }) {
-  const esMovil = useEsMovil();
   const navigate = useNavigate();
   const location = useLocation();
   const [i, setI] = useState(0);
   const [rect, setRect] = useState(null);
+  const [ancla, setAncla] = useState(null); // elemento señalado: el globo se ancla a él
   const [buscando, setBuscando] = useState(false);
   const paso = pasos[i];
 
   const medir = useCallback(() => {
     const el = buscar(paso?.target);
+    setAncla(el);
     if (!el) { setRect(null); return false; }
-    const r = el.getBoundingClientRect();
+    const r = recorte(el);
     setRect({ top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 });
     return true;
   }, [paso]);
@@ -56,6 +76,7 @@ function Globo({ pasos, onCerrar }) {
     let vivo = true;
     const inicio = Date.now();
     setRect(null);
+    setAncla(null);
     setBuscando(!!paso.target);
     const intento = () => {
       if (!vivo) return;
@@ -63,9 +84,14 @@ function Globo({ pasos, onCerrar }) {
       const el = buscar(paso.target);
       if (el) {
         const r = el.getBoundingClientRect();
-        if (r.top < 80 || r.bottom > window.innerHeight - 200) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        if (esAlto(el)) {
+          // elemento alto: su parte de arriba bajo el encabezado y el globo debajo
+          el.style.scrollMarginTop = '84px';
+          if (Math.abs(r.top - 84) > 8) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        } else if (r.top < 80 || r.bottom > window.innerHeight - 200) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
         medir();
         setTimeout(() => { if (vivo) { medir(); setBuscando(false); } }, 350);
+        setTimeout(() => { if (vivo) medir(); }, 750); // con el globo ya dibujado (su alto define el recorte)
       } else if (paso.target && Date.now() - inicio < ESPERA_MAX) {
         setTimeout(intento, 200);
       } else {
@@ -88,22 +114,24 @@ function Globo({ pasos, onCerrar }) {
     return () => { window.removeEventListener('resize', medir); window.removeEventListener('scroll', medir, true); window.removeEventListener('keydown', tecla); };
   }, [medir, onCerrar, pasos.length]);
 
+  // ancla del globo: la parte resaltada del elemento
+  const anclaGlobo = useMemo(() => (ancla ? { getBoundingClientRect: () => recorte(ancla) } : null), [ancla]);
   if (!paso) return null;
   const ultimo = i === pasos.length - 1;
-
-  // Posición del globo: debajo del elemento si cabe, si no arriba; en celular, abajo fijo.
-  let estilo;
-  if (esMovil) {
-    estilo = { left: 16, right: 16, bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' };
-  } else if (!rect) {
-    estilo = { left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: ANCHO };
-  } else {
-    const abajo = window.innerHeight - (rect.top + rect.height);
-    const left = Math.min(Math.max(16, rect.left), window.innerWidth - ANCHO - 16);
-    estilo = abajo > 230
-      ? { top: rect.top + rect.height + 12, left, width: ANCHO }
-      : { top: Math.max(16, rect.top - 12), left, width: ANCHO, transform: 'translateY(-100%)' };
-  }
+  // Con elemento: <Coachmark> anclado a él (flecha, flip, shift con 16 px,
+  // nunca encima del elemento). Sin elemento: tarjeta al centro.
+  // se llama como función (no como componente) para no remontarlo en cada cuadro
+  const ContenidoGlobo = ({ children }) => (rect && anclaGlobo ? (
+    <Coachmark open anchor={anclaGlobo} ancho={340} cerrarAlTocarFuera={false} llevarAVista={false} onOpenChange={(v) => { if (!v) onCerrar(); }}
+      className="rounded-[18px] p-5 shadow-2xl" testid="tour-globo">
+      {children}
+    </Coachmark>
+  ) : (
+    <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[18px] border bg-popover text-popover-foreground shadow-2xl p-5"
+      style={{ width: 'min(360px, calc(100vw - 32px))' }} data-testid="tour-globo">
+      {children}
+    </div>
+  ));
 
   return createPortal(
     <div className="fixed inset-0 z-[90]" role="dialog" aria-modal="true" aria-label={paso.titulo} data-testid="tour">
@@ -115,8 +143,7 @@ function Globo({ pasos, onCerrar }) {
         <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-popover p-3 shadow-xl">
           <Loader2 className="h-5 w-5 animate-spin text-[#00a5df]" />
         </div>
-      ) : (
-        <div className="fixed rounded-[18px] border bg-popover text-popover-foreground shadow-2xl p-5" style={estilo}>
+      ) : ContenidoGlobo({ children: (<>
           <div className="flex items-start justify-between gap-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-[#00a5df]">
               {paso.etapa ? `${paso.etapa} · ` : ''}Paso {i + 1} de {pasos.length}
@@ -140,8 +167,7 @@ function Globo({ pasos, onCerrar }) {
           {!ultimo && (
             <button type="button" onClick={onCerrar} className="mt-2 text-xs text-muted-foreground hover:text-foreground">Saltar recorrido</button>
           )}
-        </div>
-      )}
+        </>) })}
     </div>,
     document.body,
   );
