@@ -1,7 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, ChevronRight, Plus, ListChecks, Check } from 'lucide-react';
+import { X, ChevronRight, Plus, ListChecks, Check, Wrench } from 'lucide-react';
 import useEsMovil from '@/lib/useEsMovil';
 import { catStyle, ACTIVITY_COLORS } from '@/lib/constants';
 import { ymd, DIAS, DIAS_CORTO, MESES_CORTO, fmtHora, fmtRangoHoras } from '@/lib/time';
@@ -104,7 +104,7 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
           className="block text-[11px] font-semibold leading-[14px] break-words whitespace-normal"
           style={{ color: solid, ...clampStyle(titleLines) }}
         >
-          {seRepite(ev) && <IconoRepite />}{ev.title}
+          {ev.mant && <IconoMant />}{seRepite(ev) && <IconoRepite />}{ev.title}
         </span>
         {variosDias && (
           <span className="block text-[9px] font-medium leading-[14px] truncate opacity-80" style={{ color: solid }}>
@@ -179,6 +179,12 @@ const CHIP_TAREA_H = 20;
 const PRIO_COLOR = { alta: '#dc2626', media: '#ec9032', baja: '#64748b' };
 export const tareasDeDia = (tareas, ds) => (tareas || []).filter((t) => t.fecha_limite === ds);
 
+// Mantenimientos de activos: se pintan como actividades (ev.mant) con una
+// llave inglesa delante del título; no se arrastran (su fecha se cambia en la
+// planificación).
+export const MANT_COLOR = '#7c3aed';
+const IconoMant = () => <Wrench className="inline h-3 w-3 -mt-0.5 mr-0.5" aria-label="Mantenimiento" />;
+
 function ChipTarea({ t, onClick }) {
   // terminada (cerrada): gris con ✓, para distinguirla de lo pendiente.
   const terminada = t.estado === 'cerrada';
@@ -245,6 +251,7 @@ const inicialesDe = (n) => (n || '?').trim().split(/\s+/).slice(0, 2).map((x) =>
 
 // Participantes de una fila: hasta 3 avatares + "+N"; si es uno, su nombre.
 function Participantes({ ev }) {
+  if (ev.mant) return <span className="truncate text-xs text-muted-foreground">Mantenimiento · {ev.datos?.rol === 'supervisor' ? 'lo supervisas' : 'te toca'}</span>;
   const lista = (ev.participants || []).filter((p) => p.name);
   if (!lista.length) return <span className="text-xs text-muted-foreground">Sin participantes</span>;
   if (lista.length === 1) return <span className="truncate text-xs text-muted-foreground">{lista[0].name}</span>;
@@ -804,13 +811,13 @@ export function MonthView({ anchor, activities, onEventClick, onSlotClick, onEve
                   const { solid, tint } = evStyle(ev, isDark);
                   return (
                     <button key={ev.id}
-                      draggable={!!onEventMove}
+                      draggable={!!onEventMove && !ev.mant}
                       onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; setDragEv(ev); }}
                       onDragEnd={() => setDragEv(null)}
                       onClick={(e) => { e.stopPropagation(); onEventClick?.(ev); }}
                       className={`w-full flex items-center gap-1 rounded-md px-1.5 py-0.5 text-left hover:opacity-90 ${onEventMove ? 'cursor-grab active:cursor-grabbing' : ''}`} style={{ background: tint, border: ev.pending ? `1px dashed ${solid}` : 'none' }}>
                       <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: solid }} />
-                      <span className="text-[10px] font-medium truncate" style={{ color: solid }}>{fmtHora(ev.start_time)} {seRepite(ev) && <IconoRepite />}{ev.title}</span>
+                      <span className="text-[10px] font-medium truncate" style={{ color: solid }}>{fmtHora(ev.start_time)} {ev.mant && <IconoMant />}{seRepite(ev) && <IconoRepite />}{ev.title}</span>
                     </button>
                   );
                 })}

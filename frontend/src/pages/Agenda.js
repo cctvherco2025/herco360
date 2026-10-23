@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Plus, ChevronLeft, ChevronRight, CalendarDays, Check, X as XIcon, Eye, EyeOff, Users as UsersIcon, Palmtree } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CalendarDays, Check, X as XIcon, Eye, EyeOff, Users as UsersIcon, Palmtree, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -11,14 +11,58 @@ import ActivityModal from '@/components/ActivityModal';
 import { confirmar } from '@/components/ConfirmDialog';
 import { opcionesAlcance } from '@/lib/alcance';
 import { opcionesRepeticion } from '@/lib/recurrence';
-import { WeekView, DayView, MonthView, startOfWeek, addDays, esVariosDias, rangoCortoCal } from '@/components/CalendarViews';
+import { WeekView, DayView, MonthView, startOfWeek, addDays, esVariosDias, rangoCortoCal, MANT_COLOR } from '@/components/CalendarViews';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 // Colores fijos para los calendarios del equipo (fuera del componente: es una
 // referencia estable y no entra como dependencia de los hooks).
 const TEAM_COLORS = ['#0d9488', '#712146', '#ec9032', '#64748b', '#16a34a', '#dc2626', '#3cbef6', '#1e395e'];
+
+// Resumen de un mantenimiento al tocarlo en el calendario (como una actividad).
+function MantResumen({ m, ahora, onClose, onIr }) {
+  if (!m) return null;
+  const vencido = m.estado === 'pendiente' && m.vence_en <= ahora;
+  const estado = m.proyectada ? { t: 'Programado', c: 'bg-muted text-muted-foreground' }
+    : m.estado === 'completada' ? { t: m.tardia ? 'Hecho tarde' : 'Hecho', c: 'bg-[rgba(22,163,74,0.14)] text-[#16a34a]' }
+      : m.estado === 'incompleta' ? { t: 'Incompleto', c: 'bg-[rgba(220,38,38,0.1)] text-[#dc2626]' }
+        : vencido ? { t: 'Vencido', c: 'bg-[rgba(220,38,38,0.1)] text-[#dc2626]' }
+          : m.estado === 'pendiente' ? { t: 'Por hacer', c: 'bg-[rgba(124,58,237,0.12)] text-[#7c3aed]' }
+            : { t: 'Programado', c: 'bg-muted text-muted-foreground' };
+  const fila = (k, v) => <div className="flex gap-3 text-sm"><span className="w-[92px] shrink-0 text-muted-foreground">{k}</span><span className="min-w-0 break-words">{v}</span></div>;
+  return (
+    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="w-[min(440px,100%)] max-w-none rounded-[22px]" data-testid="agenda-mant-resumen">
+        <DialogHeader className="text-left">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold text-white" style={{ background: MANT_COLOR }}>
+              <Wrench className="h-3 w-3" /> Mantenimiento
+            </span>
+            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${estado.c}`}>{estado.t}</span>
+          </div>
+          <DialogTitle className="font-heading text-xl pt-1">{m.checklist}</DialogTitle>
+          <DialogDescription>{m.activo_codigo} · {m.activo_nombre} · {m.sucursal}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          {fila('Cuándo', `${capitalize(fullDateEs(m.fecha))} · ${fmtHora(m.hora)}`)}
+          {!m.proyectada && m.estado !== 'completada' && fila('Vence', `${capitalize(fullDateEs(m.vence_en.slice(0, 10)))} · ${fmtHora(m.vence_en.slice(11, 16))}`)}
+          {fila('Tu papel', m.rol === 'supervisor' ? 'Lo supervisas' : 'Te toca hacerlo')}
+          {fila('Planificación', m.plan_numero)}
+          {m.proyectada && <p className="rounded-xl bg-muted/60 px-3 py-2 text-xs text-muted-foreground">Es de un ciclo que todavía no empieza: la tarea se crea sola al empezar su ciclo. Su fecha se puede cambiar desde la planificación.</p>}
+        </div>
+        <DialogFooter className="gap-2 sm:gap-2 flex-row justify-end">
+          <Button variant="outline" className="rounded-xl" onClick={onClose}>Cerrar</Button>
+          <Button className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" onClick={() => onIr(m)} data-testid="agenda-mant-ir">
+            {m.tarea_id ? (m.rol === 'responsable' && ['pendiente', 'programada'].includes(m.estado) ? 'Ir a llenarlo' : 'Ver el mantenimiento') : 'Ver la planificación'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default function Agenda() {
   const { user } = useAuth();
@@ -34,6 +78,10 @@ export default function Agenda() {
   const [visible, setVisible] = useState({});
   const [teamEvents, setTeamEvents] = useState({});
   const [tareas, setTareas] = useState([]); // tareas con fecha límite (todo el día) en el rango
+  // mantenimientos de activos (los que hace o supervisa), con un interruptor para verlos u ocultarlos
+  const [mants, setMants] = useState({ ahora: '', mantenimientos: [] });
+  const [verMant, setVerMant] = useState(() => { try { return localStorage.getItem('herco_agenda_mant') !== '0'; } catch (e) { return true; } });
+  const toggleMant = () => setVerMant((v) => { try { localStorage.setItem('herco_agenda_mant', v ? '0' : '1'); } catch (e) { /* sin almacenamiento */ } return !v; });
   const navTareas = useNavigate();
 
   const colorFor = useCallback((id) => {
@@ -49,6 +97,7 @@ export default function Agenda() {
     const e = ymd(addDays(startOfWeek(anchor), 49));
     try { const { data } = await api.get(`/activities?start=${s}&end=${e}`); setActivities(data); } catch (err) {}
     try { const { data } = await api.get(`/tareas/agenda?start=${s}&end=${e}`); setTareas(data); } catch (err) { setTareas([]); }
+    try { const { data } = await api.get(`/mantenimiento/agenda?start=${s}&end=${e}`); setMants(data); } catch (err) { setMants({ ahora: '', mantenimientos: [] }); }
   }, [anchor]);
 
   const fetchMember = useCallback(async (id) => {
@@ -86,7 +135,25 @@ export default function Agenda() {
     ...activities,
     ...team.filter((m) => visible[m.id]).flatMap((m) => teamEvents[m.id] || []),
   ];
-  const openEvent = (ev) => { setEditing(ev); setModalOpen(true); };
+  // Mantenimientos como actividades de 1 hora a su hora (los cruces se ven
+  // igual que entre actividades). Fuera del horario del calendario (7:00 a
+  // 20:00) se dibujan en su borde; la hora real va en el título y el resumen.
+  const comoActividad = (m) => {
+    const vencido = m.estado === 'pendiente' && m.vence_en <= mants.ahora;
+    const [h, mi] = (m.hora || '08:00').split(':').map(Number);
+    const ini = Math.min(Math.max(h * 60 + mi, 7 * 60), 19 * 60);
+    const hhmm = (x) => `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`;
+    return {
+      id: `mant-${m.id}`, mant: true, foreign: true, datos: m, pending: m.proyectada, date: m.fecha,
+      start_time: hhmm(ini), end_time: hhmm(ini + 60),
+      title: `${m.activo_codigo} · ${m.checklist}`,
+      color: m.estado === 'incompleta' || vencido ? '#dc2626' : m.estado === 'completada' ? '#94a3b8' : MANT_COLOR,
+    };
+  };
+  const enCalendario = [...filtered, ...(verMant ? mants.mantenimientos.map(comoActividad) : [])];
+  const proxMant = mants.mantenimientos.filter((m) => m.estado !== 'completada' && m.estado !== 'incompleta' && m.fecha >= ymd(new Date())).slice(0, 5);
+  const [mantSel, setMantSel] = useState(null); // mantenimiento del modal de resumen
+  const openEvent = (ev) => { if (ev.mant) { setMantSel(ev.datos); return; } setEditing(ev); setModalOpen(true); };
   const openNew = (dateStr, time) => {
     setEditing(null);
     setPendingDate(typeof dateStr === 'string' ? dateStr : ymd(anchor));
@@ -98,6 +165,7 @@ export default function Agenda() {
   const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
   const minToTime = (mins) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
   const moveEvent = async (ev, newDate, newStart) => {
+    if (ev.mant) { toast.message('La fecha de un mantenimiento se cambia en su planificación'); return; }
     if (ev.created_by !== user?.id && user?.role !== 'admin') {
       toast.error('Solo el creador puede mover esta actividad'); return;
     }
@@ -211,9 +279,9 @@ export default function Agenda() {
             </Tabs>
           </div>
           <div className="overflow-hidden">
-            {view === 'Semana' && <WeekView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} onNuevoEnDia={(ds) => openNew(ds)} tareas={tareas} onTareaClick={(t) => navTareas(`/tareas/${t.id}`)} />}
-            {view === 'Día' && <DayView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} onNuevoEnDia={(ds) => openNew(ds)} tareas={tareas} onTareaClick={(t) => navTareas(`/tareas/${t.id}`)} />}
-            {view === 'Mes' && <MonthView anchor={anchor} activities={filtered} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onEventMove={moveEvent} tareas={tareas} onTareaClick={(t) => navTareas(`/tareas/${t.id}`)} />}
+            {view === 'Semana' && <WeekView anchor={anchor} activities={enCalendario} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} onNuevoEnDia={(ds) => openNew(ds)} tareas={tareas} onTareaClick={(t) => navTareas(`/tareas/${t.id}`)} />}
+            {view === 'Día' && <DayView anchor={anchor} activities={enCalendario} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} onNuevoEnDia={(ds) => openNew(ds)} tareas={tareas} onTareaClick={(t) => navTareas(`/tareas/${t.id}`)} />}
+            {view === 'Mes' && <MonthView anchor={anchor} activities={enCalendario} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onEventMove={moveEvent} tareas={tareas} onTareaClick={(t) => navTareas(`/tareas/${t.id}`)} />}
           </div>
         </motion.div>
 
@@ -244,6 +312,33 @@ export default function Agenda() {
                     </button>
                   );
                 })}
+              </div>
+            </motion.div>
+          )}
+
+          {mants.mantenimientos.length > 0 && (
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}
+              className="rounded-[18px] bg-card border shadow-card p-5" data-testid="agenda-mant-panel">
+              <div className="flex items-center gap-2 mb-1">
+                <Wrench className="h-4 w-4" style={{ color: MANT_COLOR }} />
+                <h3 className="font-heading font-semibold flex-1">Mantenimientos</h3>
+                <Switch checked={verMant} onCheckedChange={toggleMant} aria-label="Mostrar mantenimientos en el calendario" data-testid="agenda-mant-toggle" />
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">
+                En el calendario van a su hora, en violeta con <Wrench className="inline h-3 w-3" />. Borde punteado: programado de un ciclo que todavía no empieza.
+              </p>
+              <div className="space-y-2">
+                {!proxMant.length && <p className="text-sm text-muted-foreground text-center py-2">Sin mantenimientos próximos en este rango</p>}
+                {proxMant.map((m) => (
+                  <button key={m.id} type="button" onClick={() => setMantSel(m)}
+                    className="w-full text-left rounded-xl border p-3 hover:shadow-card transition-shadow"
+                    style={{ borderLeft: `3px ${m.proyectada ? 'dashed' : 'solid'} ${m.estado === 'pendiente' && m.vence_en <= mants.ahora ? '#dc2626' : MANT_COLOR}` }}>
+                    <span className="block text-sm font-medium truncate">{m.activo_codigo} · {m.checklist}</span>
+                    <span className="block text-xs text-muted-foreground mt-0.5">
+                      {capitalize(fullDateEs(m.fecha))} · {fmtHora(m.hora)}{m.rol === 'supervisor' ? ' · lo supervisas' : ''}
+                    </span>
+                  </button>
+                ))}
               </div>
             </motion.div>
           )}
@@ -279,6 +374,8 @@ export default function Agenda() {
         </div>
       </div>
 
+      <MantResumen m={mantSel} ahora={mants.ahora} onClose={() => setMantSel(null)}
+        onIr={(m) => { setMantSel(null); navTareas(m.tarea_id ? `/mantenimiento/tareas/${m.tarea_id}` : `/mantenimiento/planificaciones/${m.plan_id}`); }} />
       <ActivityModal open={modalOpen} onOpenChange={setModalOpen} activity={editing} defaultDate={pendingDate} defaultTime={pendingTime} onSaved={load} />
     </div>
   );
