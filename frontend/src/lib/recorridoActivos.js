@@ -52,7 +52,7 @@ export function pasosRecorrido({ verActivos, planificar, misTareas }) {
   if (planificar) {
     pasos.push(
       { etapa: '5. Seguimiento', ruta: '/mantenimiento/planificaciones', target: 'planes-lista', titulo: 'Seguimiento',
-        texto: 'Aquí ves el avance de cada planificación. Al abrirla puedes cambiar la fecha de un mantenimiento, reasignarlo, pausar la planificación y ver el historial. En "Cumplimiento" ves el % por periodo y por responsable.' },
+        texto: 'Aquí ves el avance de cada planificación. Al abrirla puedes cambiar la fecha de un mantenimiento, reasignarlo, pausar la planificación y ver el historial. En "Indicadores" y "Reportes" ves el cumplimiento y las fallas del periodo, y los descargas en Excel o PDF.' },
     );
   }
   pasos.push({

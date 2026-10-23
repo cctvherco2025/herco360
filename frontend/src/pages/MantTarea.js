@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Camera, X, Loader2, CheckCircle2, AlertTriangle, MinusCircle, ChevronLeft, ChevronRight, Info, UserRoundCog, Ban, CalendarClock,
-  Square, CheckSquare,
+  Square, CheckSquare, FileDown,
 } from 'lucide-react';
 import api from '@/lib/api';
 import useEsMovil from '@/lib/useEsMovil';
@@ -20,6 +20,7 @@ import { EstadoTarea, fechaHora, MantFoto, Buscador, modoFotos, esFalla, ANTES, 
 import CambiarFecha from '@/components/mantenimiento/CambiarFecha';
 import { ConNovedad } from '@/components/Novedad';
 import { fechaCorta } from '@/components/CalendarioFecha';
+import { generateMantTareaPdf } from '@/lib/mantenimientoPdf';
 
 const ESTADOS = [
   { v: 'bien', label: 'Bien', icon: CheckCircle2, on: 'bg-[#16a34a] text-white border-transparent' },
@@ -245,6 +246,20 @@ function Respuestas({ t }) {
   );
 }
 
+function BotonPdf({ t, personas }) {
+  const [cargando, setCargando] = useState(false);
+  const bajar = async () => {
+    setCargando(true);
+    try { await generateMantTareaPdf(t, personas); } catch (e) { toast.error('No se pudo generar el PDF'); } finally { setCargando(false); }
+  };
+  return (
+    <button type="button" onClick={bajar} disabled={cargando} data-testid="mant-pdf"
+      className="ml-auto inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold text-[#1e395e] dark:text-[#3cbef6] hover:bg-muted disabled:opacity-60">
+      {cargando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />} PDF
+    </button>
+  );
+}
+
 function FotoActivo({ tareaId }) {
   const [src, setSrc] = useState(null);
   const [zoom, setZoom] = useState(false);
@@ -455,6 +470,7 @@ export default function MantTarea() {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-mono text-[11px] font-semibold text-muted-foreground">{t.numero}</span>
           <EstadoTarea tarea={t} ahora={data.ahora} />
+          {t.estado === 'completada' && <BotonPdf t={t} personas={data.personas} />}
         </div>
         <h1 className="font-heading text-lg sm:text-2xl font-semibold mt-0.5 break-words">{t.checklist.nombre}</h1>
         <p className="text-sm text-muted-foreground truncate">{t.activo_codigo} · {t.activo_nombre} · {t.sucursal}{t.ubicacion ? ` · ${t.ubicacion}` : ''}</p>

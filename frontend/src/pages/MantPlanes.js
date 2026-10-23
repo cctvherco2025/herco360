@@ -5,12 +5,12 @@ import { CalendarRange, Plus, AlertTriangle, ChevronRight } from 'lucide-react';
 import api from '@/lib/api';
 import { ymd } from '@/lib/time';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { EstadoPlan, frecuenciaTexto, useMantAcceso } from '@/components/mantenimiento/comunes';
 import { fechaCorta } from '@/components/CalendarioFecha';
 import Tour, { useTour, BotonTour } from '@/components/Tour';
+import Reportes from '@/components/mantenimiento/Reportes';
+import Indicadores from '@/components/mantenimiento/Indicadores';
 
 const FILTROS = [
   { key: 'activa', label: 'Activas', fn: (p) => p.estado === 'activa' },
@@ -34,64 +34,7 @@ function Avance({ ciclo }) {
   );
 }
 
-function Cumplimiento() {
-  const hoy = new Date();
-  const [desde, setDesde] = useState(ymd(new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate())));
-  const [hasta, setHasta] = useState(ymd(hoy));
-  const [data, setData] = useState(null);
-  useEffect(() => {
-    if (!desde || !hasta) return;
-    api.get('/mantenimiento/cumplimiento', { params: { desde, hasta } }).then(({ data: d }) => setData(d)).catch(() => toast.error('No se pudo cargar el cumplimiento'));
-  }, [desde, hasta]);
-  const Tabla = ({ titulo, filas }) => (
-    <div className="rounded-[18px] border bg-card shadow-card overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
-          <tr className="text-left"><th className="px-4 py-2.5">{titulo}</th><th className="px-3 py-2.5 text-right">Tareas</th><th className="px-3 py-2.5 text-right">A tiempo</th>
-            <th className="px-3 py-2.5 text-right">Tarde</th><th className="px-3 py-2.5 text-right">Incompletas</th><th className="px-3 py-2.5 text-right">Cumplimiento</th></tr>
-        </thead>
-        <tbody className="divide-y">
-          {filas.map((f) => (
-            <tr key={f.id}>
-              <td className="px-4 py-2.5 font-medium">{f.nombre}</td><td className="px-3 py-2.5 text-right">{f.total}</td>
-              <td className="px-3 py-2.5 text-right text-[#16a34a]">{f.a_tiempo}</td><td className="px-3 py-2.5 text-right text-[#ec9032]">{f.tardias}</td>
-              <td className="px-3 py-2.5 text-right text-[#dc2626]">{f.incompletas}</td>
-              <td className="px-3 py-2.5 text-right font-semibold">{f.cumplimiento ?? '—'}%</td>
-            </tr>
-          ))}
-          {!filas.length && <tr><td colSpan={6} className="px-4 py-4 text-center text-muted-foreground">Sin tareas cerradas en el periodo.</td></tr>}
-        </tbody>
-      </table>
-    </div>
-  );
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-3 items-end">
-        <div className="space-y-1.5"><Label htmlFor="cu-desde">Desde</Label><Input id="cu-desde" type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className="h-10 w-[170px]" /></div>
-        <div className="space-y-1.5"><Label htmlFor="cu-hasta">Hasta</Label><Input id="cu-hasta" type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="h-10 w-[170px]" /></div>
-      </div>
-      {data && (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[['Cumplimiento', data.total.cumplimiento != null ? `${data.total.cumplimiento}%` : '—', ''],
-              ['A tiempo', data.total.a_tiempo, 'text-[#16a34a]'], ['Tarde', data.total.tardias, 'text-[#ec9032]'],
-              ['Incompletas', data.total.incompletas, 'text-[#dc2626]']].map(([l, v, c]) => (
-              <div key={l} className="rounded-[18px] border bg-card shadow-card p-4">
-                <p className="text-xs font-semibold text-muted-foreground">{l}</p>
-                <p className={`font-heading text-3xl font-semibold mt-1 ${c}`}>{v}</p>
-              </div>
-            ))}
-          </div>
-          <Tabla titulo="Planificación" filas={data.por_plan} />
-          <Tabla titulo="Responsable" filas={data.por_responsable} />
-          <p className="text-xs text-muted-foreground">Cumplimiento = tareas hechas (a tiempo o tarde) sobre las que ya cerraron en el periodo; las canceladas no cuentan.</p>
-        </>
-      )}
-    </div>
-  );
-}
-
-/* Planificaciones de mantenimiento: contadores, lista y cumplimiento. */
+/* Planificaciones de mantenimiento: lista con filtros, indicadores y reportes. */
 export default function MantPlanes() {
   const navigate = useNavigate();
   const acceso = useMantAcceso();
@@ -115,8 +58,12 @@ export default function MantPlanes() {
       texto: 'Dos pasos: datos generales (responsable, supervisor, frecuencia, inicio y fin) y tareas (checklist + activos + día, hora y plazo). Antes de activarla ves la vista previa de las fechas.' }] : []),
     { target: 'planes-lista', titulo: 'El avance de cada una',
       texto: 'Cada tarjeta muestra el ciclo en curso y cuántas tareas van hechas. Ábrela para ver el ciclo, cambiar fechas, reasignar o pausar.' },
-    ...(acceso?.planificar ? [{ target: 'planes-cumplimiento', titulo: 'Cumplimiento',
-      texto: 'Elige un periodo y mira el % de cumplimiento, a tiempo, tarde e incompletas, por planificación y por responsable.' }] : []),
+    ...(acceso?.planificar ? [
+      { target: 'planes-indicadores', titulo: 'Indicadores',
+        texto: 'Gráficas del periodo: cumplimiento por mes, vencidas por sucursal y dónde se concentran las fallas (activos, categorías y preguntas).' },
+      { target: 'planes-cumplimiento', titulo: 'Reportes',
+        texto: 'Cumplimiento por planificación, responsable, sucursal y categoría, la lista de fallas con foto y el detalle de cada tarea. Se descarga en Excel o PDF.' },
+    ] : []),
   ];
 
   const listado = (
@@ -185,10 +132,12 @@ export default function MantPlanes() {
         <Tabs defaultValue="lista">
           <TabsList className="rounded-xl mb-4">
             <TabsTrigger value="lista" className="rounded-lg">Planificaciones</TabsTrigger>
-            <TabsTrigger value="cumplimiento" className="rounded-lg" data-testid="planes-tab-cumplimiento" data-tour="planes-cumplimiento">Cumplimiento</TabsTrigger>
+            <TabsTrigger value="indicadores" className="rounded-lg" data-testid="planes-tab-indicadores" data-tour="planes-indicadores">Indicadores</TabsTrigger>
+            <TabsTrigger value="reportes" className="rounded-lg" data-testid="planes-tab-reportes" data-tour="planes-cumplimiento">Reportes</TabsTrigger>
           </TabsList>
           <TabsContent value="lista">{listado}</TabsContent>
-          <TabsContent value="cumplimiento"><Cumplimiento /></TabsContent>
+          <TabsContent value="indicadores"><Indicadores /></TabsContent>
+          <TabsContent value="reportes"><Reportes /></TabsContent>
         </Tabs>
       ) : listado}
       <Tour tour={tour} pasos={pasos} />

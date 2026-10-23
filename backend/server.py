@@ -9,7 +9,7 @@ from pathlib import Path
 from core import client, require_admin, new_id
 from seed import (seed_if_needed, migrate_activity_colors, seed_inventory, bootstrap_admins,
                   migrate_room_info, migrate_activity_reminders, migrate_activity_ranges)
-import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard, routes_inventory, routes_reports, routes_public, routes_vacations, routes_push, routes_cams, routes_formulario, routes_rutina, routes_formularios_custom, routes_diagnostico, routes_groups, routes_guardias, routes_recorridos, routes_etiquetas, routes_activos, mantenimiento
+import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard, routes_inventory, routes_reports, routes_public, routes_vacations, routes_push, routes_cams, routes_formulario, routes_rutina, routes_formularios_custom, routes_diagnostico, routes_groups, routes_guardias, routes_recorridos, routes_etiquetas, routes_activos, mantenimiento, mantenimiento_reportes
 import promo_tareas
 import tickets
 import storage
@@ -77,6 +77,7 @@ api_router.include_router(routes_recorridos.router)
 api_router.include_router(routes_etiquetas.router)
 api_router.include_router(routes_activos.router)
 api_router.include_router(mantenimiento.router)
+api_router.include_router(mantenimiento_reportes.router)
 api_router.include_router(routes_formularios_custom.router)
 api_router.include_router(routes_diagnostico.router)
 api_router.include_router(routes_groups.router)
