@@ -9,7 +9,7 @@ import { useRecorridoPrimeraVez } from '@/lib/recorridoActivos';
 
 const SECCIONES = [
   { key: 'vencidas', label: 'Vencidas', icon: AlertTriangle, color: 'text-[#dc2626]', vacio: null },
-  { key: 'pendientes', label: 'Por hacer', icon: ListTodo, color: 'text-[#00a5df]', vacio: 'No tienes mantenimientos por hacer.' },
+  { key: 'pendientes', label: 'Por hacer', icon: ListTodo, color: 'text-[#00a5df]', vacio: 'No tienes mantenimientos por hacer. Cuando seas responsable de una planificación, aquí te llegarán sus tareas.' },
   { key: 'proximas', label: 'Próximos 7 días (puedes adelantarlos)', icon: CalendarClock, color: 'text-muted-foreground', vacio: null },
   { key: 'historial', label: 'Hechos recientemente', icon: CheckCircle2, color: 'text-[#16a34a]', vacio: null },
 ];

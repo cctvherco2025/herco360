@@ -162,8 +162,9 @@ async def acceso(user=Depends(get_current_user)):
         {'$or': [{'supervisor_id': user['id']}, {'responsables.usuario_id': user['id']}], 'estado': {'$ne': 'borrador'}}, {'_id': 1})
     tiene_tareas = await db.mant_tareas.find_one({'responsable_id': user['id']}, {'_id': 1})
     pendientes = await db.mant_tareas.count_documents({'responsable_id': user['id'], 'estado': 'pendiente'})
+    # quien planifica siempre ve "Mis mantenimientos" (aunque todavía no tenga tareas)
     return {'planificar': planificar, 'ver_planes': planificar or bool(es_parte),
-            'mis_tareas': bool(es_parte or tiene_tareas), 'pendientes': pendientes}
+            'mis_tareas': bool(planificar or es_parte or tiene_tareas), 'pendientes': pendientes}
 
 
 # ── Checklists ───────────────────────────────────────────────────

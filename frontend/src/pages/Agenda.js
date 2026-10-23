@@ -81,6 +81,9 @@ export default function Agenda() {
   // mantenimientos de activos (los que hace o supervisa), con un interruptor para verlos u ocultarlos
   const [mants, setMants] = useState({ ahora: '', mantenimientos: [] });
   const [verMant, setVerMant] = useState(() => { try { return localStorage.getItem('herco_agenda_mant') !== '0'; } catch (e) { return true; } });
+  // el panel se muestra a quien hace o planifica mantenimientos, aunque no tenga ninguno en el rango
+  const [conMant, setConMant] = useState(false);
+  useEffect(() => { api.get('/mantenimiento/acceso').then(({ data }) => setConMant(!!(data.mis_tareas || data.planificar))).catch(() => {}); }, []);
   const toggleMant = () => setVerMant((v) => { try { localStorage.setItem('herco_agenda_mant', v ? '0' : '1'); } catch (e) { /* sin almacenamiento */ } return !v; });
   const navTareas = useNavigate();
 
@@ -316,7 +319,7 @@ export default function Agenda() {
             </motion.div>
           )}
 
-          {mants.mantenimientos.length > 0 && (
+          {(conMant || mants.mantenimientos.length > 0) && (
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}
               className="rounded-[18px] bg-card border shadow-card p-5" data-testid="agenda-mant-panel">
               <div className="flex items-center gap-2 mb-1">
