@@ -41,7 +41,8 @@ from pydantic import BaseModel
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from core import db, serialize_doc, new_id, now_iso, now_local, get_current_user, can_admin_activos
+from core import (db, serialize_doc, new_id, now_iso, now_local, get_current_user, can_admin_activos,
+                  RETAIL, LOGISTICA, departamento_de, filtro_depto, filtro_usuarios_depto)
 from notifications import create_notification
 import mantenimiento_motor as motor
 import routes_activos
@@ -101,8 +102,24 @@ def _ahora():
     return now_local().strftime(motor.FMT)
 
 
-async def _usuario(uid):
-    return await db.users.find_one({'id': uid, 'status': 'approved'}, {'_id': 0, 'id': 1, 'name': 1, 'avatar_url': 1, 'position': 1})
+async def _usuario(uid, depto=None):
+    """Usuario aprobado (y, con `depto`, de ese departamento)."""
+    q = {'id': uid, 'status': 'approved', **(filtro_usuarios_depto(depto) if depto else {})}
+    return await db.users.find_one(q, {'_id': 0, 'id': 1, 'name': 1, 'avatar_url': 1, 'position': 1})
+
+
+def depto_plan(plan) -> str:
+    return LOGISTICA if (plan or {}).get('departamento') == LOGISTICA else RETAIL
+
+
+async def _depto_de_categorias(cat_ids) -> str:
+    """Departamento de una planificación según las categorías de sus activos
+    (todas tienen que ser del mismo)."""
+    cats = await db.activo_categorias.find({'id': {'$in': list(cat_ids)}}, {'_id': 0, 'departamento': 1}).to_list(500)
+    deptos = {LOGISTICA if c.get('departamento') == LOGISTICA else RETAIL for c in cats} or {RETAIL}
+    if len(deptos) > 1:
+        raise HTTPException(status_code=400, detail='Los activos de una planificación tienen que ser del mismo departamento')
+    return deptos.pop()
 
 
 async def _avisar(uids, tipo, msg, related_id, related_type='mant_tarea', actor=None):
@@ -117,7 +134,9 @@ async def _avisar(uids, tipo, msg, related_id, related_type='mant_tarea', actor=
 
 
 async def _contexto(user):
-    """(es_admin, ids de categorías que la persona maneja)."""
+    """(administra Activos, ids de categorías que la persona maneja). Quien
+    administra maneja todas las categorías de su departamento (los admins, todas):
+    por eso el alcance siempre se mide con esos ids."""
     admin, _, editables = await routes_activos._acceso(user)
     return admin, editables
 
@@ -135,8 +154,8 @@ async def _requiere_planificador(user):
 async def _puede_gestionar_plan(user, plan):
     """Editar, pausar, reasignar: admin, supervisor, quien lo creó o
     responsable de todas las categorías de sus activos."""
-    admin, editables = await _contexto(user)
-    if admin or user['id'] in (plan.get('supervisor_id'), plan.get('created_by')):
+    _, editables = await _contexto(user)
+    if user.get('role') == 'admin' or user['id'] in (plan.get('supervisor_id'), plan.get('created_by')):
         return True
     cats = set(plan.get('categoria_ids') or [])
     return bool(cats) and cats <= editables
@@ -213,7 +232,7 @@ def _limpiar_items(items):
 @router.get('/checklists')
 async def list_checklists(user=Depends(get_current_user)):
     await _requiere_planificador(user)
-    rows = await db.mant_checklists.find({'eliminado': {'$ne': True}}, {'_id': 0}).sort('nombre', 1).to_list(500)
+    rows = await db.mant_checklists.find({'eliminado': {'$ne': True}, **filtro_depto(user)}, {'_id': 0}).sort('nombre', 1).to_list(500)
     usos = {r['_id']: r['n'] for r in await db.mant_planes.aggregate([
         {'$match': {'estado': {'$in': ['borrador', 'activa', 'pausada']}}},
         {'$unwind': '$definiciones'}, {'$group': {'_id': '$definiciones.checklist_id', 'n': {'$sum': 1}}},
@@ -230,7 +249,7 @@ async def create_checklist(data: ChecklistInput, user=Depends(get_current_user))
     if not nombre:
         raise HTTPException(status_code=400, detail='Escribe el nombre del checklist')
     doc = {'id': new_id(), 'nombre': nombre, 'descripcion': _txt(data.descripcion, 500), 'items': _limpiar_items(data.items), 'antes_despues': bool(data.antes_despues),
-           'version': 1, 'created_at': now_iso(), 'created_by': user['id'], 'created_by_name': user['name']}
+           'departamento': departamento_de(user), 'version': 1, 'created_at': now_iso(), 'created_by': user['id'], 'created_by_name': user['name']}
     await db.mant_checklists.insert_one(doc)
     doc.pop('_id', None)
     return serialize_doc(doc)
@@ -239,7 +258,7 @@ async def create_checklist(data: ChecklistInput, user=Depends(get_current_user))
 @router.put('/checklists/{cid}')
 async def update_checklist(cid: str, data: ChecklistInput, user=Depends(get_current_user)):
     await _requiere_planificador(user)
-    actual = await db.mant_checklists.find_one({'id': cid, 'eliminado': {'$ne': True}}, {'_id': 0})
+    actual = await db.mant_checklists.find_one({'id': cid, 'eliminado': {'$ne': True}, **filtro_depto(user)}, {'_id': 0})
     if not actual:
         raise HTTPException(status_code=404, detail='Checklist no encontrado')
     nombre = _txt(data.nombre, 100)
@@ -256,6 +275,8 @@ async def update_checklist(cid: str, data: ChecklistInput, user=Depends(get_curr
 @router.delete('/checklists/{cid}')
 async def delete_checklist(cid: str, user=Depends(get_current_user)):
     await _requiere_planificador(user)
+    if not await db.mant_checklists.find_one({'id': cid, **filtro_depto(user)}, {'_id': 1}):
+        raise HTTPException(status_code=404, detail='Checklist no encontrado')
     en_uso = await db.mant_planes.find_one({'definiciones.checklist_id': cid, 'estado': {'$in': ['borrador', 'activa', 'pausada']}},
                                            {'_id': 0, 'numero': 1})
     if en_uso:
@@ -323,7 +344,8 @@ async def _limpiar_definiciones(defs, user, previas=None):
     activos = {a['id']: a for a in await db.activos.find(
         {'id': {'$in': [_txt(d.get('activo_id'), 60) for d in defs]}}, {'_id': 0, 'id': 1, 'codigo': 1, 'categoria_id': 1, 'estado': 1}).to_list(1000)}
     checklists = {c['id'] for c in await db.mant_checklists.find(
-        {'id': {'$in': [_txt(d.get('checklist_id'), 60) for d in defs]}, 'eliminado': {'$ne': True}}, {'_id': 0, 'id': 1}).to_list(1000)}
+        {'id': {'$in': [_txt(d.get('checklist_id'), 60) for d in defs]}, 'eliminado': {'$ne': True}, **filtro_depto(user)},
+        {'_id': 0, 'id': 1}).to_list(1000)}
     out, cats, vistos = [], set(), set()
     for i, d in enumerate(defs, start=1):
         a = activos.get(_txt(d.get('activo_id'), 60))
@@ -331,7 +353,7 @@ async def _limpiar_definiciones(defs, user, previas=None):
             raise HTTPException(status_code=400, detail=f'Tarea {i}: elige el activo')
         if a['estado'] != 'activo' and _txt(d.get('id'), 40) not in previas_ids:
             raise HTTPException(status_code=400, detail=f'Tarea {i}: {a["codigo"]} está dado de baja')
-        if not admin and a['categoria_id'] not in editables:
+        if a['categoria_id'] not in editables:
             raise HTTPException(status_code=403, detail=f'Tarea {i}: no eres responsable de la categoría de {a["codigo"]}')
         if _txt(d.get('checklist_id'), 60) not in checklists:
             raise HTTPException(status_code=400, detail=f'Tarea {i}: elige el checklist')
@@ -376,11 +398,12 @@ def _dia_mes_segun(defs, frecuencia):
             d['dia_mes'] = None
 
 
-async def _validar_personas(supervisor_id, responsable_id):
-    sup = await _usuario(_txt(supervisor_id, 60))
+async def _validar_personas(supervisor_id, responsable_id, depto):
+    """Supervisor y responsable: del departamento de la planificación."""
+    sup = await _usuario(_txt(supervisor_id, 60), depto)
     if not sup:
         raise HTTPException(status_code=400, detail='Elige el supervisor')
-    resp = await _usuario(_txt(responsable_id, 60))
+    resp = await _usuario(_txt(responsable_id, 60), depto)
     if not resp:
         raise HTTPException(status_code=400, detail='Elige el responsable')
     return sup, resp
@@ -397,13 +420,12 @@ async def opciones(user=Depends(get_current_user)):
     activos en uso de las categorías que maneja la persona."""
     await _requiere_planificador(user)
     admin, editables = await _contexto(user)
-    cats = await routes_activos._categorias()
-    cats = [c for c in cats if admin or c['id'] in editables]
+    cats = [c for c in await routes_activos._categorias(user) if c['id'] in editables]
     activos = await db.activos.find({'categoria_id': {'$in': [c['id'] for c in cats]}, 'estado': 'activo'},
                                     {'_id': 0, 'id': 1, 'codigo': 1, 'nombre': 1, 'sucursal': 1, 'categoria_id': 1, 'padre_id': 1, 'ubicacion': 1}
                                     ).sort('codigo', 1).to_list(5000)
-    usuarios = await db.users.find({'status': 'approved'}, {'_id': 0, 'id': 1, 'name': 1, 'position': 1, 'area': 1, 'avatar_url': 1}).sort('name', 1).to_list(1000)
-    checklists = await db.mant_checklists.find({'eliminado': {'$ne': True}}, {'_id': 0, 'id': 1, 'nombre': 1, 'items': 1}).sort('nombre', 1).to_list(500)
+    usuarios = await db.users.find({'status': 'approved', **filtro_depto(user)}, {'_id': 0, 'id': 1, 'name': 1, 'position': 1, 'area': 1, 'avatar_url': 1, 'departamento': 1}).sort('name', 1).to_list(1000)
+    checklists = await db.mant_checklists.find({'eliminado': {'$ne': True}, **filtro_depto(user)}, {'_id': 0, 'id': 1, 'nombre': 1, 'items': 1}).sort('nombre', 1).to_list(500)
     return serialize_doc({
         'usuarios': usuarios, 'checklists': [{'id': c['id'], 'nombre': c['nombre'], 'preguntas': len(c['items'])} for c in checklists],
         'activos': activos, 'categorias': [{'id': c['id'], 'nombre': c['nombre'], 'icono': c.get('icono')} for c in cats],
@@ -429,14 +451,15 @@ async def create_plan(data: PlanInput, activar: bool = False, user=Depends(get_c
     if not nombre:
         raise HTTPException(status_code=400, detail='Escribe el nombre de la planificación')
     frecuencia = _limpiar_frecuencia(data)
-    sup, resp = await _validar_personas(data.supervisor_id, data.responsable_id)
     defs, cats = await _limpiar_definiciones(data.definiciones, user)
+    depto = await _depto_de_categorias(cats)
+    sup, resp = await _validar_personas(data.supervisor_id, data.responsable_id, depto)
     _dia_mes_segun(defs, frecuencia['frecuencia'])
     n = await db.counters.find_one_and_update({'_id': 'mant_planes'}, {'$inc': {'n': 1}}, upsert=True, return_document=ReturnDocument.AFTER)
     plan = {
         'id': new_id(), 'numero': f'MNT-{n["n"]:03d}', 'nombre': nombre, 'descripcion': _txt(data.descripcion, 1000),
         'supervisor_id': sup['id'], 'responsables': [{'usuario_id': resp['id'], 'desde_ciclo': 1}],
-        **frecuencia, 'definiciones': defs, 'categoria_ids': cats,
+        **frecuencia, 'definiciones': defs, 'categoria_ids': cats, 'departamento': depto,
         'estado': 'activa' if activar else 'borrador', 'ciclo_actual': 0, 'saltar_hasta': 0,
         'created_at': now_iso(), 'created_by': user['id'], 'created_by_name': user['name'],
     }
@@ -470,8 +493,10 @@ async def update_plan(plan_id: str, data: PlanInput, user=Depends(get_current_us
     nombre = _txt(data.nombre, 120)
     if not nombre:
         raise HTTPException(status_code=400, detail='Escribe el nombre de la planificación')
-    sup, resp = await _validar_personas(data.supervisor_id, data.responsable_id)
     defs, cats = await _limpiar_definiciones(data.definiciones, user, plan.get('definiciones'))
+    if await _depto_de_categorias(cats) != depto_plan(plan):
+        raise HTTPException(status_code=400, detail='Los activos tienen que ser del departamento de la planificación')
+    sup, resp = await _validar_personas(data.supervisor_id, data.responsable_id, depto_plan(plan))
     _dia_mes_segun(defs, data.frecuencia if plan['estado'] == 'borrador' else plan['frecuencia'])
     cambios, upd = [], {'nombre': nombre, 'descripcion': _txt(data.descripcion, 1000), 'supervisor_id': sup['id'],
                         'definiciones': defs, 'categoria_ids': cats}
@@ -580,6 +605,7 @@ async def _visible(user, plan):
 @router.get('/planes')
 async def list_planes(user=Depends(get_current_user)):
     admin, editables = await _contexto(user)
+    admin = user.get('role') == 'admin'
     q = {} if admin else {'$or': [
         {'supervisor_id': user['id']}, {'created_by': user['id']}, {'responsables.usuario_id': user['id']},
         {'categoria_ids': {'$in': list(editables)}},
@@ -830,7 +856,8 @@ async def get_tarea(tid: str, user=Depends(get_current_user)):
     gente = await _nombres([t['responsable_id'], t['supervisor_id'], t.get('completada_por')])
     plan = await db.mant_planes.find_one({'id': t['plan_id']}, {'_id': 0})
     gestiona = bool(plan) and await _puede_gestionar_plan(user, plan)
-    usuarios = await db.users.find({'status': 'approved'}, {'_id': 0, 'id': 1, 'name': 1, 'position': 1, 'area': 1}).sort('name', 1).to_list(1000) \
+    usuarios = await db.users.find({'status': 'approved', **filtro_usuarios_depto(depto_plan(plan))},
+                                   {'_id': 0, 'id': 1, 'name': 1, 'position': 1, 'area': 1}).sort('name', 1).to_list(1000) \
         if gestiona and t['estado'] in ABIERTAS else []
     return serialize_doc({'tarea': t, 'activo': activo, 'personas': gente, 'ahora': _ahora(), 'usuarios': usuarios,
                           'puede_hacer': t['responsable_id'] == user['id'] and t['estado'] in ABIERTAS,
@@ -1129,9 +1156,9 @@ async def reasignar(tid: str, data: ReasignarInput, user=Depends(get_current_use
         raise HTTPException(status_code=403, detail='No puedes reasignar esta tarea')
     if t['estado'] not in ABIERTAS:
         raise HTTPException(status_code=400, detail='Solo se reasigna una tarea programada o pendiente')
-    nuevo = await _usuario(_txt(data.usuario_id, 60))
+    nuevo = await _usuario(_txt(data.usuario_id, 60), depto_plan(plan))
     if not nuevo:
-        raise HTTPException(status_code=400, detail='Elige a quién reasignar')
+        raise HTTPException(status_code=400, detail='Elige a quién reasignar (alguien del mismo departamento)')
     if nuevo['id'] == t['responsable_id']:
         return serialize_doc(t)
     await db.mant_tareas.update_one({'id': tid}, {'$set': {'responsable_id': nuevo['id']},
@@ -1294,7 +1321,7 @@ async def cumplimiento(desde: str, hasta: str, user=Depends(get_current_user)):
     await _requiere_planificador(user)
     admin, editables = await _contexto(user)
     q = {'fecha': {'$gte': desde, '$lte': hasta}, 'estado': {'$in': ['completada', 'incompleta']}}
-    if not admin:
+    if user.get('role') != 'admin':
         q['activo_categoria_id'] = {'$in': list(editables)}
     tareas = await db.mant_tareas.find(q, {'_id': 0, 'plan_id': 1, 'plan_numero': 1, 'plan_nombre': 1, 'responsable_id': 1, 'estado': 1, 'tardia': 1, 'fecha': 1}).to_list(20000)
 

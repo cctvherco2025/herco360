@@ -3,7 +3,8 @@ import calendar
 from collections import defaultdict
 from datetime import datetime, timedelta, date as date_cls
 from fastapi import APIRouter, HTTPException, Depends
-from core import db, get_current_user, serialize_doc, new_id, now_iso, now_local
+from core import (db, get_current_user, serialize_doc, new_id, now_iso, now_local, GERENTE_LOGISTICA,
+                  es_jefe_depto, es_logistica, filtro_depto, mismo_depto)
 import recurrence as rec
 from models import ActivityInput, RespondInput
 from notifications import create_notification, log_activity
@@ -11,7 +12,7 @@ from reminders import DEFAULT_REMINDER_OFFSETS
 
 router = APIRouter(prefix='/activities', tags=['activities'])
 
-MANAGER_POSITIONS = {'Jefe', 'Gerente', 'Director comercial'}
+MANAGER_POSITIONS = {'Jefe', 'Gerente', 'Director comercial', GERENTE_LOGISTICA}
 
 MAX_OCCURRENCES = 60
 DEFAULT_COUNTS = {'daily': 30, 'weekly': 12, 'monthly': 6}
@@ -210,10 +211,11 @@ async def _check_conflicts(tramos: list, uses_meeting_room: bool, exclude_activi
                             f"{r.get('start_time')} a {r.get('end_time')} {cuando}."))
 
 
-async def _build_participants(participant_ids):
+async def _build_participants(participant_ids, user):
+    """Invitados: solo gente del departamento de quien invita (admins, cualquiera)."""
     participants = []
     if participant_ids:
-        users = await db.users.find({'id': {'$in': participant_ids}}, {'_id': 0}).to_list(200)
+        users = await db.users.find({'id': {'$in': participant_ids}, **filtro_depto(user)}, {'_id': 0}).to_list(200)
         for u in users:
             participants.append({
                 'user_id': u['id'], 'name': u['name'],
@@ -289,8 +291,10 @@ async def list_activities(start: str = None, end: str = None, category: str = No
         if not target:
             raise HTTPException(status_code=404, detail='Usuario no encontrado')
         pos = (user.get('position') or '').strip()
-        allowed = (user.get('role') == 'admin' or pos == 'Director comercial' or
-                   (pos in MANAGER_POSITIONS and target.get('area') == user.get('area')))
+        # el jefe del departamento ve a toda su gente; jefes y gerentes, a su
+        # área; nunca a alguien del otro departamento (salvo los admins)
+        allowed = user.get('role') == 'admin' or (mismo_depto(user, target) and (
+            es_jefe_depto(user) or (pos in MANAGER_POSITIONS and target.get('area') == user.get('area'))))
         if not allowed:
             raise HTTPException(status_code=403, detail='No puedes ver este calendario')
         target_id = user_id
@@ -316,11 +320,18 @@ async def get_activity(activity_id: str, user=Depends(get_current_user)):
     return serialize_doc(a)
 
 
+def _sin_sala(data, user):
+    """La Sala de Juntas es de Ventas Retail."""
+    if data.uses_meeting_room and user.get('role') != 'admin' and es_logistica(user):
+        raise HTTPException(status_code=403, detail='La Sala de Juntas es de Ventas Retail')
+
+
 @router.post('')
 async def create_activity(data: ActivityInput, user=Depends(get_current_user)):
+    _sin_sala(data, user)
     date0, end0 = _rango(data)
     span = timedelta(days=(_parse_date(end0) - _parse_date(date0)).days)
-    participants = await _build_participants(data.participant_ids)
+    participants = await _build_participants(data.participant_ids, user)
     serie = None
     if data.rrule:
         # Repetición con RRULE: UNA actividad con su regla; las repeticiones
@@ -489,7 +500,7 @@ async def _editar_una(madre: dict, dia: str, data, user):
     # sus días de sala se liberan al guardar: no cuentan como choque
     await _check_conflicts(_dias(date0, end0, data.start_time, data.end_time), data.uses_meeting_room,
                            ignorar=lambda r: r.get('activity_id') == madre['id'] and r.get('date') in dias_occ)
-    participants = _con_estados(await _build_participants(data.participant_ids), madre.get('participants'))
+    participants = _con_estados(await _build_participants(data.participant_ids, user), madre.get('participants'))
     existentes, offsets = _offsets_de(madre, data)
     # Si no cambió la hora, los recordatorios ya enviados de esa repetición no se repiten.
     enviados = []
@@ -531,7 +542,7 @@ async def _editar_todas(madre: dict, dia: str, visto: dict, data, user):
     await _check_conflicts(_tramos(nueva), data.uses_meeting_room,
                            ignorar=lambda r: r.get('activity_id') in ignorados)
 
-    participants = _con_estados(await _build_participants(data.participant_ids), madre.get('participants'))
+    participants = _con_estados(await _build_participants(data.participant_ids, user), madre.get('participants'))
     existentes, offsets = _offsets_de(madre, data)
     updates = _campos(data, inicio, fin, participants, offsets)
     unset = {'reminder_minutes': '', 'reminder_sent': ''}
@@ -594,7 +605,7 @@ async def _editar_siguientes(madre: dict, dia: str, visto: dict, data, user):
     await _check_conflicts(_tramos(nueva), data.uses_meeting_room,
                            ignorar=lambda r: r.get('activity_id') in ignorados)
 
-    participants = _con_estados(await _build_participants(data.participant_ids), madre.get('participants'))
+    participants = _con_estados(await _build_participants(data.participant_ids, user), madre.get('participants'))
     _, offsets = _offsets_de(madre, data)
     doc = {'id': new_id(), **_campos(data, inicio, fin, participants, offsets),
            'recurrence': 'rrule' if serie else 'none', 'series_id': None,
@@ -616,7 +627,7 @@ async def _editar_siguientes(madre: dict, dia: str, visto: dict, data, user):
 async def _actualizar(a: dict, data, user):
     """Actividad suelta, repetición editada aparte o documento de una serie vieja."""
     date0, end0 = _rango(data, prev=a)
-    participants = await _build_participants(data.participant_ids)
+    participants = await _build_participants(data.participant_ids, user)
     # Repetición: None = conservar la regla que tenía; "" = dejar de repetir.
     # (Las series viejas y las repeticiones editadas aparte no se convierten.)
     rule = a.get('rrule') if data.rrule is None else data.rrule
@@ -659,6 +670,7 @@ async def _actualizar(a: dict, data, user):
 @router.put('/{activity_id}')
 async def update_activity(activity_id: str, data: ActivityInput, user=Depends(get_current_user),
                           alcance: str = 'todas', ocurrencia: str = None):
+    _sin_sala(data, user)
     a = await db.activities.find_one({'id': activity_id}, {'_id': 0})
     if not a:
         raise HTTPException(status_code=404, detail='Actividad no encontrada')

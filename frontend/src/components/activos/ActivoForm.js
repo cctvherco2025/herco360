@@ -218,7 +218,7 @@ export default function ActivoForm({ open, onOpenChange, meta, activo, inicial, 
                 <div className="space-y-1.5">
                   <Label>Sucursal<span className="text-[#dc2626]"> *</span></Label>
                   <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Sucursal">
-                    {meta.sucursales.map((s) => (
+                    {(meta.ubicaciones?.[cat.departamento] || meta.sucursales).map((s) => (
                       <button key={s} type="button" role="radio" aria-checked={form.sucursal === s} onClick={() => set('sucursal', s)}
                         className={`min-w-[64px] rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors ${form.sucursal === s
                           ? 'bg-[#1e395e] text-white border-transparent' : 'bg-card text-muted-foreground hover:text-foreground'}`}

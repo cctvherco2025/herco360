@@ -1,7 +1,7 @@
 """Dashboard summary + global search routes."""
 from datetime import timedelta
 from fastapi import APIRouter, Depends
-from core import db, get_current_user, serialize_doc, now_local
+from core import db, get_current_user, serialize_doc, now_local, filtro_depto, es_logistica
 from routes_rooms import _derive_room_status
 import recurrence as rec
 
@@ -42,18 +42,22 @@ async def dashboard(user=Depends(get_current_user)):
     room = await db.rooms.find_one({}, {'_id': 0})
     room_status = 'Disponible'
     room_name = 'Sala de Juntas'
+    # la Sala de Juntas es de Ventas Retail
+    if room and user.get('role') != 'admin' and es_logistica(user):
+        room = None
+        room_status = None
     if room:
         room_status, _ = await _derive_room_status(room['id'])
         room_name = room['name']
 
     # Pending users (admin relevant)
-    pending_users = await db.users.count_documents({'status': 'pending'})
+    pending_users = await db.users.count_documents({'status': 'pending', **filtro_depto(user)})
 
     # Unread notifications
     unread = await db.notifications.count_documents({'user_id': user['id'], 'read': False})
 
     # Recent activity feed
-    recent = await db.activity_log.find({}, {'_id': 0}).sort('created_at', -1).to_list(8)
+    recent = await db.activity_log.find(filtro_depto(user), {'_id': 0}).sort('created_at', -1).to_list(8)
 
     return {
         'stats': {
@@ -74,8 +78,13 @@ async def search(q: str = '', user=Depends(get_current_user)):
     if not q or len(q.strip()) < 1:
         return {'activities': [], 'users': []}
     rx = {'$regex': q.strip(), '$options': 'i'}
-    activities = await db.activities.find({'title': rx}, {'_id': 0}).limit(8).to_list(8)
+    # actividades de gente del mismo departamento (los admins, de todos)
+    q_act = {'title': rx}
+    if user.get('role') != 'admin':
+        mios = [u['id'] for u in await db.users.find(filtro_depto(user), {'_id': 0, 'id': 1}).to_list(5000)]
+        q_act['created_by'] = {'$in': mios}
+    activities = await db.activities.find(q_act, {'_id': 0}).limit(8).to_list(8)
     users = await db.users.find(
-        {'$or': [{'name': rx}, {'email': rx}], 'status': 'approved'},
+        {'$or': [{'name': rx}, {'email': rx}], 'status': 'approved', **filtro_depto(user)},
         {'_id': 0, 'password_hash': 0}).limit(8).to_list(8)
     return {'activities': serialize_doc(activities), 'users': serialize_doc(users)}

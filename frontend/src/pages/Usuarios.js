@@ -5,7 +5,10 @@ import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { timeAgoEs } from '@/lib/time';
-import { CARGOS, AREAS, SUCURSALES } from '@/lib/constants';
+import {
+  CARGOS, AREAS, SUCURSALES, DEPARTAMENTOS, RETAIL, LOGISTICA, CARGOS_LOGISTICA, GERENTE_LOGISTICA,
+  departamentoDe, puedeGestionarUsuarios,
+} from '@/lib/constants';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,12 +19,32 @@ import { confirmar } from '@/components/ConfirmDialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { GruposSection, GrupoDialog, GrupoPills, CrearGrupoButton } from '@/components/GruposUsuarios';
 
-const emptyForm = { name: '', email: '', password: '', position: '', area: '', sucursal: '', role: 'user' };
+const emptyForm = { name: '', email: '', password: '', departamento: RETAIL, position: '', area: '', sucursal: '', role: 'user' };
+
+// Logística en verde, Retail en azul (etiqueta del departamento para los admins)
+function DeptoBadge({ depto }) {
+  const log = depto === LOGISTICA;
+  return (
+    <span className={`rounded-full text-[11px] font-medium px-2 py-0.5 shrink-0 ${log
+      ? 'bg-[rgba(22,163,74,0.12)] text-[#16a34a]' : 'bg-[rgba(0,165,223,0.12)] text-[#0284c7] dark:text-[#3cbef6]'}`}>
+      {depto}
+    </span>
+  );
+}
 
 export default function Usuarios() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  // aprueban, crean y editan: admins (a todos) y el Gerente de Logística (a Logística)
+  const gestor = puedeGestionarUsuarios(user);
+  const puedeEditar = (u) => isAdmin || (departamentoDe(u) === LOGISTICA && u.role !== 'admin' && u.position !== GERENTE_LOGISTICA);
   const [users, setUsers] = useState([]);
+  const [areasLogistica, setAreasLogistica] = useState([]);
+  useEffect(() => {
+    api.get('/users/organizacion').then(({ data }) => setAreasLogistica(data.logistica?.areas || [])).catch(() => {});
+  }, []);
+  // admins: ver un departamento o los dos
+  const [verDepto, setVerDepto] = useState('');
 
   // create / edit dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -45,7 +68,7 @@ export default function Usuarios() {
   const abrirGrupo = (grupo = null) => setGrupoDialog({ open: true, grupo });
 
   const pending = users.filter((u) => u.status === 'pending');
-  const approved = users.filter((u) => u.status === 'approved');
+  const approved = users.filter((u) => u.status === 'approved' && (!verDepto || departamentoDe(u) === verDepto));
 
   // Buscador del equipo: nombre, correo, cargo, área o tienda; ignora
   // mayúsculas, tildes y espacios de más. Varias palabras = deben estar todas
@@ -55,7 +78,7 @@ export default function Usuarios() {
   const palabras = norm(busqueda).split(' ').filter(Boolean);
   const approvedFiltrados = palabras.length
     ? approved.filter((u) => {
-      const texto = norm([u.name, u.email, u.position, u.area, u.sucursal, u.role === 'admin' ? 'admin administrador' : ''].join(' '));
+      const texto = norm([u.name, u.email, u.position, u.area, u.sucursal, departamentoDe(u), u.role === 'admin' ? 'admin administrador' : ''].join(' '));
       return palabras.every((p) => texto.includes(p));
     })
     : approved;
@@ -65,13 +88,24 @@ export default function Usuarios() {
   const setRole = async (id, role) => { try { await api.patch(`/users/${id}/role`, { role }); toast.success('Rol actualizado'); load(); } catch (e) { toast.error('Error'); } };
 
   const setF = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  // cargos y áreas según el departamento del formulario; el Gerente de
+  // Logística no nombra a otro gerente
+  const logForm = form.departamento === LOGISTICA;
+  const cargosForm = logForm ? CARGOS_LOGISTICA.filter((c) => isAdmin || c !== GERENTE_LOGISTICA) : CARGOS;
+  const areasForm = logForm ? areasLogistica : AREAS;
+  const fijaArea = (cargo) => (cargo === 'Director comercial' ? 'Casa Matriz' : cargo === GERENTE_LOGISTICA ? 'Gerencia' : '');
 
-  const openCreate = () => { setEditing(null); setForm(emptyForm); setShowPass(false); setDialogOpen(true); };
+  const openCreate = () => {
+    setEditing(null);
+    setForm({ ...emptyForm, departamento: isAdmin ? RETAIL : LOGISTICA });
+    setShowPass(false);
+    setDialogOpen(true);
+  };
   const openEdit = (u) => {
     setEditing(u);
     setForm({
       name: u.name || '', email: u.email || '', password: '',
-      position: u.position || '', area: u.area || '',
+      departamento: departamentoDe(u), position: u.position || '', area: u.area || '',
       sucursal: u.sucursal && u.sucursal !== 'Casa Matriz' ? u.sucursal : '',
       role: u.role || 'user',
     });
@@ -84,13 +118,16 @@ export default function Usuarios() {
     if (!form.email.trim()) { toast.error('Ingresa el correo'); return; }
     if (!editing && form.password.length < 4) { toast.error('La contraseña debe tener al menos 4 caracteres'); return; }
     if (form.area === 'Tienda' && !form.sucursal) { toast.error('Selecciona la tienda/sucursal'); return; }
+    if (logForm && !form.position) { toast.error('Selecciona el cargo'); return; }
+    if (logForm && !fijaArea(form.position) && !form.area) { toast.error('Selecciona el área'); return; }
     setSaving(true);
     try {
       if (editing) {
         const payload = {
           name: form.name, email: form.email, position: form.position,
-          area: form.area, sucursal: form.sucursal, role: form.role,
+          area: form.area, sucursal: form.sucursal,
         };
+        if (isAdmin) { payload.role = form.role; payload.departamento = form.departamento; }
         if (form.password) payload.password = form.password;
         await api.patch(`/users/${editing.id}`, payload);
         toast.success('Usuario actualizado');
@@ -123,12 +160,12 @@ export default function Usuarios() {
       <div className="mb-5 flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-heading text-2xl sm:text-3xl font-semibold">Usuarios</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">{isAdmin ? 'Crea, aprueba y administra el equipo' : 'Directorio del equipo HERCO'}</p>
+          <p className="text-muted-foreground text-sm mt-0.5">{gestor ? 'Crea, aprueba y administra el equipo' : 'Directorio del equipo HERCO'}</p>
         </div>
         {/* Crear grupo: cualquier usuario. Crear usuario: solo admin. */}
         <div className="flex flex-wrap items-center gap-2">
           <CrearGrupoButton onClick={() => abrirGrupo()} />
-          {isAdmin && (
+          {gestor && (
             <Button onClick={openCreate} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="create-user-button">
               <Plus className="h-4 w-4 mr-1.5" /> Crear usuario
             </Button>
@@ -136,7 +173,7 @@ export default function Usuarios() {
         </div>
       </div>
 
-      {isAdmin && (
+      {gestor && (
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
           className="rounded-[18px] bg-card border shadow-card p-5 mb-5">
           <div className="flex items-center gap-2 mb-4">
@@ -153,7 +190,8 @@ export default function Usuarios() {
                   <Avatar className="h-11 w-11 border"><AvatarImage src={u.avatar_url} /><AvatarFallback>{u.name?.[0]}</AvatarFallback></Avatar>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{u.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{u.position} · {timeAgoEs(u.created_at)}</p>
+                    <p className="text-xs text-muted-foreground truncate">{u.position}{u.area ? ` · ${u.area}` : ''} · {timeAgoEs(u.created_at)}</p>
+                    {isAdmin && <div className="mt-1"><DeptoBadge depto={departamentoDe(u)} /></div>}
                   </div>
                   <div className="flex gap-1.5 shrink-0">
                     <button onClick={() => approve(u.id)} className="h-9 w-9 grid place-items-center rounded-lg bg-[rgba(22,163,74,0.12)] text-[#16a34a] hover:bg-[rgba(22,163,74,0.22)]" data-testid="approve-user-button"><Check className="h-4 w-4" /></button>
@@ -174,9 +212,20 @@ export default function Usuarios() {
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.06 }}
         className="rounded-[18px] bg-card border shadow-card p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          <h2 className="font-heading text-lg font-semibold">
-            Equipo ({palabras.length ? `${approvedFiltrados.length} de ${approved.length}` : approved.length})
-          </h2>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="font-heading text-lg font-semibold">
+              Equipo ({palabras.length ? `${approvedFiltrados.length} de ${approved.length}` : approved.length})
+            </h2>
+            {isAdmin && (
+              <div className="flex gap-1" data-testid="users-depto-filtro">
+                {[['', 'Todos'], ...DEPARTAMENTOS.map((d) => [d, d])].map(([v, l]) => (
+                  <button key={l} type="button" onClick={() => setVerDepto(v)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${verDepto === v
+                      ? 'bg-[#1e395e] text-white' : 'bg-muted text-muted-foreground hover:text-foreground'}`}>{l}</button>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="relative w-full sm:w-[320px]">
             <Search className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <Input value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
@@ -208,15 +257,16 @@ export default function Usuarios() {
         : <span className="rounded-full bg-muted text-muted-foreground text-[11px] font-medium px-2 py-0.5 shrink-0">Usuario</span>}
     </div>
     <p className="text-xs text-muted-foreground truncate">{u.position}{u.area ? ` · ${u.area}` : ''}</p>
+    {isAdmin && <div className="mt-1"><DeptoBadge depto={departamentoDe(u)} /></div>}
     <GrupoPills userId={u.id} grupos={grupos} />
   </div>
 </div>
               <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t">
   <span className="text-xs text-muted-foreground inline-flex items-center gap-1 truncate min-w-0 flex-1"><Mail className="h-3 w-3 shrink-0" /> <span className="truncate">{u.email}</span></span>
-  {isAdmin && (
+  {gestor && puedeEditar(u) && (
     <div className="flex items-center gap-1 shrink-0">
                     <button onClick={() => openEdit(u)} title="Editar" className="h-8 w-8 grid place-items-center rounded-lg text-muted-foreground hover:text-[#1e395e] dark:hover:text-[#3cbef6] hover:bg-muted" data-testid="edit-user-button"><Pencil className="h-3.5 w-3.5" /></button>
-                    {u.id !== user?.id && (
+                    {isAdmin && u.id !== user?.id && (
                       <>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -269,22 +319,33 @@ export default function Usuarios() {
                 </button>
               </div>
             </div>
+            <div className="space-y-1.5">
+              <Label>Departamento</Label>
+              {isAdmin ? (
+                <Select value={form.departamento} onValueChange={(v) => setForm((f) => ({ ...f, departamento: v, position: '', area: '', sucursal: '' }))}>
+                  <SelectTrigger className="h-11" data-testid="user-form-departamento"><SelectValue /></SelectTrigger>
+                  <SelectContent>{DEPARTAMENTOS.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
+                </Select>
+              ) : (
+                <div className="h-11 flex items-center rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground">{form.departamento}</div>
+              )}
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5 min-w-0">
                 <Label>Cargo</Label>
-                <Select value={form.position} onValueChange={(v) => setForm((f) => ({ ...f, position: v, area: v === 'Director comercial' ? 'Casa Matriz' : (f.area === 'Casa Matriz' ? '' : f.area), sucursal: '' }))}>
+                <Select value={form.position} onValueChange={(v) => setForm((f) => ({ ...f, position: v, area: fijaArea(v) || (['Casa Matriz', 'Gerencia'].includes(f.area) ? '' : f.area), sucursal: '' }))}>
                   <SelectTrigger className="h-11" data-testid="user-form-position"><SelectValue placeholder="Selecciona" /></SelectTrigger>
-                  <SelectContent>{CARGOS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                  <SelectContent>{cargosForm.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5 min-w-0">
                 <Label>Área</Label>
-                {form.position === 'Director comercial' ? (
-                  <div className="h-11 flex items-center rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground" data-testid="user-form-area-fixed">Casa Matriz</div>
+                {fijaArea(form.position) ? (
+                  <div className="h-11 flex items-center rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground" data-testid="user-form-area-fixed">{fijaArea(form.position)}</div>
                 ) : (
                   <Select value={form.area} onValueChange={(v) => setForm((f) => ({ ...f, area: v, sucursal: v === 'Tienda' ? f.sucursal : '' }))}>
                     <SelectTrigger className="h-11" data-testid="user-form-area"><SelectValue placeholder="Selecciona" /></SelectTrigger>
-                    <SelectContent>{AREAS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
+                    <SelectContent>{areasForm.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
                   </Select>
                 )}
               </div>
@@ -298,7 +359,7 @@ export default function Usuarios() {
                 </Select>
               </div>
             )}
-            <div className="space-y-1.5">
+            {isAdmin && <div className="space-y-1.5">
               <Label>Rol</Label>
               <Select value={form.role} onValueChange={(v) => setF('role', v)}>
                 <SelectTrigger className="h-11" data-testid="user-form-role"><SelectValue /></SelectTrigger>
@@ -307,7 +368,7 @@ export default function Usuarios() {
                   <SelectItem value="admin">Administrador</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
+            </div>}
           </div>
           <DialogFooter className="gap-2 sm:gap-2 px-5 sm:px-6 py-4 border-t">
             <Button variant="outline" onClick={() => setDialogOpen(false)} className="rounded-xl">Cancelar</Button>

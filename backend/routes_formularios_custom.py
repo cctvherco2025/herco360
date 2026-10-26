@@ -34,7 +34,7 @@ from core import (db, get_current_user, serialize_doc, new_id, now_iso, can_mana
                   require_promo_access, can_create_custom_formulario, require_formularios_principal_access,
                   require_promociones_mes_access, can_admin_promos, PROMO_TIENDAS,
                   es_jefe_tienda, es_gerente_tienda, es_coordinador_tienda, es_revisor_tienda,
-                  tienda_promos)
+                  tienda_promos, RETAIL, LOGISTICA, departamento_de, es_jefe_depto, filtro_usuarios_depto)
 from models import CustomFormInput
 import promo_analisis
 from notifications import create_notification
@@ -94,13 +94,23 @@ def _audience_match(user, audiencia: dict) -> bool:
     return False
 
 
-async def _resolve_audience_users(audiencia: dict) -> list:
+def _depto_form(form: dict) -> str:
+    """Departamento del formulario (el de quien lo creó; los de antes, Retail)."""
+    return LOGISTICA if (form or {}).get('departamento') == LOGISTICA else RETAIL
+
+
+def _mismo_depto(user, form: dict) -> bool:
+    return user.get('role') == 'admin' or departamento_de(user) == _depto_form(form)
+
+
+async def _resolve_audience_users(audiencia: dict, depto: str = RETAIL) -> list:
     """IDs de todos los usuarios aprobados que hoy calzan con la audiencia —
     se guarda como foto fija al publicar (audiencia_resueltos), así que si
     alguien cambia de cargo/área después, el historial de esa publicación no
     se mueve."""
     audiencia = audiencia or {}
-    query = {'status': 'approved'}
+    # "todos" y las áreas/cargos son dentro del departamento del formulario
+    query = {'status': 'approved', **filtro_usuarios_depto(depto)}
     if not audiencia.get('todos'):
         ors = []
         if audiencia.get('areas'):
@@ -133,7 +143,9 @@ def _can_fill(user, form: dict) -> bool:
         return False
     if user.get('role') == 'admin':
         return True
-    if (user.get('position') or '').strip() == 'Director comercial':
+    if not _mismo_depto(user, form):
+        return False  # los departamentos no ven los formularios del otro
+    if es_jefe_depto(user):
         return True
     if form.get('creator_id') == user.get('id'):
         return True
@@ -151,7 +163,7 @@ def _can_fill(user, form: dict) -> bool:
 def _sees_all_responses(user, form: dict) -> bool:
     if user.get('role') == 'admin':
         return True
-    if (user.get('position') or '').strip() == 'Director comercial':
+    if es_jefe_depto(user) and _mismo_depto(user, form):
         return True
     if _is_promo_admin(user, form):
         return True
@@ -549,7 +561,7 @@ async def create_form(data: CustomFormInput, user=Depends(require_builder_access
         resueltos = [u['id'] for u in await promo_tareas.quienes_contestan()]
     else:
         audiencia_dict = data.audiencia.model_dump()
-        resueltos = await _resolve_audience_users(audiencia_dict)
+        resueltos = await _resolve_audience_users(audiencia_dict, departamento_de(user))
     total_max = sum(it['max'] for it in items)
     doc = {
         'id': new_id(),
@@ -560,6 +572,7 @@ async def create_form(data: CustomFormInput, user=Depends(require_builder_access
         'serie_key': serie_key,
         'status': status,
         'creator_id': user['id'], 'creator_name': user['name'], 'creator_avatar': user.get('avatar_url'),
+        'departamento': departamento_de(user),
         'audiencia': audiencia_dict,
         'audiencia_resueltos': resueltos,
         'flujo_tareas': flujo,
@@ -668,7 +681,7 @@ async def update_form(form_id: str, data: CustomFormInput, user=Depends(get_curr
         'updated_by': user['id'],
     }
     if audiencia_dict != (form.get('audiencia') or {}):
-        update['audiencia_resueltos'] = await _resolve_audience_users(audiencia_dict)
+        update['audiencia_resueltos'] = await _resolve_audience_users(audiencia_dict, _depto_form(form))
     if flujo and status == 'publicado' and not form.get('publicada_at'):
         update['publicada_at'] = promo_plazos.iso(promo_plazos.now_local())  # los plazos corren desde hoy
 

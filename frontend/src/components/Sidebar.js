@@ -11,6 +11,7 @@ import { useTheme } from '@/context/ThemeContext';
 import {
   canAccessInventory, canAccessReports, canAccessOrgChart, canAccessCams, canAccessFlos, canAccessRutina,
   canAccessFormulariosPrincipal, canAccessPromocionesMes, canAccessVacaciones, puedeVerTickets, puedeVerTareas, canAccessGuardias, canAccessRecorridos, canAccessEtiquetas,
+  esLogistica,
 } from '@/lib/constants';
 import { Logo, AppWordmark } from '@/components/Logo';
 import { NovedadPunto } from '@/components/Novedad';
@@ -251,6 +252,11 @@ function SidebarContent({ onNavigate }) {
   // que se insertan Inventario/Reportes arriba.
   if (!canAccessVacaciones(user)) {
     const idx = navItems.findIndex((n) => n.to === '/vacaciones');
+    if (idx >= 0) navItems.splice(idx, 1);
+  }
+  // Sala de Juntas es de Ventas Retail (Logística no la usa; los admins sí)
+  if (user?.role !== 'admin' && esLogistica(user)) {
+    const idx = navItems.findIndex((n) => n.to === '/sala-de-juntas');
     if (idx >= 0) navItems.splice(idx, 1);
   }
 

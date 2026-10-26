@@ -22,7 +22,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 
-from core import db, serialize_doc, get_current_user
+from core import db, serialize_doc, get_current_user, RETAIL, LOGISTICA, departamento_de
 import mantenimiento as mant
 import routes_activos
 import storage
@@ -51,11 +51,12 @@ def _rango(desde, hasta):
 async def _tareas(user, desde, hasta, sucursal=None, categoria=None, plan_id=None, con_respuestas=False):
     await mant._requiere_planificador(user)
     admin, editables = await mant._contexto(user)
+    # alcance: las categorías que maneja (quien administra, las de su departamento)
     q = {'fecha': {'$gte': desde, '$lte': hasta}}
-    if not admin:
+    if user.get('role') != 'admin':
         q['activo_categoria_id'] = {'$in': list(editables)}
     if categoria:
-        q['activo_categoria_id'] = categoria if admin or categoria in editables else '__ninguna__'
+        q['activo_categoria_id'] = categoria if categoria in editables else '__ninguna__'
     if sucursal:
         q['sucursal'] = sucursal
     if plan_id:
@@ -164,10 +165,14 @@ async def filtros(user=Depends(get_current_user)):
     """Opciones de los filtros: sucursales, categorías y planificaciones que la persona ve."""
     await mant._requiere_planificador(user)
     admin, editables = await mant._contexto(user)
-    cats = [c for c in await routes_activos._categorias() if admin or c['id'] in editables]
-    q = {} if admin else {'categoria_ids': {'$in': list(editables)}}
+    cats = [c for c in await routes_activos._categorias(user) if c['id'] in editables]
+    q = {} if user.get('role') == 'admin' else {'categoria_ids': {'$in': list(editables)}}
     planes = await db.mant_planes.find(q, {'_id': 0, 'id': 1, 'numero': 1, 'nombre': 1}).sort('numero', 1).to_list(1000)
-    return serialize_doc({'sucursales': routes_activos.SUCURSALES, 'categorias': [{'id': c['id'], 'nombre': c['nombre']} for c in cats],
+    if user.get('role') == 'admin':
+        sucursales = await routes_activos.ubicaciones(RETAIL) + await routes_activos.ubicaciones(LOGISTICA)
+    else:
+        sucursales = await routes_activos.ubicaciones(departamento_de(user))
+    return serialize_doc({'sucursales': sucursales, 'categorias': [{'id': c['id'], 'nombre': c['nombre']} for c in cats],
                           'planes': planes})
 
 

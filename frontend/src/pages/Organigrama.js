@@ -5,10 +5,10 @@ import { toast } from 'sonner';
 import {
   Crown, ClipboardCheck, Headphones, Globe, Map, CreditCard, Store, Coins,
   Check, X, Printer, Home, CalendarDays, Building2, Palmtree, Boxes, FileText,
-  ShieldCheck, Users, Info, SlidersHorizontal, Search as SearchIcon,
+  ShieldCheck, Users, Info, SlidersHorizontal, Search as SearchIcon, Truck, Plus, Pencil, Trash2,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { canAccessOrgChart } from '@/lib/constants';
+import { canAccessOrgChart, RETAIL, LOGISTICA, DEPARTAMENTOS, GERENTE_LOGISTICA, departamentoDe } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -135,7 +135,10 @@ function DeptCard({ dept }) {
   );
 }
 
-function AccessManager() {
+// Permisos que se dan por persona en Logística (los de Retail no aplican).
+const GATED_LOGISTICA = ['vacaciones', 'activos', 'formularios_custom'];
+
+function AccessManager({ depto }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -169,12 +172,13 @@ function AccessManager() {
   };
 
   const filtered = rows.filter((r) => {
+    if (depto && departamentoDe(r) !== depto) return false;
     const q = query.trim().toLowerCase();
     if (!q) return true;
     return [r.name, r.email, r.position, r.area].filter(Boolean).some((v) => v.toLowerCase().includes(q));
   });
 
-  const GATED = [
+  const TODOS = [
     { key: 'inventario', label: 'Inventario', color: C.navy },
     { key: 'reportes', label: 'Reportes', color: C.cyan },
     { key: 'cams', label: 'Reportes CAMS', color: C.green },
@@ -192,6 +196,7 @@ function AccessManager() {
     { key: 'etiquetas', label: 'Registrar Auditoría de Etiquetas', color: C.green },
     { key: 'activos', label: 'Administrar Activos (todas las categorías)', color: C.navy },
   ];
+  const GATED = depto === LOGISTICA ? TODOS.filter((m) => GATED_LOGISTICA.includes(m.key)) : TODOS;
 
   return (
     <section className="mt-8 rounded-[22px] border bg-card p-5 sm:p-7 shadow-card no-print" data-testid="access-manager-section">
@@ -202,7 +207,7 @@ function AccessManager() {
             <h2 className="font-heading text-lg font-semibold text-foreground flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4" style={{ color: C.orange }} /> Gestión de accesos a módulos
             </h2>
-            <p className="text-[12px] text-muted-foreground">Da o quita acceso a Inventario, Reportes, Reportes CAMS, cada permiso del módulo Formularios (principal, Evaluación FLOS, Rutina Operativa, Promociones del mes, Crear personalizado), quién puede editar los puntajes de Rutina Operativa y de la auditoría FLOS, quién registra Revisión de Guardias, Recorridos Preventivos y Auditoría de Etiquetas, y quién administra Activos, por usuario.</p>
+            <p className="text-[12px] text-muted-foreground">{depto === LOGISTICA ? 'Da o quita, por persona de Logística: Vacaciones, administrar Activos de Logística y crear formularios personalizados.' : <>Da o quita acceso a Inventario, Reportes, Reportes CAMS, cada permiso del módulo Formularios (principal, Evaluación FLOS, Rutina Operativa, Promociones del mes, Crear personalizado), quién puede editar los puntajes de Rutina Operativa y de la auditoría FLOS, quién registra Revisión de Guardias, Recorridos Preventivos y Auditoría de Etiquetas, y quién administra Activos, por usuario.</>}</p>
           </div>
         </div>
         <div className="relative w-full sm:w-72">
@@ -269,7 +274,122 @@ function AccessManager() {
       )}
       <p className="mt-3 flex items-start gap-1.5 text-[12px] text-muted-foreground">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: C.orange }} />
-        Director Comercial y administradores conservan acceso total y no se pueden editar. Los cambios se aplican de inmediato; el usuario los verá en su próximo ingreso o al recargar.
+        {depto === LOGISTICA ? 'El Gerente de Logística' : 'Director Comercial'} y administradores conservan acceso total y no se pueden editar. Los cambios se aplican de inmediato; el usuario los verá en su próximo ingreso o al recargar.
+      </p>
+    </section>
+  );
+}
+
+function OrganigramaLogistica() {
+  const [areas, setAreas] = useState([]);
+  const [gente, setGente] = useState([]);
+  const [editando, setEditando] = useState(null); // { i, valor } | { nueva: '' }
+  const [guardando, setGuardando] = useState(false);
+  useEffect(() => {
+    api.get('/users/organizacion').then(({ data }) => setAreas(data.logistica?.areas || [])).catch(() => {});
+    api.get('/users', { params: { status: 'approved' } })
+      .then(({ data }) => setGente(data.filter((u) => departamentoDe(u) === LOGISTICA))).catch(() => {});
+  }, []);
+  const guardar = async (lista) => {
+    setGuardando(true);
+    try {
+      const { data } = await api.put('/users/organizacion/areas-logistica', { areas: lista });
+      setAreas(data.areas);
+      setEditando(null);
+      toast.success('Áreas guardadas');
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'No se pudieron guardar las áreas');
+    } finally { setGuardando(false); }
+  };
+  const gerentes = gente.filter((u) => u.position === GERENTE_LOGISTICA);
+  const ORDEN = ['Jefe', 'Coordinador', 'Auxiliar'];
+  const deArea = (a) => gente.filter((u) => u.area === a && u.position !== GERENTE_LOGISTICA)
+    .sort((x, y) => ORDEN.indexOf(x.position) - ORDEN.indexOf(y.position) || x.name.localeCompare(y.name));
+  const sinArea = gente.filter((u) => u.position !== GERENTE_LOGISTICA && !areas.includes(u.area));
+  const colores = [C.navy, C.cyan, C.green, C.orange, C.purple, C.sky];
+
+  return (
+    <section className="mb-8 rounded-[22px] border bg-card p-5 sm:p-7 shadow-card" data-testid="org-logistica">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="h-6 w-1.5 rounded-full" style={{ background: C.green }} />
+          <h2 className="font-heading text-lg font-semibold text-foreground">Jerarquía de Logística</h2>
+        </div>
+        <Button variant="outline" size="sm" className="rounded-xl no-print" onClick={() => setEditando({ nueva: '' })} data-testid="org-area-nueva">
+          <Plus className="h-4 w-4 mr-1.5" /> Agregar área
+        </Button>
+      </div>
+
+      <div className="flex flex-col items-center">
+        <div className="w-full max-w-md rounded-2xl px-6 py-4 text-center shadow-md"
+          style={{ background: `linear-gradient(135deg, ${C.green}, #0f6b33)` }} data-testid="org-gerente-logistica">
+          <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-white/15">
+            <Truck className="h-6 w-6 text-white" />
+          </div>
+          <p className="text-base font-semibold text-white">Gerente de Logística</p>
+          <p className="text-[12px] text-white/80">
+            {gerentes.length ? gerentes.map((g) => g.name).join(', ') : 'Sin asignar'} · acceso total en Logística
+          </p>
+        </div>
+        <span className="h-6 w-px" style={{ background: '#cbd5e1' }} />
+        <span className="h-px w-[92%]" style={{ background: '#cbd5e1' }} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {areas.map((a, i) => {
+          const color = colores[i % colores.length];
+          const miembros = deArea(a);
+          return (
+            <div key={a} className="rounded-2xl border bg-card p-4" style={{ borderTopColor: color, borderTopWidth: 3 }} data-testid="org-area">
+              <div className="flex items-center justify-between gap-2">
+                {editando?.i === i ? (
+                  <form className="flex flex-1 gap-1.5" onSubmit={(e) => { e.preventDefault(); guardar(areas.map((x, k) => (k === i ? editando.valor : x))); }}>
+                    <Input autoFocus value={editando.valor} onChange={(e) => setEditando({ i, valor: e.target.value })} className="h-8" />
+                    <Button type="submit" size="sm" disabled={guardando} className="h-8 rounded-lg" style={{ background: C.navy }}><Check className="h-3.5 w-3.5" /></Button>
+                    <Button type="button" size="sm" variant="ghost" className="h-8 rounded-lg" onClick={() => setEditando(null)}><X className="h-3.5 w-3.5" /></Button>
+                  </form>
+                ) : (
+                  <>
+                    <p className="font-semibold text-foreground truncate">{a}</p>
+                    <div className="flex shrink-0 no-print">
+                      <button type="button" title="Cambiar nombre" onClick={() => setEditando({ i, valor: a })}
+                        className="h-7 w-7 grid place-items-center rounded-lg text-muted-foreground hover:bg-muted"><Pencil className="h-3.5 w-3.5" /></button>
+                      <button type="button" title={miembros.length ? 'Tiene personas: muévelas antes de quitar el área' : 'Quitar área'}
+                        disabled={!!miembros.length || areas.length === 1 || guardando} onClick={() => guardar(areas.filter((_, k) => k !== i))}
+                        className="h-7 w-7 grid place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-[#dc2626] disabled:opacity-30 disabled:hover:bg-transparent"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                  </>
+                )}
+              </div>
+              <ul className="mt-2 space-y-1.5">
+                {miembros.length === 0 && <li className="text-[12px] text-muted-foreground">Sin personas todavía</li>}
+                {miembros.map((u) => (
+                  <li key={u.id} className="flex items-center gap-2 min-w-0">
+                    <img src={u.avatar_url} alt="" className="h-6 w-6 rounded-full border object-cover" />
+                    <span className="truncate text-[13px] text-foreground">{u.name}</span>
+                    <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{u.position}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+        {editando && 'nueva' in editando && (
+          <form className="rounded-2xl border border-dashed p-4 flex gap-1.5 items-start" onSubmit={(e) => { e.preventDefault(); guardar([...areas, editando.nueva]); }}>
+            <Input autoFocus value={editando.nueva} placeholder="Nombre del área" onChange={(e) => setEditando({ nueva: e.target.value })} className="h-9" data-testid="org-area-nombre" />
+            <Button type="submit" size="sm" disabled={guardando || !editando.nueva.trim()} className="h-9 rounded-lg" style={{ background: C.navy }}>Agregar</Button>
+            <Button type="button" size="sm" variant="ghost" className="h-9 rounded-lg" onClick={() => setEditando(null)}><X className="h-4 w-4" /></Button>
+          </form>
+        )}
+      </div>
+      {sinArea.length > 0 && (
+        <p className="mt-4 text-[12px] text-muted-foreground">
+          Sin área: {sinArea.map((u) => u.name).join(', ')}. Asígnales un área en Usuarios.
+        </p>
+      )}
+      <p className="mt-4 flex items-start gap-1.5 text-[12px] text-muted-foreground">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: C.orange }} />
+        Logística está separada de Ventas Retail: su gente solo ve a su departamento. Cargos: Gerente de Logística, Jefe, Coordinador y Auxiliar.
       </p>
     </section>
   );
@@ -277,23 +397,25 @@ function AccessManager() {
 
 export default function Organigrama() {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  // admins eligen el departamento; el jefe de cada uno ve solo el suyo
+  const [vista, setVista] = useState(departamentoDe(user));
   if (!canAccessOrgChart(user)) return <Navigate to="/" replace />;
+  const depto = isAdmin ? vista : departamentoDe(user);
+
+  if (depto === LOGISTICA) {
+    return (
+      <div className="mx-auto max-w-[1400px] pb-10 print-area" data-testid="organigrama-page">
+        <EncabezadoOrg isAdmin={isAdmin} vista={depto} setVista={setVista} />
+        <OrganigramaLogistica />
+        <AccessManager depto={LOGISTICA} />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-[1400px] pb-10 print-area" data-testid="organigrama-page">
-      {/* Header */}
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-heading text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
-            Jerarquía organizacional y acceso al sistema <span style={{ color: C.cyan }}>HERCO OPS</span>
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">Estructura de mando y matriz de permisos por rol (RBAC)</p>
-        </div>
-        <Button onClick={() => window.print()} data-testid="org-print-btn"
-          className="no-print shrink-0 gap-2" style={{ background: C.navy }}>
-          <Printer className="h-4 w-4" /> Imprimir / PDF
-        </Button>
-      </div>
+      <EncabezadoOrg isAdmin={isAdmin} vista={depto} setVista={setVista} />
 
       {/* SECTION 1 — Organigrama */}
       <section className="mb-8 rounded-[22px] border bg-card p-5 sm:p-7 shadow-card" data-testid="org-section">
@@ -449,7 +571,7 @@ export default function Organigrama() {
       </section>
 
       {/* SECTION 4 — Gestión de accesos (interactivo) */}
-      <AccessManager />
+      <AccessManager depto={RETAIL} />
 
       {/* Print styles */}
       <style>{`
@@ -460,6 +582,35 @@ export default function Organigrama() {
           body { background: #fff !important; }
         }
       `}</style>
+    </div>
+  );
+}
+
+function EncabezadoOrg({ isAdmin, vista, setVista }) {
+  return (
+    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 className="font-heading text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
+          Jerarquía organizacional y acceso al sistema <span style={{ color: C.cyan }}>HERCO OPS</span>
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {vista === LOGISTICA ? 'Logística: estructura de mando y accesos' : 'Ventas Retail: estructura de mando y matriz de permisos por rol (RBAC)'}
+        </p>
+        {isAdmin && (
+          <div className="mt-3 flex gap-1.5 no-print" data-testid="org-depto-tabs">
+            {DEPARTAMENTOS.map((d) => (
+              <button key={d} type="button" onClick={() => setVista(d)}
+                className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${vista === d
+                  ? 'text-white' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
+                style={vista === d ? { background: d === LOGISTICA ? C.green : C.navy } : undefined}>{d}</button>
+            ))}
+          </div>
+        )}
+      </div>
+      <Button onClick={() => window.print()} data-testid="org-print-btn"
+        className="no-print shrink-0 gap-2" style={{ background: C.navy }}>
+        <Printer className="h-4 w-4" /> Imprimir / PDF
+      </Button>
     </div>
   );
 }

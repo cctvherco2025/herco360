@@ -50,12 +50,31 @@ export const CARGOS = ['Jefe', 'Jefe de tienda', 'Coordinador', 'Asesor Comercia
 // Cargos de mando: solo los asigna un admin desde Usuarios (dan acceso a más
 // módulos); no aparecen al registrarse (mismo criterio que
 // core.CARGOS_SOLO_ADMIN en el servidor).
-export const CARGOS_SOLO_ADMIN = ['Jefe de tienda', 'Jefe', 'Gerente', 'Director comercial'];
+export const CARGOS_SOLO_ADMIN = ['Jefe de tienda', 'Jefe', 'Gerente', 'Director comercial', 'Gerente de Logística'];
 export const CARGOS_PROPIOS = CARGOS.filter((c) => !CARGOS_SOLO_ADMIN.includes(c));
 export const AREAS = [
   'ECCP', 'Negocios País', 'Negocios Remotos', 'Caja', 'Ferrecréditos',
   'Operación Tienda', 'Centro de Servicio', 'Tienda', 'Auditoría',
 ];
+
+// ---- Departamentos (igual que core.py) ----
+// Ventas Retail y Logística están totalmente separados: cada uno ve solo a su
+// gente y sus datos; los admins ven todo. Sin el campo = Ventas Retail.
+export const RETAIL = 'Ventas Retail';
+export const LOGISTICA = 'Logística';
+export const DEPARTAMENTOS = [RETAIL, LOGISTICA];
+export const GERENTE_LOGISTICA = 'Gerente de Logística';
+export const CARGOS_LOGISTICA = [GERENTE_LOGISTICA, 'Jefe', 'Coordinador', 'Auxiliar'];
+export const CARGOS_LOGISTICA_PROPIOS = CARGOS_LOGISTICA.filter((c) => !CARGOS_SOLO_ADMIN.includes(c));
+const JEFES_DEPTO = { 'Director comercial': RETAIL, [GERENTE_LOGISTICA]: LOGISTICA };
+export const departamentoDe = (user) => (DEPARTAMENTOS.includes(user?.departamento) ? user.departamento : RETAIL);
+export const esLogistica = (user) => departamentoDe(user) === LOGISTICA;
+// Director comercial (Retail) o Gerente de Logística (Logística).
+export const esJefeDepto = (user) => JEFES_DEPTO[(user?.position || '').trim()] === departamentoDe(user);
+// Aprueba, crea y edita usuarios: admins (a todos) y el Gerente de Logística (a Logística).
+export const puedeGestionarUsuarios = (user) => user?.role === 'admin' || (esJefeDepto(user) && esLogistica(user));
+// Módulos de Ventas Retail (tiendas, ECCP, promociones…): Logística no los ve.
+const fueraDeRetail = (user) => !!user && user.role !== 'admin' && esLogistica(user);
 
 // Inventory branches (sucursales)
 export const SUCURSALES = ['H1', 'H2', 'H4', 'H5', 'H6'];
@@ -76,6 +95,7 @@ export function reportTypeMeta(id) {
 // Operación manager, Director comercial (and admins to supervise).
 export function canAccessInventory(user) {
   if (!user) return false;
+  if (fueraDeRetail(user)) return false;
   if (user.role === 'admin') return true;
   const cargo = (user.position || '').trim();
   if (cargo === 'Director comercial') return true;
@@ -103,6 +123,7 @@ export function canAccessVacaciones(user) {
 // Access limited to ECCP, Tienda and admins.
 export function canAccessReports(user) {
   if (!user) return false;
+  if (fueraDeRetail(user)) return false;
   if (user.role === 'admin') return true;
   const cargo = (user.position || '').trim();
   if (cargo === 'Director comercial') return true;
@@ -112,17 +133,19 @@ export function canAccessReports(user) {
   return area === 'ECCP' || area === 'Tienda';
 }
 
-// Organigrama / matriz de permisos: solo dirección y administración.
+// Organigrama / matriz de permisos: admins y el jefe de cada departamento
+// (Director comercial / Gerente de Logística), este solo con su gente.
 export function canAccessOrgChart(user) {
   if (!user) return false;
   if (user.role === 'admin') return true;
-  return (user.position || '').trim() === 'Director comercial';
+  return esJefeDepto(user);
 }
 
 // Reportes CAMS (conteo de personas por cámara): dirección y administración por
 // defecto; Organigrama > Gestión de accesos puede dar/quitar acceso a otros.
 export function canAccessCams(user) {
   if (!user) return false;
+  if (fueraDeRetail(user)) return false;
   if (user.role === 'admin') return true;
   const cargo = (user.position || '').trim();
   if (cargo === 'Director comercial') return true;
@@ -135,6 +158,7 @@ export function canAccessCams(user) {
 // por defecto; Organigrama > Gestión de accesos puede dar/quitar acceso a otros.
 export function canAccessFlos(user) {
   if (!user) return false;
+  if (fueraDeRetail(user)) return false;
   if (user.role === 'admin') return true;
   const cargo = (user.position || '').trim();
   if (cargo === 'Director comercial') return true;
@@ -148,6 +172,7 @@ export function canAccessFlos(user) {
 // Tienda (supervisa la operación de todas las tiendas). Override manual aplica.
 export function canAccessRutina(user) {
   if (!user) return false;
+  if (fueraDeRetail(user)) return false;
   if (user.role === 'admin') return true;
   const cargo = (user.position || '').trim();
   if (cargo === 'Director comercial') return true;
@@ -161,6 +186,7 @@ export function canAccessRutina(user) {
 // comercial de soporte. El Jefe de Operación puede ver pero no crear.
 export function canFillRutina(user) {
   if (!user) return false;
+  if (fueraDeRetail(user)) return false;
   if (user.role === 'admin') return true;
   const cargo = (user.position || '').trim();
   return cargo === 'Director comercial' || cargo === 'Gerente';
@@ -172,6 +198,7 @@ export function canFillRutina(user) {
 // (default false; no se infiere de canAccessRutina/canFillRutina).
 export function canEditRutinaSchema(user) {
   if (!user) return false;
+  if (fueraDeRetail(user)) return false;
   if (user.role === 'admin') return true;
   const cargo = (user.position || '').trim();
   if (cargo === 'Director comercial') return true;
@@ -183,6 +210,7 @@ export function canEditRutinaSchema(user) {
 // desde Organigrama, no se infiere de canAccessFlos.
 export function canEditFlosSchema(user) {
   if (!user) return false;
+  if (fueraDeRetail(user)) return false;
   if (user.role === 'admin') return true;
   const cargo = (user.position || '').trim();
   if (cargo === 'Director comercial') return true;
@@ -220,13 +248,17 @@ export const puedeVerTickets = (user) => esCoordinadorTienda(user) || esRevisorT
 // Supervisor = admin o Director comercial (ven y validan todas las tiendas);
 // mismo criterio que _es_supervisor en backend/tareas.py.
 export const esSupervisorTareas = (user) => user?.role === 'admin' || (user?.position || '').trim() === 'Director comercial';
-export const puedeVerTareas = (user) => esRevisorTienda(user) || esCoordinadorTienda(user) || esSupervisorTareas(user);
-// Crean gerente y jefe de tienda.
-export const puedeCrearTareas = (user) => esRevisorTienda(user);
+// Logística: por mando y sin tiendas; todos la ven, crean el Gerente y los Jefes.
+const deLogistica = (user) => !!user && user.role !== 'admin' && esLogistica(user);
+const mandoLogistica = (user) => deLogistica(user) && (esJefeDepto(user) || (user.position || '').trim() === 'Jefe');
+export const puedeVerTareas = (user) => esRevisorTienda(user) || esCoordinadorTienda(user) || esSupervisorTareas(user) || deLogistica(user);
+// Crean gerente y jefe de tienda (en Logística, el Gerente y los Jefes).
+export const puedeCrearTareas = (user) => esRevisorTienda(user) || mandoLogistica(user);
 export const PRIORIDADES_TAREA = ['alta', 'media', 'baja'];
 
 export function canAdminPromos(user) {
   if (!user) return false;
+  if (fueraDeRetail(user)) return false;
   if (user.role === 'admin') return true;
   if ((user.position || '').trim() === 'Director comercial') return true;
   return !!(user.module_access || {}).promociones_admin;
@@ -253,6 +285,7 @@ export function canAccessFormulariosPrincipal(user) {
   if (cargo === 'Director comercial') return true;
   const ov = (user.module_access || {}).formularios_principal;
   if (ov !== undefined && ov !== null) return !!ov;
+  if (esLogistica(user)) return true; // Logística: sus formularios personalizados
   return canAccessFlos(user) || canAccessRutina(user) || canAccessGuardias(user) || canAccessRecorridos(user)
     || canAccessEtiquetas(user);
 }
@@ -263,6 +296,7 @@ export function canAccessFormulariosPrincipal(user) {
 // derivación cruzada al mantenerlo así.
 export function canAccessPromocionesMes(user) {
   if (!user) return false;
+  if (fueraDeRetail(user)) return false;
   if (user.role === 'admin') return true;
   const cargo = (user.position || '').trim();
   if (cargo === 'Director comercial') return true;
@@ -274,9 +308,7 @@ export function canAccessPromocionesMes(user) {
 // formularios.crearPersonalizado: botón "Haz tu form personalizado".
 export function canCreateCustomFormulario(user) {
   if (!user) return false;
-  if (user.role === 'admin') return true;
-  const cargo = (user.position || '').trim();
-  if (cargo === 'Director comercial') return true;
+  if (user.role === 'admin' || esJefeDepto(user)) return true;
   return !!(user.module_access || {}).formularios_custom;
 }
 
@@ -287,6 +319,7 @@ export function canCreateCustomFormulario(user) {
 // Coordinador/Jefe ECCP).
 export function canFillGuardias(user) {
   if (!user) return false;
+  if (fueraDeRetail(user)) return false;
   const ov = (user.module_access || {}).guardias;
   if (ov !== undefined && ov !== null) return !!ov;
   const cargo = (user.position || '').trim();
@@ -295,6 +328,7 @@ export function canFillGuardias(user) {
 
 export function canAdminGuardias(user) {
   if (!user) return false;
+  if (fueraDeRetail(user)) return false;
   return user.role === 'admin' || (user.position || '').trim() === 'Director comercial';
 }
 
@@ -307,6 +341,7 @@ export function canAccessGuardias(user) {
 // asignable ('recorridos').
 export function canFillRecorridos(user) {
   if (!user) return false;
+  if (fueraDeRetail(user)) return false;
   const ov = (user.module_access || {}).recorridos;
   if (ov !== undefined && ov !== null) return !!ov;
   const cargo = (user.position || '').trim();
@@ -325,6 +360,7 @@ export function canAccessRecorridos(user) {
 // / can_admin_etiquetas, con su propio permiso asignable ('etiquetas').
 export function canFillEtiquetas(user) {
   if (!user) return false;
+  if (fueraDeRetail(user)) return false;
   const ov = (user.module_access || {}).etiquetas;
   if (ov !== undefined && ov !== null) return !!ov;
   const cargo = (user.position || '').trim();
@@ -345,6 +381,6 @@ export function canAccessEtiquetas(user) {
 // eso lo responde GET /activos/acceso.
 export function canAdminActivos(user) {
   if (!user) return false;
-  if (user.role === 'admin' || (user.position || '').trim() === 'Director comercial') return true;
+  if (user.role === 'admin' || esJefeDepto(user)) return true;
   return !!(user.module_access || {}).activos;
 }

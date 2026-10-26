@@ -4,7 +4,8 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { Plus, Trash2, GripVertical, ListChecks, CheckSquare, Type, Save } from 'lucide-react';
 import api from '@/lib/api';
-import { CARGOS, AREAS } from '@/lib/constants';
+import { CARGOS, AREAS, CARGOS_LOGISTICA, esLogistica } from '@/lib/constants';
+import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,6 +49,15 @@ const schemaToItems = (items) => (items || []).map((it) => ({
 }));
 
 export default function FormBuilder({ editId }) {
+  // la audiencia es dentro del departamento: Logística elige sus áreas y cargos
+  const { user } = useAuth();
+  const logistica = user?.role !== 'admin' && esLogistica(user);
+  const [areasLog, setAreasLog] = useState([]);
+  useEffect(() => {
+    if (logistica) api.get('/users/organizacion').then(({ data }) => setAreasLog(data.logistica?.areas || [])).catch(() => {});
+  }, [logistica]);
+  const areasAud = logistica ? areasLog : AREAS;
+  const cargosAud = logistica ? CARGOS_LOGISTICA : CARGOS;
   const navigate = useNavigate();
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
@@ -171,7 +181,7 @@ export default function FormBuilder({ editId }) {
             <Select value={audTipo} onValueChange={(v) => { setAudTipo(v); setAudValor(''); }}>
               <SelectTrigger className="h-11" data-testid="builder-audiencia-tipo"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="todos">Todos en la empresa</SelectItem>
+                <SelectItem value="todos">{logistica ? 'Todos en Logística' : 'Todos en la empresa'}</SelectItem>
                 <SelectItem value="area">Un área específica</SelectItem>
                 <SelectItem value="cargo">Un cargo específico</SelectItem>
               </SelectContent>
@@ -183,7 +193,7 @@ export default function FormBuilder({ editId }) {
               <Select value={audValor} onValueChange={setAudValor}>
                 <SelectTrigger className="h-11" data-testid="builder-audiencia-valor"><SelectValue placeholder="Selecciona…" /></SelectTrigger>
                 <SelectContent>
-                  {(audTipo === 'area' ? AREAS : CARGOS).map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                  {(audTipo === 'area' ? areasAud : cargosAud).map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

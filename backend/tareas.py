@@ -18,6 +18,11 @@ La tarea completa queda:
   cancelada   el gerente/jefe la canceló
 
 Tiendas que participan en Promociones del mes: H1 (Herco Max), H2 (Herco Centro) y H6 (Herco JT).
+
+Logística (sin tiendas) funciona por mando: el Gerente de Logística asigna a
+Jefes, Coordinadores y Auxiliares de cualquier área; cada Jefe, a los
+Coordinadores y Auxiliares de su área. Valida quien la creó, el Gerente de
+Logística o el Jefe del área de la tarea. Nadie de Retail las ve (salvo admins).
 Fechas de los campos de auditoría (created_at, etc.) en UTC (now_iso). La
 fecha límite es un día (YYYY-MM-DD) en hora de la empresa.
 """
@@ -32,7 +37,8 @@ from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 
 from core import (db, get_current_user, serialize_doc, new_id, now_iso, now_local,
-                  es_revisor_tienda, es_coordinador_tienda, tienda_promos, PROMO_TIENDAS, JEFE_TIENDA)
+                  es_revisor_tienda, es_coordinador_tienda, tienda_promos, PROMO_TIENDAS, JEFE_TIENDA,
+                  LOGISTICA, GERENTE_LOGISTICA, es_logistica, es_jefe_depto)
 from notifications import create_notification
 import storage
 
@@ -74,14 +80,39 @@ def _es_supervisor(user: dict) -> bool:
     return u.get('role') == 'admin' or (u.get('position') or '').strip() == 'Director comercial'
 
 
+# ---- Logística: por mando, sin tiendas ----
+def _de_logistica(user: dict) -> bool:
+    return (user or {}).get('role') != 'admin' and es_logistica(user)
+
+
+def _gerente_log(user: dict) -> bool:
+    return _de_logistica(user) and es_jefe_depto(user)
+
+
+def _jefe_log(user: dict) -> bool:
+    return _de_logistica(user) and ((user or {}).get('position') or '').strip() == 'Jefe'
+
+
+def _es_tarea_log(t: dict) -> bool:
+    return (t or {}).get('departamento') == LOGISTICA
+
+
 def puede_crear(user: dict) -> bool:
-    """Crean gerente y jefe de tienda (de una tienda que participa)."""
-    return es_revisor_tienda(user)
+    """Crean gerente y jefe de tienda (de una tienda que participa); en
+    Logística, el Gerente y los Jefes."""
+    return es_revisor_tienda(user) or _gerente_log(user) or _jefe_log(user)
 
 
 def es_validador(user: dict, t: dict) -> bool:
-    """Valida/cierra/edita/cancela: gerente o jefe de esa tienda, o un supervisor."""
-    return _es_supervisor(user) or (es_revisor_tienda(user) and tienda_promos(user) == t.get('tienda'))
+    """Valida/cierra/edita/cancela: gerente o jefe de esa tienda, o un supervisor.
+    En Logística: quien la creó, el Gerente de Logística o el Jefe de su área."""
+    u = user or {}
+    if _es_tarea_log(t):
+        return (u.get('role') == 'admin' or _gerente_log(u) or (t.get('creado_por') or {}).get('id') == u.get('id')
+                or (_jefe_log(u) and t.get('area') and t.get('area') == u.get('area')))
+    if _de_logistica(u):
+        return False
+    return _es_supervisor(u) or (es_revisor_tienda(u) and tienda_promos(u) == t.get('tienda'))
 
 
 def mi_asignacion(user: dict, t: dict) -> Optional[dict]:
@@ -93,7 +124,7 @@ def puede_ver(user: dict, t: dict) -> bool:
 
 
 def puede_ver_modulo(user: dict) -> bool:
-    return es_revisor_tienda(user) or es_coordinador_tienda(user) or _es_supervisor(user)
+    return es_revisor_tienda(user) or es_coordinador_tienda(user) or _es_supervisor(user) or _de_logistica(user)
 
 
 async def _tarea_o_404(tarea_id: str) -> dict:
@@ -110,8 +141,14 @@ def _sucursales_de(tienda: str) -> list:
     return [s for s, t in PROMO_TIENDAS.items() if t == tienda]
 
 
-async def _validadores_ids(tienda: str) -> list:
-    """Gerentes y jefes de la tienda (a quienes se avisa cuando se marca hecha)."""
+async def _validadores_ids(t: dict) -> list:
+    """Gerentes y jefes de la tienda (a quienes se avisa cuando se marca hecha).
+    En Logística: quien la creó, el Gerente de Logística y el Jefe del área."""
+    if _es_tarea_log(t):
+        ors = [{'position': GERENTE_LOGISTICA}] + ([{'position': 'Jefe', 'area': t['area']}] if t.get('area') else [])
+        users = await db.users.find({'status': 'approved', 'departamento': LOGISTICA, '$or': ors}, {'_id': 0, 'id': 1}).to_list(50)
+        return list(dict.fromkeys([(t.get('creado_por') or {}).get('id')] + [u['id'] for u in users]))
+    tienda = t.get('tienda')
     users = await db.users.find(
         {'status': 'approved', 'sucursal': {'$in': _sucursales_de(tienda)},
          '$or': [{'position': JEFE_TIENDA}, {'position': 'Gerente', 'area': 'Tienda'}]},
@@ -121,7 +158,19 @@ async def _validadores_ids(tienda: str) -> list:
 
 async def _asignables(user: dict) -> list:
     """A quién puede asignar quien crea: coordinadores de su tienda y, si quien
-    crea es el gerente, también el jefe de tienda. Nunca a sí mismo."""
+    crea es el gerente, también el jefe de tienda. Nunca a sí mismo.
+    Logística: el Gerente, a Jefes, Coordinadores y Auxiliares; un Jefe, a los
+    Coordinadores y Auxiliares de su área."""
+    if _de_logistica(user):
+        q = {'status': 'approved', 'departamento': LOGISTICA, 'id': {'$ne': user['id']}}
+        if _gerente_log(user):
+            q['position'] = {'$in': ['Jefe', 'Coordinador', 'Auxiliar']}
+        else:
+            q.update({'position': {'$in': ['Coordinador', 'Auxiliar']}, 'area': user.get('area')})
+        users = await db.users.find(q, {'_id': 0, 'id': 1, 'name': 1, 'position': 1, 'area': 1}).to_list(300)
+        orden = {'Jefe': 0, 'Coordinador': 1, 'Auxiliar': 2}
+        users.sort(key=lambda u: (u.get('area') or '', orden.get(u['position'], 3), u['name']))
+        return users
     tienda = tienda_promos(user)
     es_gerente = (user.get('position') or '').strip() == 'Gerente'
     cargos = ['Coordinador'] + ([JEFE_TIENDA] if es_gerente else [])
@@ -218,9 +267,27 @@ def _pintar(t: dict, user: dict) -> dict:
 # --------------------------------------------------------------------------- #
 #  Lectura
 # --------------------------------------------------------------------------- #
-def _filtro(user: dict) -> dict:
-    if _es_supervisor(user):
+def _filtro_validar(user: dict) -> dict:
+    """Tareas que la persona valida (gerente/jefe de tienda, supervisor, o
+    Gerente/Jefe de Logística)."""
+    if user.get('role') == 'admin':
         return {}
+    if _gerente_log(user):
+        return {'departamento': LOGISTICA}
+    if _jefe_log(user):
+        return {'departamento': LOGISTICA, '$or': [{'area': user.get('area')}, {'creado_por.id': user['id']}]}
+    if _es_supervisor(user):
+        return {'departamento': {'$ne': LOGISTICA}}
+    return {'tienda': tienda_promos(user), 'departamento': {'$ne': LOGISTICA}}
+
+
+def _valida(user: dict) -> bool:
+    return es_revisor_tienda(user) or _es_supervisor(user) or _gerente_log(user) or _jefe_log(user)
+
+
+def _filtro(user: dict) -> dict:
+    if _valida(user):
+        return {'$or': [{'asignados.id': user['id']}, _filtro_validar(user)]}
     ors = [{'asignados.id': user['id']}]
     if es_revisor_tienda(user):
         ors.append({'tienda': tienda_promos(user)})
@@ -230,7 +297,7 @@ def _filtro(user: dict) -> dict:
 @router.get('/asignables')
 async def asignables(user=Depends(get_current_user)):
     if not puede_crear(user):
-        raise HTTPException(status_code=403, detail='Solo el gerente o el jefe de tienda crean tareas')
+        raise HTTPException(status_code=403, detail='Solo un gerente o un jefe crea tareas')
     return serialize_doc(await _asignables(user))
 
 
@@ -242,10 +309,9 @@ async def contador(user=Depends(get_current_user)):
         return {'pendientes': 0}
     n = await db.tareas.count_documents(
         {'estado': 'abierta', 'asignados': {'$elemMatch': {'id': user['id'], 'estado': {'$in': [EST_PENDIENTE, EST_DEVUELTA]}}}})
-    if es_revisor_tienda(user) or _es_supervisor(user):
-        q = {'estado': 'abierta', 'asignados': {'$elemMatch': {'estado': EST_HECHA, 'id': {'$ne': user['id']}}}}
-        if not _es_supervisor(user):
-            q['tienda'] = tienda_promos(user)
+    if _valida(user):
+        q = {'estado': 'abierta', 'asignados': {'$elemMatch': {'estado': EST_HECHA, 'id': {'$ne': user['id']}}},
+             **_filtro_validar(user)}
         n += await db.tareas.count_documents(q)
     return {'pendientes': n}
 
@@ -265,7 +331,7 @@ async def listar(estado: str = None, user=Depends(get_current_user)):
 async def inicio(user=Depends(get_current_user)):
     """Bloque del Inicio. Coordinador: lo suyo por hacer. Gerente/jefe: lo que
     espera su validación."""
-    if es_coordinador_tienda(user):
+    if es_coordinador_tienda(user) or (_de_logistica(user) and not _valida(user)):
         # Sus tareas sin cerrar (pendiente/devuelta/hecha) y las validadas hace
         # poco (últimos 7 días), para que vea que tiene tareas aunque ya las cerró.
         corte = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
@@ -285,10 +351,8 @@ async def inicio(user=Depends(get_current_user)):
         orden = {EST_PENDIENTE: 0, EST_DEVUELTA: 0, EST_HECHA: 1, EST_VALIDADA: 2}
         items.sort(key=lambda t: (orden.get(t['mi_estado'], 3), not t['vencida'], t.get('fecha_limite') or '9999-99-99'))
         return {'rol': 'coordinador', 'tareas': serialize_doc(items)}
-    if es_revisor_tienda(user) or _es_supervisor(user):
-        q = {'estado': 'abierta', 'asignados.estado': EST_HECHA}
-        if not _es_supervisor(user):
-            q['tienda'] = tienda_promos(user)
+    if _valida(user):
+        q = {'estado': 'abierta', 'asignados.estado': EST_HECHA, **_filtro_validar(user)}
         rows = await db.tareas.find(q, {'_id': 0}).sort('updated_at', -1).to_list(100)
         return {'rol': 'revisor', 'tareas': serialize_doc([_pintar(r, user) for r in rows])}
     return {'rol': None, 'tareas': []}
@@ -347,15 +411,16 @@ async def foto(tarea_id: str, foto_id: str, user=Depends(get_current_user)):
 @router.post('')
 async def crear(data: TareaCreate, user=Depends(get_current_user)):
     if not puede_crear(user):
-        raise HTTPException(status_code=403, detail='Solo el gerente o el jefe de tienda crean tareas')
-    tienda = tienda_promos(user)
+        raise HTTPException(status_code=403, detail='Solo un gerente o un jefe crea tareas')
+    log = _de_logistica(user)
+    tienda = None if log else tienda_promos(user)
     permitidos = {u['id']: u for u in await _asignables(user)}
     ids = list(dict.fromkeys(data.asignados))
     elegidos = [permitidos[i] for i in ids if i in permitidos]
     if not elegidos:
-        raise HTTPException(status_code=400, detail='Elige al menos una persona de tu tienda para asignarle la tarea')
+        raise HTTPException(status_code=400, detail='Elige al menos una persona de tu equipo para asignarle la tarea')
     if len(elegidos) != len(ids):
-        raise HTTPException(status_code=400, detail='Alguien de los elegidos no es de tu tienda o no puedes asignarle')
+        raise HTTPException(status_code=400, detail='Alguien de los elegidos no es de tu equipo o no puedes asignarle')
 
     n = await db.counters.find_one_and_update({'_id': 'tareas'}, {'$inc': {'n': 1}},
                                               upsert=True, return_document=ReturnDocument.AFTER)
@@ -366,6 +431,9 @@ async def crear(data: TareaCreate, user=Depends(get_current_user)):
     ahora = now_iso()
     t = {
         'id': new_id(), 'numero': f"TAREA-{n['n']:04d}", 'tienda': tienda,
+        # Logística: sin tienda; el área es la del Jefe que la creó (el Gerente: todas)
+        'departamento': LOGISTICA if log else None,
+        'area': (user.get('area') if _jefe_log(user) else None) if log else None,
         'titulo': data.titulo.strip(), 'descripcion': (data.descripcion or '').strip(),
         'prioridad': _normalizar_prioridad(data.prioridad), 'fecha_limite': _validar_fecha(data.fecha_limite),
         'creado_por': {'id': user['id'], 'name': user['name']},
@@ -462,7 +530,7 @@ async def marcar_hecho(tarea_id: str, texto: str = Form(''), fotos: List[UploadF
         f'asignados.{idx}.devuelta_por_name': None, f'asignados.{idx}.devuelta_at': None,
         f'asignados.{idx}.motivo': None, 'updated_at': ahora},
         '$push': {f'asignados.{idx}.intentos': intento, 'mensajes': {'$each': msgs}}})
-    await _avisar(await _validadores_ids(t['tienda']), 'tarea_hecha',
+    await _avisar(await _validadores_ids(t), 'tarea_hecha',
                   f"{t['numero']}: {user['name']} marcó hecha \"{t['titulo']}\". Está lista para validar.", t, user)
     return await detalle(t['id'], user)
 
@@ -539,7 +607,7 @@ async def mensaje(tarea_id: str, texto: str = Form(''), fotos: List[UploadFile] 
     await db.tareas.update_one({'id': t['id']}, {'$push': {'mensajes': _mensaje(user, texto, rol, subidas)},
                                                  '$set': {'updated_at': now_iso()}})
     if rol == 'responsable':
-        destino = await _validadores_ids(t['tienda'])
+        destino = await _validadores_ids(t)
     else:
         destino = [a['id'] for a in t['asignados'] if a['estado'] != EST_VALIDADA]
     await _avisar(destino, 'tarea_mensaje', f"{t['numero']} · {user['name']}: {texto[:80] or 'envió una foto'}", t, user)

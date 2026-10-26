@@ -1,13 +1,14 @@
 """Vacation / leave requests with area-manager authorization."""
 from datetime import date as date_cls, timedelta
 from fastapi import APIRouter, HTTPException, Depends
-from core import db, get_current_user, require_vacaciones_access, serialize_doc, now_iso, new_id, today_local_str
+from core import (db, get_current_user, require_vacaciones_access, serialize_doc, now_iso, new_id, today_local_str,
+                  GERENTE_LOGISTICA, RETAIL, departamento_de, es_jefe_depto, filtro_depto)
 from models import VacationRequestInput, VacationReview
 from notifications import create_notification, notify_area_managers, log_activity
 
 router = APIRouter(prefix='/vacations', tags=['vacations'])
 
-MANAGER_POSITIONS = {'Jefe', 'Gerente', 'Director comercial'}
+MANAGER_POSITIONS = {'Jefe', 'Gerente', 'Director comercial', GERENTE_LOGISTICA}
 
 
 TYPE_COLORS = {
@@ -23,8 +24,9 @@ def _is_manager(user):
 
 
 def _sees_all_areas(user):
-    """Admins and the Director comercial can review every area (no area restriction)."""
-    return user.get('role') == 'admin' or (user.get('position') or '').strip() == 'Director comercial'
+    """Admins y el jefe del departamento (Director comercial / Gerente de
+    Logística) revisan todas las áreas; el jefe, solo de su departamento."""
+    return user.get('role') == 'admin' or es_jefe_depto(user)
 
 
 def _date_range(start, end):
@@ -50,6 +52,7 @@ async def create_request(data: VacationRequestInput, user=Depends(require_vacaci
         'id': new_id(),
         'user_id': user['id'], 'user_name': user['name'],
         'user_avatar': user.get('avatar_url'), 'area': user.get('area', ''),
+        'departamento': departamento_de(user),
         'position': user.get('position', ''),
         'start_date': data.start_date, 'end_date': data.end_date,
         'type': data.type, 'reason': (data.reason or '').strip(),
@@ -62,7 +65,7 @@ async def create_request(data: VacationRequestInput, user=Depends(require_vacaci
     await notify_area_managers(
         user.get('area', ''), 'vacacion_solicitada',
         f"{user['name']} solicitó {data.type} del {data.start_date} al {data.end_date}",
-        exclude_user_id=user['id'], related_id=doc['id'], related_type='vacation',
+        exclude_user_id=user['id'], related_id=doc['id'], related_type='vacation', departamento=departamento_de(user),
         actor_name=user['name'], actor_avatar=user.get('avatar_url'))
     doc.pop('_id', None)
     return serialize_doc(doc)
@@ -78,7 +81,7 @@ async def my_requests(user=Depends(require_vacaciones_access)):
 async def to_review(user=Depends(require_vacaciones_access)):
     if not _is_manager(user):
         return []
-    q = {'status': 'pending', 'user_id': {'$ne': user['id']}}
+    q = {'status': 'pending', 'user_id': {'$ne': user['id']}, **filtro_depto(user)}
     if not _sees_all_areas(user):
         q['area'] = user.get('area')
     rows = await db.vacation_requests.find(q, {'_id': 0}).sort('created_at', 1).to_list(200)
@@ -89,7 +92,7 @@ async def to_review(user=Depends(require_vacaciones_access)):
 async def pending_count(user=Depends(require_vacaciones_access)):
     if not _is_manager(user):
         return {'count': 0}
-    q = {'status': 'pending', 'user_id': {'$ne': user['id']}}
+    q = {'status': 'pending', 'user_id': {'$ne': user['id']}, **filtro_depto(user)}
     if not _sees_all_areas(user):
         q['area'] = user.get('area')
     return {'count': await db.vacation_requests.count_documents(q)}
@@ -103,8 +106,9 @@ async def _load_reviewable(request_id, user):
         raise HTTPException(status_code=400, detail='La solicitud ya fue procesada')
     if req['user_id'] == user['id']:
         raise HTTPException(status_code=403, detail='No puedes autorizar tu propia solicitud')
-    allowed = _sees_all_areas(user) or (
-        user.get('position') in MANAGER_POSITIONS and req.get('area') == user.get('area'))
+    mismo = (req.get('departamento') or RETAIL) == departamento_de(user)
+    allowed = user.get('role') == 'admin' or (mismo and (_sees_all_areas(user) or (
+        user.get('position') in MANAGER_POSITIONS and req.get('area') == user.get('area'))))
     if not allowed:
         raise HTTPException(status_code=403, detail='No puedes autorizar solicitudes de otra área')
     return req
@@ -136,7 +140,8 @@ async def approve_request(request_id: str, data: VacationReview, user=Depends(re
         related_id=req['id'], related_type='vacation',
         actor_name=user['name'], actor_avatar=user.get('avatar_url'))
     await log_activity(user['id'], user['name'], user.get('avatar_url'),
-                       'aprobó una solicitud de vacaciones', req['user_name'], 'vacation')
+                       'aprobó una solicitud de vacaciones', req['user_name'], 'vacation',
+                       req.get('departamento') or RETAIL)
     updated = await db.vacation_requests.find_one({'id': request_id}, {'_id': 0})
     return serialize_doc(updated)
 
@@ -165,6 +170,7 @@ async def calendar(start: str, end: str, user=Depends(require_vacaciones_access)
         'status': {'$in': ['approved', 'pending']},
         'start_date': {'$lte': end},
         'end_date': {'$gte': start},
+        **filtro_depto(user),
     }
     if _sees_all_areas(user):
         pass
@@ -214,7 +220,7 @@ async def update_request(request_id: str, data: VacationRequestInput, user=Depen
         await notify_area_managers(
             user.get('area', ''), 'vacacion_solicitada',
             f"{user['name']} modificó su solicitud de {data.type} ({data.start_date} al {data.end_date}), requiere nueva autorización",
-            exclude_user_id=user['id'], related_id=request_id, related_type='vacation',
+            exclude_user_id=user['id'], related_id=request_id, related_type='vacation', departamento=departamento_de(user),
             actor_name=user['name'], actor_avatar=user.get('avatar_url'))
     updated = await db.vacation_requests.find_one({'id': request_id}, {'_id': 0})
     return serialize_doc(updated)

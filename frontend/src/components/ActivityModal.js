@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { ACTIVITY_COLORS, DEFAULT_ACTIVITY_COLOR } from '@/lib/constants';
+import { ACTIVITY_COLORS, DEFAULT_ACTIVITY_COLOR, esLogistica } from '@/lib/constants';
 import { ymd, fmtHora } from '@/lib/time';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -163,6 +163,8 @@ function DetalleActividad({ activity }) {
 
 export default function ActivityModal({ open, onOpenChange, activity, defaultDate, defaultTime, onSaved }) {
   const { user } = useAuth();
+  // la Sala de Juntas es de Ventas Retail
+  const conSala = user?.role === 'admin' || !esLogistica(user);
   const [form, setForm] = useState(empty(defaultDate, defaultTime));
   // Una actividad existente se abre primero en modo "ver"; el creador (o un
   // admin) pasa a "editar" con el botón Editar.
@@ -540,13 +542,13 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
               />
             </div>
 
-            <div className="flex items-center justify-between rounded-xl border bg-card px-4 py-3">
+            {conSala && <div className="flex items-center justify-between rounded-xl border bg-card px-4 py-3">
               <div>
                 <p className="text-sm font-medium text-foreground">Reservar Sala de Juntas</p>
                 <p className="text-xs text-muted-foreground">Bloquea la sala para esta actividad</p>
               </div>
               <Switch checked={form.uses_meeting_room} onCheckedChange={(v) => set('uses_meeting_room', v)} data-testid="activity-form-room-switch" />
-            </div>
+            </div>}
 
             {roomBlocked && (
               <div ref={(el) => { camposRef.current.sala = el; }} className="flex items-start gap-2 rounded-xl border border-[rgba(220,38,38,0.35)] bg-[rgba(220,38,38,0.08)] px-4 py-3" data-testid="activity-form-monday-warning">

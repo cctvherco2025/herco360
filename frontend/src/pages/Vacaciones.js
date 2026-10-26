@@ -47,7 +47,7 @@ export default function Vacaciones() {
 
 function VacacionesPage() {
   const { user } = useAuth();
-  const isManager = user?.role === 'admin' || ['Jefe', 'Gerente', 'Director comercial'].includes(user?.position);
+  const isManager = user?.role === 'admin' || ['Jefe', 'Gerente', 'Director comercial', 'Gerente de Logística'].includes(user?.position);
 
   const [mine, setMine] = useState([]);
   const [toReview, setToReview] = useState([]);

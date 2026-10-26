@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { canAdminActivos } from '@/lib/constants';
+import { canAdminActivos, DEPARTAMENTOS, LOGISTICA, RETAIL, departamentoDe, esLogistica } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -75,10 +75,19 @@ function Responsables({ usuarios, value, onChange }) {
   );
 }
 
-function CategoriaForm({ open, onOpenChange, categoria, categorias, usuarios, onSaved }) {
+function CategoriaForm({ open, onOpenChange, categoria, categorias, onSaved }) {
+  const { user } = useAuth();
+  const esAdmin = user?.role === 'admin';
   const editando = !!categoria;
   const [form, setForm] = useState(vacia());
   const [saving, setSaving] = useState(false);
+  // responsables posibles: gente del departamento de la categoría
+  const depto = form.departamento || departamentoDe(user);
+  const [usuarios, setUsuarios] = useState([]);
+  useEffect(() => {
+    if (!open) return;
+    api.get('/activos/usuarios', { params: { departamento: depto } }).then(({ data }) => setUsuarios(data)).catch(() => setUsuarios([]));
+  }, [open, depto]);
 
   useEffect(() => {
     if (!open) return;
@@ -88,8 +97,8 @@ function CategoriaForm({ open, onOpenChange, categoria, categorias, usuarios, on
         campos: categoria.campos.map((c) => ({ ...c, _k: c.clave, opcionesTxt: (c.opciones || []).join(', ') })),
         responsables: categoria.responsables || [],
       });
-    } else setForm(vacia());
-  }, [open, categoria]);
+    } else setForm({ ...vacia(), departamento: departamentoDe(user) });
+  }, [open, categoria, user]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const setCampo = (i, k, v) => setForm((f) => ({ ...f, campos: f.campos.map((c, j) => (j === i ? { ...c, [k]: v } : c)) }));
@@ -113,7 +122,7 @@ function CategoriaForm({ open, onOpenChange, categoria, categorias, usuarios, on
 
   const tieneActivos = !!categoria?.conteo?.total;
   const tieneHijas = editando && categorias.some((c) => c.padre_id === categoria.id);
-  const madres = categorias.filter((c) => !c.padre_id && c.id !== categoria?.id);
+  const madres = categorias.filter((c) => !c.padre_id && c.id !== categoria?.id && (c.departamento || RETAIL) === depto);
   const madre = categorias.find((c) => c.id === form.padre_id);
   const numericosMadre = (madre?.campos || []).filter((c) => c.tipo === 'numero');
 
@@ -153,6 +162,15 @@ function CategoriaForm({ open, onOpenChange, categoria, categorias, usuarios, on
 
         <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-5 space-y-7">
           <Seccion titulo="General">
+            {esAdmin && (
+              <div className="space-y-1.5">
+                <Label htmlFor="cat-depto">Departamento</Label>
+                <NativeSelect id="cat-depto" value={depto} disabled={tieneActivos}
+                  onChange={(v) => setForm((f) => ({ ...f, departamento: v, responsables: [], padre_id: '', posicion_label: '', capacidad_campo: '' }))}>
+                  {DEPARTAMENTOS.map((d) => <option key={d} value={d}>{d}</option>)}
+                </NativeSelect>
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_120px] gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="cat-nombre">Nombre<span className="text-[#dc2626]"> *</span></Label>
@@ -291,17 +309,14 @@ export default function ActivosCategorias() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [cats, setCats] = useState(null);
-  const [usuarios, setUsuarios] = useState([]);
   const [form, setForm] = useState(null); // { categoria? }
+  const esAdmin = user?.role === 'admin';
 
   const load = useCallback(async () => {
     try { const { data } = await api.get('/activos/categorias'); setCats(data); }
     catch (e) { toast.error('No se pudieron cargar las categorías'); setCats([]); }
   }, []);
-  useEffect(() => {
-    load();
-    api.get('/activos/usuarios').then(({ data }) => setUsuarios(data)).catch(() => {});
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   if (!canAdminActivos(user)) return <Navigate to="/activos" replace />;
 
@@ -351,6 +366,8 @@ export default function ActivosCategorias() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="font-heading font-semibold truncate">{c.nombre}</h2>
                     <span className="font-mono text-[11px] font-semibold rounded-md px-1.5 py-0.5 bg-muted text-muted-foreground">{c.prefijo}-001</span>
+                    {esAdmin && <span className={`text-[11px] font-medium rounded-full px-2 py-0.5 ${c.departamento === LOGISTICA
+                      ? 'bg-[rgba(22,163,74,0.12)] text-[#16a34a]' : 'bg-[rgba(0,165,223,0.12)] text-[#0284c7] dark:text-[#3cbef6]'}`}>{c.departamento}</span>}
                   </div>
                   {c.descripcion && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{c.descripcion}</p>}
                 </div>
@@ -384,8 +401,54 @@ export default function ActivosCategorias() {
         </div>
       )}
 
+      {(esAdmin || esLogistica(user)) && <UbicacionesLogistica />}
+
       <CategoriaForm open={!!form} onOpenChange={(v) => { if (!v) setForm(null); }} categoria={form?.categoria}
-        categorias={cats || []} usuarios={usuarios} onSaved={load} />
+        categorias={cats || []} onSaved={load} />
     </div>
+  );
+}
+
+// Ubicaciones de los activos de Logística (Retail usa las sucursales H1, H2, H5, H6).
+function UbicacionesLogistica() {
+  const [lista, setLista] = useState(null);
+  const [nueva, setNueva] = useState('');
+  const [guardando, setGuardando] = useState(false);
+  useEffect(() => {
+    api.get('/activos/meta').then(({ data }) => setLista(data.ubicaciones?.[LOGISTICA] || [])).catch(() => setLista([]));
+  }, []);
+  const guardar = async (ubicaciones) => {
+    setGuardando(true);
+    try {
+      const { data } = await api.put('/activos/ubicaciones-logistica', { ubicaciones });
+      setLista(data.ubicaciones);
+      setNueva('');
+      toast.success('Ubicaciones guardadas');
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'No se pudieron guardar las ubicaciones');
+    } finally { setGuardando(false); }
+  };
+  if (lista === null) return null;
+  return (
+    <section className="mt-6 rounded-[18px] border bg-card shadow-card p-4 sm:p-5" data-testid="ubicaciones-logistica">
+      <h2 className="font-heading font-semibold">Ubicaciones de Logística</h2>
+      <p className="text-xs text-muted-foreground mt-0.5">Dónde están los activos de Logística (bodegas, CEDIS…). Ventas Retail usa sus sucursales.</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {lista.map((u) => (
+          <span key={u} className="inline-flex items-center gap-1 rounded-full border bg-muted/40 pl-3 pr-1 py-1 text-sm">
+            {u}
+            <button type="button" aria-label={`Quitar ${u}`} disabled={guardando || lista.length === 1}
+              onClick={() => guardar(lista.filter((x) => x !== u))}
+              className="h-6 w-6 grid place-items-center rounded-full text-muted-foreground hover:text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)] disabled:opacity-30">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </span>
+        ))}
+      </div>
+      <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (nueva.trim()) guardar([...lista, nueva.trim()]); }}>
+        <Input value={nueva} onChange={(e) => setNueva(e.target.value)} placeholder="Nueva ubicación (ej. CEDIS)" className="h-10 max-w-xs" data-testid="ubicacion-nueva" />
+        <Button type="submit" variant="outline" disabled={guardando || !nueva.trim()} className="rounded-xl h-10"><Plus className="h-4 w-4 mr-1" /> Agregar</Button>
+      </form>
+    </section>
   );
 }

@@ -40,14 +40,29 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from pymongo import ReturnDocument
 
-from core import db, serialize_doc, new_id, now_iso, get_current_user, require_activos_admin, can_admin_activos
+from core import (db, serialize_doc, new_id, now_iso, get_current_user, require_activos_admin, can_admin_activos,
+                  RETAIL, LOGISTICA, DEPARTAMENTOS, departamento_de, es_logistica, filtro_depto, filtro_usuarios_depto)
 from notifications import log_activity
 import storage
 
 router = APIRouter(prefix='/activos', tags=['activos'])
 logger = logging.getLogger('activos')
 
-SUCURSALES = ['H1', 'H2', 'H5', 'H6']
+SUCURSALES = ['H1', 'H2', 'H5', 'H6']  # ubicaciones de Ventas Retail
+# Logística tiene sus propias ubicaciones (las edita su gerente o un admin).
+UBICACIONES_LOGISTICA_INICIALES = ['Bodega central']
+
+
+async def ubicaciones(depto):
+    if depto != LOGISTICA:
+        return list(SUCURSALES)
+    doc = await db.config.find_one({'_id': 'ubicaciones_logistica'}) or {}
+    return doc.get('ubicaciones') or list(UBICACIONES_LOGISTICA_INICIALES)
+
+
+def depto_cat(cat) -> str:
+    """Departamento de una categoría (las de antes, sin el campo, son de Retail)."""
+    return LOGISTICA if (cat or {}).get('departamento') == LOGISTICA else RETAIL
 MAX_PHOTO_SIZE = 8 * 1024 * 1024
 TIPOS_CAMPO = {
     'texto': 'Texto', 'numero': 'Número entero', 'decimal': 'Número con decimales', 'fecha': 'Fecha',
@@ -134,13 +149,16 @@ def _slug(texto):
     return re.sub(r'[^a-z0-9]+', '_', s).strip('_')[:40] or 'campo'
 
 
-async def _categorias():
-    return await db.activo_categorias.find({}, {'_id': 0}).sort([('orden', 1), ('nombre', 1)]).to_list(500)
+async def _categorias(user=None):
+    """Categorías; con `user`, solo las de su departamento (los admins ven todas)."""
+    q = filtro_depto(user) if user else {}
+    return await db.activo_categorias.find(q, {'_id': 0}).sort([('orden', 1), ('nombre', 1)]).to_list(500)
 
 
 async def _acceso(user):
-    """(es_admin, categorías visibles, ids de categorías que puede editar)."""
-    cats = await _categorias()
+    """(administra, categorías visibles, ids de categorías que puede editar).
+    Quien administra lo hace sobre las categorías de su departamento."""
+    cats = await _categorias(user)
     if can_admin_activos(user):
         return True, cats, {c['id'] for c in cats}
     mias = [c for c in cats if user['id'] in (c.get('responsables') or [])]
@@ -273,7 +291,7 @@ async def _subir_foto(activo_id, f: UploadFile):
     return {'id': photo_id, 'path': path, 'content_type': ctype, 'at': now_iso()}
 
 
-def _base(payload, cat, padre):
+def _base(payload, cat, padre, ubic):
     nombre = _txt(payload.get('nombre'), 120)
     if not nombre:
         raise HTTPException(status_code=400, detail=f'Completa: {cat.get("nombre_label") or "Nombre"}')
@@ -281,8 +299,8 @@ def _base(payload, cat, padre):
         sucursal = padre['sucursal']
     else:
         sucursal = _txt(payload.get('sucursal'))
-        if sucursal not in SUCURSALES:
-            raise HTTPException(status_code=400, detail='Selecciona la sucursal')
+        if sucursal not in ubic:
+            raise HTTPException(status_code=400, detail='Selecciona la sucursal o ubicación')
     return {'nombre': nombre, 'sucursal': sucursal, 'ubicacion': _txt(payload.get('ubicacion'), 120),
             'notas': _txt(payload.get('notas'), 1000)}
 
@@ -300,7 +318,7 @@ async def meta(user=Depends(get_current_user)):
     admin, visibles, editables = await _acceso(user)
     if not admin and not visibles:
         raise HTTPException(status_code=403, detail='No tienes acceso a Activos')
-    todas = {c['id']: c for c in await _categorias()}
+    todas = {c['id']: c for c in await _categorias(user)}
     cats = []
     for c in visibles:
         padre = todas.get(c.get('padre_id'))
@@ -310,14 +328,48 @@ async def meta(user=Depends(get_current_user)):
                                 'posicion_label': h.get('posicion_label'), 'capacidad_campo': h.get('capacidad_campo'),
                                 'puede_editar': h['id'] in editables}
                                for h in todas.values() if h.get('padre_id') == c['id'] and h['id'] in {v['id'] for v in visibles}]})
-    return serialize_doc({'categorias': cats, 'sucursales': SUCURSALES, 'admin': admin,
+    # ubicaciones de cada departamento; `sucursales` = las de la persona (los
+    # admins, las de los dos) para filtrar la lista
+    ubic = {d: await ubicaciones(d) for d in DEPARTAMENTOS}
+    mias = ubic[departamento_de(user)] if user.get('role') != 'admin' else ubic[RETAIL] + ubic[LOGISTICA]
+    for c in cats:
+        c['departamento'] = depto_cat(c)
+    return serialize_doc({'categorias': cats, 'sucursales': mias, 'ubicaciones': ubic, 'admin': admin,
+                          'departamento': departamento_de(user), 'es_admin_sistema': user.get('role') == 'admin',
                           'tipos_campo': TIPOS_CAMPO, 'iconos': ICONOS})
+
+
+class UbicacionesInput(BaseModel):
+    ubicaciones: list
+
+
+@router.put('/ubicaciones-logistica')
+async def guardar_ubicaciones(data: UbicacionesInput, user=Depends(require_activos_admin)):
+    """Ubicaciones de los activos de Logística: las edita quien administra
+    Activos en Logística o un admin."""
+    if user.get('role') != 'admin' and not es_logistica(user):
+        raise HTTPException(status_code=403, detail='Las ubicaciones de Logística las edita Logística')
+    lista = []
+    for u in data.ubicaciones:
+        u = _txt(u, 40)
+        if u and u.lower() not in {x.lower() for x in lista}:
+            lista.append(u)
+    if not lista:
+        raise HTTPException(status_code=400, detail='Deja al menos una ubicación')
+    # no se quita una ubicación que todavía tiene activos
+    cats_log = [c['id'] for c in await db.activo_categorias.find({'departamento': LOGISTICA}, {'_id': 0, 'id': 1}).to_list(500)]
+    for quitada in set(await ubicaciones(LOGISTICA)) - set(lista):
+        n = await db.activos.count_documents({'categoria_id': {'$in': cats_log}, 'sucursal': quitada})
+        if n:
+            raise HTTPException(status_code=400, detail=f'{quitada} tiene {n} activo(s): muévelos antes de quitarla')
+    await db.config.update_one({'_id': 'ubicaciones_logistica'}, {'$set': {'ubicaciones': lista}}, upsert=True)
+    return {'ubicaciones': lista}
 
 
 # ── Categorías (administrador) ───────────────────────────────────
 @router.get('/categorias')
 async def list_categorias(user=Depends(require_activos_admin)):
-    cats = await _categorias()
+    cats = await _categorias(user)
     conteo = {r['_id']: r for r in await db.activos.aggregate([
         {'$group': {'_id': '$categoria_id', 'total': {'$sum': 1},
                     'activos': {'$sum': {'$cond': [{'$eq': ['$estado', 'activo']}, 1, 0]}}}},
@@ -327,12 +379,16 @@ async def list_categorias(user=Depends(require_activos_admin)):
     for c in cats:
         c['conteo'] = {'total': conteo.get(c['id'], {}).get('total', 0), 'activos': conteo.get(c['id'], {}).get('activos', 0)}
         c['responsables_info'] = [users[u] for u in (c.get('responsables') or []) if u in users]
+        c['departamento'] = depto_cat(c)
     return serialize_doc(cats)
 
 
 @router.get('/usuarios')
-async def list_usuarios(user=Depends(require_activos_admin)):
-    rows = await db.users.find({'status': 'approved'}, {'_id': 0, 'id': 1, 'name': 1, 'avatar_url': 1, 'position': 1, 'area': 1}).sort('name', 1).to_list(1000)
+async def list_usuarios(departamento: Optional[str] = None, user=Depends(require_activos_admin)):
+    """Posibles responsables: gente del departamento (un admin elige cuál)."""
+    depto = departamento if (user.get('role') == 'admin' and departamento in DEPARTAMENTOS) else departamento_de(user)
+    rows = await db.users.find({'status': 'approved', **filtro_usuarios_depto(depto)},
+                               {'_id': 0, 'id': 1, 'name': 1, 'avatar_url': 1, 'position': 1, 'area': 1}).sort('name', 1).to_list(1000)
     return serialize_doc(rows)
 
 
@@ -351,17 +407,25 @@ class CategoriaInput(BaseModel):
     capacidad_campo: Optional[str] = ''
     campos: list = []
     responsables: list = []
+    departamento: Optional[str] = None  # solo lo elige un admin
 
 
-async def _limpiar_categoria(data: CategoriaInput, actual=None):
+async def _limpiar_categoria(data: CategoriaInput, user, actual=None):
     nombre = _txt(data.nombre, 60)
     if not nombre:
         raise HTTPException(status_code=400, detail='Escribe el nombre de la categoría')
     prefijo = _txt(data.prefijo, 10).upper()
     if not re.fullmatch(r'[A-Z]{2,5}', prefijo):
         raise HTTPException(status_code=400, detail='El prefijo debe tener de 2 a 5 letras (ej. HER, VEH)')
+    # departamento: el de quien la crea; un admin lo elige (y lo cambia solo si no tiene activos)
+    if user.get('role') == 'admin' and data.departamento in DEPARTAMENTOS:
+        depto = data.departamento
+    else:
+        depto = depto_cat(actual) if actual else departamento_de(user)
+    if actual and depto != depto_cat(actual) and await db.activos.count_documents({'categoria_id': actual['id']}):
+        raise HTTPException(status_code=400, detail='No se puede cambiar de departamento: ya tiene activos')
     q_dup = {'id': {'$ne': actual['id']}} if actual else {}
-    otras = await db.activo_categorias.find(q_dup, {'_id': 0, 'id': 1, 'nombre': 1, 'prefijo': 1, 'padre_id': 1}).to_list(500)
+    otras = await db.activo_categorias.find(q_dup, {'_id': 0, 'id': 1, 'nombre': 1, 'prefijo': 1, 'padre_id': 1, 'departamento': 1}).to_list(500)
     if any(o['nombre'].lower() == nombre.lower() for o in otras):
         raise HTTPException(status_code=400, detail=f'Ya existe la categoría {nombre}')
     if any(o['prefijo'] == prefijo for o in otras):
@@ -415,6 +479,8 @@ async def _limpiar_categoria(data: CategoriaInput, actual=None):
             raise HTTPException(status_code=400, detail='La categoría a la que pertenece no existe')
         if madre.get('padre_id'):
             raise HTTPException(status_code=400, detail=f'{madre["nombre"]} ya pertenece a otra categoría: solo se permite un nivel')
+        if depto_cat(madre) != depto:
+            raise HTTPException(status_code=400, detail=f'{madre["nombre"]} es de otro departamento')
         if actual and any(o.get('padre_id') == actual['id'] for o in otras):
             raise HTTPException(status_code=400, detail='Otras categorías pertenecen a esta: no puede pertenecer a otra')
         posicion_label = _txt(data.posicion_label, 30)
@@ -426,8 +492,10 @@ async def _limpiar_categoria(data: CategoriaInput, actual=None):
         raise HTTPException(status_code=400, detail='No se puede cambiar a qué pertenece: ya hay activos en esta categoría')
 
     ids = [u for u in dict.fromkeys(_txt(u) for u in data.responsables) if u]
-    validos = {u['id'] for u in await db.users.find({'id': {'$in': ids}}, {'_id': 0, 'id': 1}).to_list(500)}
+    # responsables: solo gente del departamento de la categoría
+    validos = {u['id'] for u in await db.users.find({'id': {'$in': ids}, **filtro_usuarios_depto(depto)}, {'_id': 0, 'id': 1}).to_list(500)}
     return {
+        'departamento': depto,
         'nombre': nombre, 'plural': _txt(data.plural, 60) or nombre, 'prefijo': prefijo, 'icono': icono,
         'descripcion': _txt(data.descripcion, 300),
         'nombre_label': _txt(data.nombre_label, 40) or 'Nombre', 'nombre_ejemplo': _txt(data.nombre_ejemplo, 80),
@@ -444,9 +512,17 @@ async def _log_cat(accion, cat, user, **extra):
     })
 
 
+async def _categoria_mia(cat_id, user):
+    """Categoría del departamento de quien la administra (404 si es de otro)."""
+    actual = await db.activo_categorias.find_one({'id': cat_id, **filtro_depto(user)}, {'_id': 0})
+    if not actual:
+        raise HTTPException(status_code=404, detail='Categoría no encontrada')
+    return actual
+
+
 @router.post('/categorias')
 async def create_categoria(data: CategoriaInput, user=Depends(require_activos_admin)):
-    doc = {'id': new_id(), **await _limpiar_categoria(data), 'orden': await db.activo_categorias.count_documents({}),
+    doc = {'id': new_id(), **await _limpiar_categoria(data, user), 'orden': await db.activo_categorias.count_documents({}),
            'created_at': now_iso(), 'created_by_name': user['name']}
     await db.activo_categorias.insert_one(doc)
     doc.pop('_id', None)
@@ -456,10 +532,8 @@ async def create_categoria(data: CategoriaInput, user=Depends(require_activos_ad
 
 @router.put('/categorias/{cat_id}')
 async def update_categoria(cat_id: str, data: CategoriaInput, user=Depends(require_activos_admin)):
-    actual = await db.activo_categorias.find_one({'id': cat_id}, {'_id': 0})
-    if not actual:
-        raise HTTPException(status_code=404, detail='Categoría no encontrada')
-    nuevo = await _limpiar_categoria(data, actual)
+    actual = await _categoria_mia(cat_id, user)
+    nuevo = await _limpiar_categoria(data, user, actual)
     cambios = [k for k in nuevo if actual.get(k) != nuevo[k]]
     if not cambios:
         return serialize_doc(actual)
@@ -470,9 +544,7 @@ async def update_categoria(cat_id: str, data: CategoriaInput, user=Depends(requi
 
 @router.delete('/categorias/{cat_id}')
 async def delete_categoria(cat_id: str, user=Depends(require_activos_admin)):
-    actual = await db.activo_categorias.find_one({'id': cat_id}, {'_id': 0})
-    if not actual:
-        raise HTTPException(status_code=404, detail='Categoría no encontrada')
+    actual = await _categoria_mia(cat_id, user)
     n = await db.activos.count_documents({'categoria_id': cat_id})
     if n:
         raise HTTPException(status_code=400, detail=f'Tiene {n} activo(s) registrados: no se puede eliminar')
@@ -569,7 +641,7 @@ async def create_activo(data: str = Form(...), foto: Optional[UploadFile] = File
     _puede_editar(editables, cat['id'])
     padre, posicion = await _padre_y_posicion(cat, payload.get('padre_id'), payload.get('posicion'))
     doc = {
-        'id': new_id(), 'categoria_id': cat['id'], **_base(payload, cat, padre),
+        'id': new_id(), 'categoria_id': cat['id'], **_base(payload, cat, padre, await ubicaciones(depto_cat(cat))),
         'padre_id': padre['id'] if padre else None, 'posicion': posicion,
         'datos': _datos(cat, payload.get('datos')), 'estado': 'activo', 'foto': None,
         'created_at': now_iso(), 'created_by': user['id'], 'created_by_name': user['name'],
@@ -614,7 +686,7 @@ async def create_lote(data: LoteInput, user=Depends(get_current_user)):
     for it in data.items:  # validar todo antes de guardar nada
         padre, posicion = await _padre_y_posicion(cat, data.padre_id, it.get('posicion'))
         try:
-            base = _base(it, cat, padre)
+            base = _base(it, cat, padre, await ubicaciones(depto_cat(cat)))
             datos = _datos(cat, {**data.datos, **(it.get('datos') or {})})
         except HTTPException as e:
             raise HTTPException(status_code=400, detail=f'{label} {posicion}: {e.detail}')
@@ -682,7 +754,7 @@ async def update_activo(activo_id: str, data: ActivoUpdate, user=Depends(get_cur
     cat = await _categoria(row['categoria_id'])
     payload = data.dict()
     padre, posicion = await _padre_y_posicion(cat, payload.get('padre_id'), payload.get('posicion'), excluir_id=activo_id)
-    nuevo = {**_base(payload, cat, padre), 'padre_id': padre['id'] if padre else None, 'posicion': posicion,
+    nuevo = {**_base(payload, cat, padre, await ubicaciones(depto_cat(cat))), 'padre_id': padre['id'] if padre else None, 'posicion': posicion,
              'datos': _datos(cat, payload.get('datos'), row.get('datos'))}
     # Si es madre con posiciones numeradas, no puede quedar con menos capacidad que las ocupadas
     for hija in await db.activo_categorias.find({'padre_id': cat['id'], 'capacidad_campo': {'$nin': ['', None]}}, {'_id': 0}).to_list(50):

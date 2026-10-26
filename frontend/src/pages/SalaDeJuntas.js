@@ -5,7 +5,8 @@ import { toast } from 'sonner';
 import { QRCodeCanvas } from 'qrcode.react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { ROOM_STATES } from '@/lib/constants';
+import { ROOM_STATES, esLogistica } from '@/lib/constants';
+import { Navigate } from 'react-router-dom';
 import { capitalize, fullDateEs, ymd, MESES, MESES_CORTO, fmtHora, fmtRangoHoras } from '@/lib/time';
 import { WeekView, DayView, MonthView, startOfWeek, addDays } from '@/components/CalendarViews';
 import { Button } from '@/components/ui/button';
@@ -63,7 +64,14 @@ function StatusBadge({ status, size = 'sm' }) {
   );
 }
 
+// La Sala de Juntas es de Ventas Retail: Logística no entra (los admins sí).
 export default function SalaDeJuntas() {
+  const { user } = useAuth();
+  if (user && user.role !== 'admin' && esLogistica(user)) return <Navigate to="/" replace />;
+  return <SalaDeJuntasPagina />;
+}
+
+function SalaDeJuntasPagina() {
   const { user } = useAuth();
   const [rooms, setRooms] = useState([]);
   const [reservations, setReservations] = useState([]);

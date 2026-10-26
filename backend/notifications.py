@@ -2,7 +2,8 @@
 import asyncio
 import logging
 
-from core import db, new_id, now_iso
+from core import (db, new_id, now_iso, LOGISTICA, RETAIL, GERENTE_LOGISTICA,
+                  filtro_usuarios_depto)
 import push
 
 logger = logging.getLogger("notifications")
@@ -119,17 +120,19 @@ async def notify_admins(ntype, message, exclude_user_id=None, **kwargs):
         await create_notification(a['id'], ntype, message, **kwargs)
 
 
-async def notify_area_managers(area, ntype, message, exclude_user_id=None, **kwargs):
-    """Notify Jefe/Gerente/Director of a given área.
+async def notify_area_managers(area, ntype, message, exclude_user_id=None, departamento=RETAIL, **kwargs):
+    """Notify Jefe/Gerente of a given área and the jefe of the departamento.
 
-    The Director comercial oversees every area, so they're always notified
-    regardless of the requester's area.
+    Solo de ese departamento: en Retail el Director comercial (ve todas las
+    áreas); en Logística el Gerente de Logística.
     """
+    jefe = GERENTE_LOGISTICA if departamento == LOGISTICA else 'Director comercial'
     managers = await db.users.find({
         'status': 'approved',
+        **filtro_usuarios_depto(departamento),
         '$or': [
-            {'area': area, 'position': {'$in': ['Jefe', 'Gerente', 'Director comercial']}},
-            {'position': 'Director comercial'},
+            {'area': area, 'position': {'$in': ['Jefe', 'Gerente', jefe]}},
+            {'position': jefe},
         ],
     }, {'_id': 0, 'id': 1}).to_list(100)
     seen = set()
@@ -140,9 +143,15 @@ async def notify_area_managers(area, ntype, message, exclude_user_id=None, **kwa
         await create_notification(m['id'], ntype, message, **kwargs)
 
 
-async def log_activity(actor_id, actor_name, actor_avatar, action, target=None, target_type=None):
-    """Recent activity feed (visible to all)."""
+async def log_activity(actor_id, actor_name, actor_avatar, action, target=None, target_type=None, departamento=None):
+    """Recent activity feed (cada departamento ve el de su gente). Va al
+    departamento de quien lo hizo, o al indicado (p. ej. un admin que edita a
+    alguien de Logística: va a Logística)."""
+    if not departamento:
+        actor = await db.users.find_one({'id': actor_id}, {'_id': 0, 'departamento': 1}) if actor_id else None
+        departamento = (actor or {}).get('departamento') or RETAIL
     doc = {
+        'departamento': departamento,
         'id': new_id(),
         'actor_id': actor_id,
         'actor_name': actor_name,

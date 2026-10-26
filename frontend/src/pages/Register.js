@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -9,12 +9,21 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CARGOS_PROPIOS, AREAS, SUCURSALES } from '@/lib/constants';
+import { CARGOS_PROPIOS, AREAS, SUCURSALES, DEPARTAMENTOS, RETAIL, LOGISTICA, CARGOS_LOGISTICA_PROPIOS } from '@/lib/constants';
+import api from '@/lib/api';
 
 export default function Register() {
   const { register } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: '', email: '', position: '', area: '', sucursal: '', password: '' });
+  const [form, setForm] = useState({ name: '', email: '', departamento: RETAIL, position: '', area: '', sucursal: '', password: '' });
+  // áreas de Logística (las edita su gerente; se piden al servidor)
+  const [areasLogistica, setAreasLogistica] = useState([]);
+  useEffect(() => {
+    api.get('/users/organizacion').then(({ data }) => setAreasLogistica(data.logistica?.areas || [])).catch(() => {});
+  }, []);
+  const logistica = form.departamento === LOGISTICA;
+  const cargos = logistica ? CARGOS_LOGISTICA_PROPIOS : CARGOS_PROPIOS;
+  const areas = logistica ? areasLogistica : AREAS;
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -90,6 +99,20 @@ export default function Register() {
                 <Input id="email" data-testid="register-email-input" type="email" required value={form.email} onChange={set('email')} placeholder="nombre@herco.com" className="pl-10 h-11" />
               </div>
             </div>
+            <div className="space-y-1.5">
+              <Label>Departamento</Label>
+              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Departamento">
+                {DEPARTAMENTOS.map((d) => (
+                  <button key={d} type="button" role="radio" aria-checked={form.departamento === d}
+                    onClick={() => setForm({ ...form, departamento: d, position: '', area: '', sucursal: '' })}
+                    data-testid={`register-departamento-${d === LOGISTICA ? 'logistica' : 'retail'}`}
+                    className={`h-11 rounded-md border text-sm font-medium transition-colors ${form.departamento === d
+                      ? 'border-[#1e395e] bg-[#1e395e] text-white' : 'border-input bg-background text-foreground hover:bg-muted'}`}>
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Cargo</Label>
@@ -101,7 +124,7 @@ export default function Register() {
                     </div>
                   </SelectTrigger>
                   <SelectContent>
-                    {CARGOS_PROPIOS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    {cargos.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -121,7 +144,7 @@ export default function Register() {
                       </div>
                     </SelectTrigger>
                     <SelectContent>
-                      {AREAS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+                      {areas.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 )}

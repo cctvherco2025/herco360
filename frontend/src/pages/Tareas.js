@@ -6,7 +6,7 @@ import { ListChecks, Plus, Loader2, CalendarClock } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { timeAgoEs } from '@/lib/time';
-import { puedeCrearTareas, PRIORIDADES_TAREA } from '@/lib/constants';
+import { puedeCrearTareas, PRIORIDADES_TAREA, esLogistica } from '@/lib/constants';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -126,7 +126,7 @@ function NuevaTarea({ open, onOpenChange, onCreada }) {
           <div className="space-y-1.5">
             <Label>Asignar a</Label>
             {gente.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No hay a quién asignar en tu tienda.</p>
+              <p className="text-sm text-muted-foreground">No hay a quién asignar en tu equipo.</p>
             ) : (
               <div className="space-y-1.5 rounded-xl border p-2 max-h-[200px] overflow-y-auto">
                 {gente.map((g) => (
@@ -134,7 +134,7 @@ function NuevaTarea({ open, onOpenChange, onCreada }) {
                     <Checkbox checked={sel.includes(g.id)} onCheckedChange={() => toggle(g.id)} />
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm font-medium truncate">{g.name}</span>
-                      <span className="block text-[11px] text-muted-foreground">{g.position}</span>
+                      <span className="block text-[11px] text-muted-foreground">{g.position}{g.area ? ` · ${g.area}` : ''}</span>
                     </span>
                   </label>
                 ))}
@@ -178,7 +178,9 @@ export default function Tareas() {
           <h1 className="font-heading text-2xl sm:text-3xl font-semibold flex items-center gap-2">
             <ListChecks className="h-7 w-7 text-[#00a5df]" /> Tareas
           </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Encargos de la tienda: el coordinador sube foto al terminar y el gerente o jefe valida.</p>
+          <p className="text-muted-foreground text-sm mt-0.5">{esLogistica(user) && user?.role !== 'admin'
+            ? 'Encargos del equipo: quien la hace sube foto al terminar y el gerente o jefe valida.'
+            : 'Encargos de la tienda: el coordinador sube foto al terminar y el gerente o jefe valida.'}</p>
         </div>
         {puedeCrearTareas(user) && (
           <Button onClick={() => setNueva(true)} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="tareas-nueva">
@@ -219,7 +221,7 @@ export default function Tareas() {
               <span className="flex-1 min-w-[180px]">
                 <span className="block text-sm font-medium">{t.titulo}</span>
                 <span className="block text-xs text-muted-foreground">
-                  {t.tienda} · {total === 1 ? t.asignados[0].name : `${total} personas`} · asignó {t.creado_por?.name}
+                  {t.tienda || t.area || 'Logística'} · {total === 1 ? t.asignados[0].name : `${total} personas`} · asignó {t.creado_por?.name}
                 </span>
               </span>
               <PrioridadTarea prioridad={t.prioridad} />

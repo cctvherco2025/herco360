@@ -21,7 +21,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from core import db, get_current_user, serialize_doc, new_id, now_iso
+from core import db, get_current_user, serialize_doc, new_id, now_iso, filtro_depto
 
 router = APIRouter(prefix='/groups', tags=['groups'])
 
@@ -86,7 +86,7 @@ async def _validar(data: GroupInput, user: dict, group_id: Optional[str] = None)
 
     # solo usuarios aprobados que existen; sin repetidos, en el orden recibido
     pedidos = list(dict.fromkeys(i for i in data.miembros if i))
-    validos = {u['id'] for u in await db.users.find({'id': {'$in': pedidos}, 'status': 'approved'}, {'_id': 0, 'id': 1}).to_list(2000)}
+    validos = {u['id'] for u in await db.users.find({'id': {'$in': pedidos}, 'status': 'approved', **filtro_depto(user)}, {'_id': 0, 'id': 1}).to_list(2000)}
     miembros = [i for i in pedidos if i in validos]
     if not miembros:
         raise HTTPException(status_code=400, detail='Agrega al menos un integrante')

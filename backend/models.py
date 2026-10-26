@@ -15,6 +15,7 @@ class RegisterInput(BaseModel):
     position: Optional[str] = 'Colaborador'
     area: Optional[str] = ''
     sucursal: Optional[str] = ''
+    departamento: Optional[str] = None  # 'Ventas Retail' | 'Logística'
 
 
 class LoginInput(BaseModel):
@@ -55,6 +56,7 @@ class AdminUserCreate(BaseModel):
     area: Optional[str] = ''
     sucursal: Optional[str] = ''
     role: str = 'user'  # admin | user
+    departamento: Optional[str] = None  # 'Ventas Retail' | 'Logística'
 
 
 class AdminUserUpdate(BaseModel):
@@ -66,6 +68,7 @@ class AdminUserUpdate(BaseModel):
     sucursal: Optional[str] = None
     role: Optional[str] = None
     status: Optional[str] = None
+    departamento: Optional[str] = None  # 'Ventas Retail' | 'Logística'
 
 
 class VacationRequestInput(BaseModel):
