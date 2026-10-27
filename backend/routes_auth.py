@@ -42,6 +42,8 @@ async def register(data: RegisterInput):
         'created_at': now_iso(),
     }
     await db.users.insert_one(user)
+    import permisos
+    await permisos.recalcular_usuario(user['id'])
     await notify_admins('usuario_pendiente', f"{data.name} pidió acceso a HERCO OPS: apruébalo en Usuarios", departamento=depto,
                         related_id=user['id'], related_type='user',
                         actor_name=data.name, actor_avatar=user['avatar_url'])

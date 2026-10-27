@@ -84,7 +84,7 @@ export default function PromoRevision({ schema }) {
                   <EstadoTarea estado={estadoVisible(t)} />
                   {t.estado === 'con_observaciones' && t.ticket_id && (
                     <Button asChild size="sm" variant="outline" className="rounded-xl" data-testid="promo-revision-ticket">
-                      <Link to={`/formularios/tickets/${t.ticket_id}`}>Ver ticket</Link>
+                      <Link to={`/formularios/tickets/${t.ticket_id}`}>Ver seguimiento</Link>
                     </Button>
                   )}
                   {t.estado !== 'pendiente' && (
@@ -182,7 +182,7 @@ function RevisionTarea({ id, onBack }) {
         {d.ticket && (
           <p className="text-xs rounded-xl bg-[rgba(236,144,50,0.14)] text-[#b45309] dark:text-[#fbbf24] px-3 py-2 flex flex-wrap items-center gap-2">
             Las observaciones se atienden en el ticket {d.ticket.numero}.
-            <Link to={`/formularios/tickets/${d.ticket.id}`} className="font-semibold underline">Abrir ticket</Link>
+            <Link to={`/formularios/tickets/${d.ticket.id}`} className="font-semibold underline">Abrir seguimiento</Link>
           </p>
         )}
         {(respuesta?.general_photos || []).length > 0 && (

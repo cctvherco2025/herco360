@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowLeft, Camera, Check, Loader2, Send, Undo2, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Camera, Check, Loader2, Send, Undo2, Pencil, Trash2, Ban } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { timeAgoEs } from '@/lib/time';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AuthedImg } from '@/components/customform/CustomFormHistorial';
@@ -38,19 +39,34 @@ function EditarTarea({ open, onOpenChange, tarea, onGuardada }) {
   const [form, setForm] = useState({ titulo: '', descripcion: '', prioridad: 'media', fecha_limite: '' });
   const [conFecha, setConFecha] = useState(false);
   const [saving, setSaving] = useState(false);
+  // personas asignadas: las de la tarea más a quien la persona puede asignar;
+  // no se quita a quien ya avanzó en su parte
+  const [gente, setGente] = useState([]);
+  const [sel, setSel] = useState([]);
   useEffect(() => {
     if (!open || !tarea) return;
     setForm({ titulo: tarea.titulo, descripcion: tarea.descripcion || '', prioridad: tarea.prioridad, fecha_limite: tarea.fecha_limite || '' });
     setConFecha(!!tarea.fecha_limite);
+    setSel(tarea.asignados.map((a) => a.id));
+    api.get('/tareas/asignables').then(({ data }) => {
+      const actuales = tarea.asignados.map((a) => ({ id: a.id, name: a.name, avanzo: a.estado !== 'pendiente' }));
+      setGente([...actuales, ...data.filter((g) => !actuales.some((a) => a.id === g.id))]);
+    }).catch(() => setGente(tarea.asignados.map((a) => ({ id: a.id, name: a.name, avanzo: a.estado !== 'pendiente' }))));
   }, [open, tarea]);
+  const toggle = (g) => {
+    if (g.avanzo) return;
+    setSel((s) => (s.includes(g.id) ? s.filter((x) => x !== g.id) : [...s, g.id]));
+  };
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const guardar = async () => {
     if (!form.titulo.trim()) { toast.error('El título no puede quedar vacío'); return; }
+    if (!sel.length) { toast.error('Deja al menos una persona asignada'); return; }
     setSaving(true);
     try {
       const { data } = await api.patch(`/tareas/${tarea.id}`, {
         titulo: form.titulo.trim(), descripcion: form.descripcion.trim(), prioridad: form.prioridad,
         fecha_limite: conFecha && form.fecha_limite ? form.fecha_limite : null,
+        asignados: sel,
       });
       toast.success('Tarea actualizada'); onOpenChange(false); onGuardada?.(data);
     } catch (e) { toast.error(e?.response?.data?.detail || 'No se pudo guardar'); }
@@ -58,9 +74,9 @@ function EditarTarea({ open, onOpenChange, tarea, onGuardada }) {
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(485px,100%)] max-w-none rounded-[22px] p-0 overflow-hidden">
+      <DialogContent className="w-[min(485px,100%)] max-w-none rounded-[22px] p-0 overflow-hidden max-h-[90dvh] flex flex-col">
         <DialogHeader className="px-6 pt-6 pb-2"><DialogTitle className="font-heading text-xl">Editar tarea</DialogTitle></DialogHeader>
-        <div className="px-6 pb-2 space-y-4">
+        <div className="px-6 pb-2 space-y-4 flex-1 min-h-0 overflow-y-auto">
           <div className="space-y-1.5"><Label>Título</Label><Input value={form.titulo} onChange={(e) => set('titulo', e.target.value)} className="h-11" /></div>
           <div className="space-y-1.5"><Label>Descripción</Label><Textarea value={form.descripcion} onChange={(e) => set('descripcion', e.target.value)} rows={3} /></div>
           <div className="grid grid-cols-2 gap-3">
@@ -80,6 +96,18 @@ function EditarTarea({ open, onOpenChange, tarea, onGuardada }) {
               ) : <div className="h-11 flex items-center rounded-md border border-dashed border-input px-3 text-sm text-muted-foreground">Sin fecha</div>}
             </div>
           </div>
+          <div className="space-y-1.5">
+            <Label>Personas asignadas</Label>
+            <div className="space-y-1 rounded-xl border p-2 max-h-[180px] overflow-y-auto">
+              {gente.map((g) => (
+                <label key={g.id} className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 ${g.avanzo ? 'opacity-70' : 'cursor-pointer hover:bg-muted/50'}`} data-testid="tarea-editar-persona">
+                  <Checkbox checked={sel.includes(g.id)} disabled={g.avanzo} onCheckedChange={() => toggle(g)} />
+                  <span className="flex-1 min-w-0 text-sm truncate">{g.name}</span>
+                  <span className="text-[11px] text-muted-foreground shrink-0">{g.avanzo ? 'ya avanzó' : g.position || ''}</span>
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
         <DialogFooter className="px-6 py-4 border-t gap-2 sm:gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} className="rounded-xl">Cancelar</Button>
@@ -95,6 +123,7 @@ function EditarTarea({ open, onOpenChange, tarea, onGuardada }) {
    valida o devuelve cada parte. */
 export default function TareaDetalle() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [t, setT] = useState(null);
   const [error, setError] = useState(null);
@@ -162,6 +191,16 @@ export default function TareaDetalle() {
     if (ok) load();
   };
 
+  const eliminar = async () => {
+    const ok = await confirmar({
+      tipo: 'danger', titulo: '¿Eliminar la tarea?',
+      mensaje: <>Se borrará <b>{t.titulo}</b> por completo, con sus mensajes. Nadie había avanzado en ella. No se puede deshacer.</>,
+      textoConfirmar: 'Eliminar tarea', textoCargando: 'Eliminando…', textoExito: 'Tarea eliminada',
+      accion: () => api.delete(`/tareas/${id}`),
+    });
+    if (ok) navigate('/tareas');
+  };
+
   if (error) {
     return (
       <div className="max-w-[560px] mx-auto pt-16 text-center">
@@ -174,6 +213,8 @@ export default function TareaDetalle() {
 
   const fotoUrl = (f) => `/tareas/${t.id}/foto/${f.id}`;
   const abierta = t.estado === 'abierta';
+  // lo que la persona puede hacer con esta tarea (lo decide el servidor: permiso + su tienda o área)
+  const puedo = t.puedo || {};
 
   return (
     <div className="max-w-[1000px] mx-auto pt-2 space-y-4" data-testid="tarea-detalle">
@@ -187,10 +228,11 @@ export default function TareaDetalle() {
           <EstadoTarea estado={t.estado} />
           <PrioridadTarea prioridad={t.prioridad} />
           <FechaLimite fecha={t.fecha_limite} vencida={t.vencida} />
-          {t.soy_validador && abierta && (
-            <span className="ml-auto flex gap-1.5">
-              <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setEditar(true)} data-testid="tarea-editar"><Pencil className="h-4 w-4 mr-1.5" /> Editar</Button>
-              <Button size="sm" variant="ghost" className="text-[#dc2626] hover:text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)]" onClick={cancelar} data-testid="tarea-cancelar"><Trash2 className="h-4 w-4 mr-1.5" /> Cancelar</Button>
+          {abierta && (puedo.editar || puedo.cancelar || puedo.eliminar) && (
+            <span className="ml-auto flex flex-wrap gap-1.5">
+              {puedo.editar && <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setEditar(true)} data-testid="tarea-editar"><Pencil className="h-4 w-4 mr-1.5" /> Editar</Button>}
+              {puedo.cancelar && <Button size="sm" variant="ghost" className="text-[#dc2626] hover:text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)]" onClick={cancelar} data-testid="tarea-cancelar"><Ban className="h-4 w-4 mr-1.5" /> Cancelar</Button>}
+              {puedo.eliminar && <Button size="sm" variant="ghost" className="text-[#dc2626] hover:text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)]" onClick={eliminar} data-testid="tarea-eliminar"><Trash2 className="h-4 w-4 mr-1.5" /> Eliminar</Button>}
             </span>
           )}
         </div>

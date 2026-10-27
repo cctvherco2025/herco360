@@ -43,6 +43,7 @@ from core import (db, get_current_user, serialize_doc, new_id, now_iso, now_loca
 from notifications import create_notification
 import storage
 import mando
+import permisos
 
 router = APIRouter(prefix='/tareas', tags=['tareas'])
 logger = logging.getLogger('tareas')
@@ -91,43 +92,77 @@ def _de_logistica(user: dict) -> bool:
     return not es_super_admin(user) and not es_retail(user)
 
 
-def _gerente_log(user: dict) -> bool:
-    """Jefe del departamento o admin del departamento: manda en todo él."""
-    return _de_logistica(user) and (es_jefe_depto(user) or (user or {}).get('role') == 'admin')
+def _mando_total(user: dict) -> bool:
+    """Manda en todo su departamento: su jefe (Director comercial, Gerente de
+    Logística…) y sus admins (el super admin, en el suyo)."""
+    u = user or {}
+    return u.get('role') == 'admin' or es_jefe_depto(u)
 
 
-def _jefe_log(user: dict) -> bool:
-    """Jefe o gerente de un área: manda en su área."""
-    return _de_logistica(user) and (user or {}).get('nivel') in ('jefe', 'gerente')
+def _mando_area(user: dict) -> bool:
+    """Jefe o gerente de un área: manda en su área y subáreas (mando.py)."""
+    u = user or {}
+    return bool(u.get('area_id')) and mando.es_mando(u) and not es_jefe_depto(u)
 
 
 def _es_tarea_log(t: dict) -> bool:
-    return ((t or {}).get('departamento') or RETAIL) != RETAIL
+    """Tarea por mando (sin tienda): las de los departamentos sin tiendas y,
+    en Retail, las que crean el Director comercial, los admins o los jefes de
+    área que no son de tienda."""
+    return not (t or {}).get('tienda')
+
+
+# ---- Permisos (permisos.py) ----
+# Cada acción pide el permiso ('tareas.crear', 'tareas.editar'…) Y que la
+# tarea sea de su gente según la estructura: su tienda en Retail; su área y
+# subáreas (o todo el departamento, el jefe del departamento) en los demás.
+def _gestor_estructural(user: dict) -> bool:
+    """Tiene gente a cargo en Tareas: gerente/jefe de tienda, quien manda en
+    todo su departamento o un jefe/gerente de área."""
+    return es_revisor_tienda(user) or _es_supervisor(user) or _mando_total(user) or _mando_area(user)
 
 
 def puede_crear(user: dict) -> bool:
-    """Crean gerente y jefe de tienda (de una tienda que participa); en
-    Logística, el Gerente y los Jefes."""
-    return es_revisor_tienda(user) or _gerente_log(user) or _jefe_log(user)
+    """Permiso de crear y alguien a quien asignar: gerente y jefe de tienda
+    (a su tienda); el jefe del departamento y sus admins (a todo el
+    departamento); un jefe o gerente de área (a su área y subáreas)."""
+    return permisos.tiene(user, 'tareas.crear') and (es_revisor_tienda(user) or _mando_total(user) or _mando_area(user))
+
+
+def _sin_avance(t: dict) -> bool:
+    """Nadie la marcó hecha ni subió fotos: todavía se puede eliminar."""
+    return all(a.get('estado') == EST_PENDIENTE and not a.get('intentos') and not a.get('evidencia')
+               for a in (t.get('asignados') or []))
+
+
+def puede(user: dict, t: dict, accion: str) -> bool:
+    """editar / validar / cancelar / eliminar sobre esta tarea."""
+    if not permisos.tiene(user, f'tareas.{accion}') or not es_validador(user, t):
+        return False
+    if accion == 'eliminar':
+        return t.get('estado') == 'abierta' and _sin_avance(t)
+    return True
 
 
 def es_validador(user: dict, t: dict) -> bool:
-    """Valida/cierra/edita/cancela: gerente o jefe de esa tienda, o un supervisor.
-    En Logística: quien la creó, el Gerente de Logística o el Jefe de su área."""
+    """Tarea de su gente (según la estructura; el permiso se revisa aparte):
+    gerente o jefe de esa tienda, o un supervisor. En los demás
+    departamentos: quien la creó, el jefe del departamento o un jefe del área."""
     u = user or {}
     if _es_tarea_log(t):
         if es_super_admin(u):
             return True
-        if departamento_de(u) != t.get('departamento'):
+        if departamento_de(u) != (t.get('departamento') or RETAIL):
             return False
-        if _gerente_log(u) or (t.get('creado_por') or {}).get('id') == u.get('id'):
+        if _mando_total(u) or (t.get('creado_por') or {}).get('id') == u.get('id'):
             return True
-        if not _jefe_log(u):
+        if not _mando_area(u):
             return False
         if t.get('area_path') is not None:  # el área de la tarea o una de sus subáreas
             return u.get('area_id') in t['area_path']
         return bool(t.get('area')) and t.get('area') == u.get('area')  # tareas de antes
-    if _de_logistica(u):
+    # tareas de tienda (Retail)
+    if not es_super_admin(u) and not es_retail(u):
         return False
     return _es_supervisor(u) or (es_revisor_tienda(u) and tienda_promos(u) == t.get('tienda'))
 
@@ -137,11 +172,15 @@ def mi_asignacion(user: dict, t: dict) -> Optional[dict]:
 
 
 def puede_ver(user: dict, t: dict) -> bool:
-    return mi_asignacion(user, t) is not None or es_validador(user, t)
+    """Asignado, quien la creó, o quien ve las tareas de su equipo."""
+    if mi_asignacion(user, t) is not None or (t.get('creado_por') or {}).get('id') == user.get('id'):
+        return True
+    return permisos.tiene(user, 'tareas.ver_equipo') and es_validador(user, t)
 
 
 def puede_ver_modulo(user: dict) -> bool:
-    return es_revisor_tienda(user) or es_coordinador_tienda(user) or _es_supervisor(user) or _de_logistica(user)
+    return (es_revisor_tienda(user) or es_coordinador_tienda(user) or _es_supervisor(user) or _de_logistica(user)
+            or any(permisos.tiene(user, a) for a in ('tareas.ver_equipo', 'tareas.crear')))
 
 
 async def _tarea_o_404(tarea_id: str) -> dict:
@@ -166,7 +205,8 @@ async def _validadores_ids(t: dict) -> list:
             ors = [{'nivel': 'jefe_depto'}, {'nivel': {'$in': ['jefe', 'gerente']}, 'area_id': {'$in': t['area_path']}}]
         else:
             ors = [{'nivel': 'jefe_depto'}] + ([{'nivel': {'$in': ['jefe', 'gerente']}, 'area': t['area']}] if t.get('area') else [])
-        users = await db.users.find({'status': 'approved', 'departamento': t['departamento'], '$or': ors}, {'_id': 0, 'id': 1}).to_list(50)
+        users = await db.users.find({'status': 'approved', **filtro_departamento(t.get('departamento') or RETAIL), '$or': ors},
+                                    {'_id': 0, 'id': 1}).to_list(50)
         return list(dict.fromkeys([(t.get('creado_por') or {}).get('id')] + [u['id'] for u in users]))
     tienda = t.get('tienda')
     users = await db.users.find(
@@ -181,11 +221,13 @@ async def _asignables(user: dict) -> list:
     crea es el gerente, también el jefe de tienda. Nunca a sí mismo.
     Logística: el Gerente, a Jefes, Coordinadores y Auxiliares; un Jefe, a los
     Coordinadores y Auxiliares de su área."""
-    if _de_logistica(user):
-        if _gerente_log(user):
-            q = {'status': 'approved', 'departamento': departamento_de(user), 'id': {'$ne': user['id']},
+    if not es_revisor_tienda(user):
+        if _mando_total(user):
+            q = {'status': 'approved', **filtro_departamento(departamento_de(user)), 'id': {'$ne': user['id']},
                  'nivel': {'$in': list(NIVELES_ASIGNABLES)}}
-            users = await db.users.find(q, {'_id': 0, 'id': 1, 'name': 1, 'position': 1, 'area': 1, 'nivel': 1}).to_list(500)
+            users = await db.users.find(q, {'_id': 0, 'id': 1, 'name': 1, 'position': 1, 'area': 1, 'nivel': 1}).to_list(1000)
+        elif not _mando_area(user):
+            return []
         else:
             # un jefe o gerente de área: a quien manda (su área y subáreas)
             users = [{k: p.get(k) for k in ('id', 'name', 'position', 'area', 'nivel')}
@@ -278,7 +320,9 @@ def _validar_fecha(fl):
 def _pintar(t: dict, user: dict) -> dict:
     t = dict(t)
     t['vencida'] = _vencida(t)
-    t['soy_validador'] = es_validador(user, t)
+    t['soy_validador'] = puede(user, t, 'validar')
+    # lo que la persona puede hacer con esta tarea (botones de la pantalla)
+    t['puedo'] = {a: puede(user, t, a) for a in ('editar', 'validar', 'cancelar', 'eliminar')}
     mia = mi_asignacion(user, t)
     t['mi_estado'] = mia.get('estado') if mia else None
     t['por_validar'] = sum(1 for a in t.get('asignados', []) if a.get('estado') == EST_HECHA)
@@ -293,24 +337,26 @@ def _filtro_validar(user: dict) -> dict:
     Gerente/Jefe de Logística)."""
     if es_super_admin(user):
         return {}
-    if _gerente_log(user):
-        return {'departamento': departamento_de(user)}
-    if _jefe_log(user):
-        return {'departamento': departamento_de(user), '$or': [
-            {'area_path': user.get('area_id')}, {'creado_por.id': user['id']},
-            {'area_path': {'$exists': False}, 'area': user.get('area')}]}
-    if _es_supervisor(user):
-        return filtro_departamento(RETAIL)
-    return {'tienda': tienda_promos(user), **filtro_departamento(RETAIL)}
+    depto = filtro_departamento(departamento_de(user))
+    if _mando_total(user):
+        return depto  # todo su departamento (en Retail: también las de tienda)
+    ors = [{'creado_por.id': user['id']}]
+    if es_revisor_tienda(user):
+        ors.append({'tienda': tienda_promos(user)})
+    if _mando_area(user):
+        ors += [{'area_path': user.get('area_id')},
+                {'area_path': {'$exists': False}, 'tienda': None, 'area': user.get('area')}]
+    return {**depto, '$or': ors}
 
 
 def _valida(user: dict) -> bool:
-    return es_revisor_tienda(user) or _es_supervisor(user) or _gerente_log(user) or _jefe_log(user)
+    """Ve las tareas de su equipo (permiso y gente a cargo)."""
+    return _gestor_estructural(user) and permisos.tiene(user, 'tareas.ver_equipo')
 
 
 def _filtro(user: dict) -> dict:
     if _valida(user):
-        return {'$or': [{'asignados.id': user['id']}, _filtro_validar(user)]}
+        return {'$or': [{'asignados.id': user['id']}, {'creado_por.id': user['id']}, _filtro_validar(user)]}
     ors = [{'asignados.id': user['id']}]
     if es_revisor_tienda(user):
         ors.append({'tienda': tienda_promos(user)})
@@ -319,8 +365,9 @@ def _filtro(user: dict) -> dict:
 
 @router.get('/asignables')
 async def asignables(user=Depends(get_current_user)):
-    if not puede_crear(user):
-        raise HTTPException(status_code=403, detail='Solo un gerente o un jefe crea tareas')
+    # la usan quien crea y quien edita (para cambiar a las personas asignadas)
+    if not (puede_crear(user) or (permisos.tiene(user, 'tareas.editar') and _gestor_estructural(user))):
+        raise HTTPException(status_code=403, detail='No tienes permiso para crear tareas')
     return serialize_doc(await _asignables(user))
 
 
@@ -332,7 +379,7 @@ async def contador(user=Depends(get_current_user)):
         return {'pendientes': 0}
     n = await db.tareas.count_documents(
         {'estado': 'abierta', 'asignados': {'$elemMatch': {'id': user['id'], 'estado': {'$in': [EST_PENDIENTE, EST_DEVUELTA]}}}})
-    if _valida(user):
+    if _gestor_estructural(user) and permisos.tiene(user, 'tareas.validar'):
         q = {'estado': 'abierta', 'asignados': {'$elemMatch': {'estado': EST_HECHA, 'id': {'$ne': user['id']}}},
              **_filtro_validar(user)}
         n += await db.tareas.count_documents(q)
@@ -354,7 +401,7 @@ async def listar(estado: str = None, user=Depends(get_current_user)):
 async def inicio(user=Depends(get_current_user)):
     """Bloque del Inicio. Coordinador: lo suyo por hacer. Gerente/jefe: lo que
     espera su validación."""
-    if es_coordinador_tienda(user) or (_de_logistica(user) and not _valida(user)):
+    if not (_valida(user) and permisos.tiene(user, 'tareas.validar')):
         # Sus tareas sin cerrar (pendiente/devuelta/hecha) y las validadas hace
         # poco (últimos 7 días), para que vea que tiene tareas aunque ya las cerró.
         corte = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
@@ -374,11 +421,9 @@ async def inicio(user=Depends(get_current_user)):
         orden = {EST_PENDIENTE: 0, EST_DEVUELTA: 0, EST_HECHA: 1, EST_VALIDADA: 2}
         items.sort(key=lambda t: (orden.get(t['mi_estado'], 3), not t['vencida'], t.get('fecha_limite') or '9999-99-99'))
         return {'rol': 'coordinador', 'tareas': serialize_doc(items)}
-    if _valida(user):
-        q = {'estado': 'abierta', 'asignados.estado': EST_HECHA, **_filtro_validar(user)}
-        rows = await db.tareas.find(q, {'_id': 0}).sort('updated_at', -1).to_list(100)
-        return {'rol': 'revisor', 'tareas': serialize_doc([_pintar(r, user) for r in rows])}
-    return {'rol': None, 'tareas': []}
+    q = {'estado': 'abierta', 'asignados.estado': EST_HECHA, **_filtro_validar(user)}
+    rows = await db.tareas.find(q, {'_id': 0}).sort('updated_at', -1).to_list(100)
+    return {'rol': 'revisor', 'tareas': serialize_doc([_pintar(r, user) for r in rows])}
 
 
 @router.get('/agenda')
@@ -434,8 +479,9 @@ async def foto(tarea_id: str, foto_id: str, user=Depends(get_current_user)):
 @router.post('')
 async def crear(data: TareaCreate, user=Depends(get_current_user)):
     if not puede_crear(user):
-        raise HTTPException(status_code=403, detail='Solo un gerente o un jefe crea tareas')
-    log = _de_logistica(user)
+        raise HTTPException(status_code=403, detail='No tienes permiso para crear tareas')
+    # por tienda (gerente/jefe de tienda) o por mando (los demás)
+    log = not es_revisor_tienda(user)
     tienda = None if log else tienda_promos(user)
     permitidos = {u['id']: u for u in await _asignables(user)}
     ids = list(dict.fromkeys(data.asignados))
@@ -455,11 +501,11 @@ async def crear(data: TareaCreate, user=Depends(get_current_user)):
     t = {
         'id': new_id(), 'numero': f"TAREA-{n['n']:04d}", 'tienda': tienda,
         # Logística: sin tienda; el área es la del Jefe que la creó (el Gerente: todas)
-        'departamento': departamento_de(user) if log else None,
-        'area': (user.get('area') if _jefe_log(user) else None) if log else None,
+        'departamento': (departamento_de(user) if not es_retail(user) else None) if log else None,
         # el área de la tarea y su camino: la validan los jefes de esa área y de las de arriba
-        'area_id': user.get('area_id') if (log and _jefe_log(user)) else None,
-        'area_path': list(user.get('area_path') or []) if (log and _jefe_log(user)) else None,
+        'area': user.get('area') if (log and _mando_area(user) and not _mando_total(user)) else None,
+        'area_id': user.get('area_id') if (log and _mando_area(user) and not _mando_total(user)) else None,
+        'area_path': list(user.get('area_path') or []) if (log and _mando_area(user) and not _mando_total(user)) else None,
         'titulo': data.titulo.strip(), 'descripcion': (data.descripcion or '').strip(),
         'prioridad': _normalizar_prioridad(data.prioridad), 'fecha_limite': _validar_fecha(data.fecha_limite),
         'creado_por': {'id': user['id'], 'name': user['name']},
@@ -479,11 +525,39 @@ async def crear(data: TareaCreate, user=Depends(get_current_user)):
 @router.patch('/{tarea_id}')
 async def editar(tarea_id: str, data: TareaUpdate, user=Depends(get_current_user)):
     t = await _tarea_o_404(tarea_id)
-    if not es_validador(user, t):
-        raise HTTPException(status_code=403, detail='Solo el gerente o el jefe de la tienda edita la tarea')
+    if not puede(user, t, 'editar'):
+        raise HTTPException(status_code=403, detail='No tienes permiso para editar esta tarea')
     if t['estado'] != 'abierta':
         raise HTTPException(status_code=409, detail='La tarea ya está cerrada o cancelada')
     sets = {}
+    nuevos_ids, quitados = [], []
+    if data.asignados is not None:
+        # personas asignadas: se agregan de quien la persona puede asignar; se
+        # quitan solo las que todavía no avanzaron (para no perder evidencia)
+        pedidos = list(dict.fromkeys(i for i in data.asignados if i))
+        if not pedidos:
+            raise HTTPException(status_code=400, detail='La tarea necesita al menos una persona asignada')
+        actuales = {a['id']: a for a in t['asignados']}
+        permitidos = {u['id']: u for u in await _asignables(user)}
+        for a in t['asignados']:
+            if a['id'] not in pedidos:
+                if a['estado'] != EST_PENDIENTE or a.get('intentos'):
+                    raise HTTPException(status_code=400, detail=f"{a['name']} ya avanzó en su parte: no se puede quitar")
+                quitados.append(a)
+        lista = []
+        for i in pedidos:
+            if i in actuales:
+                lista.append(actuales[i])
+            elif i in permitidos:
+                u = permitidos[i]
+                lista.append({'id': u['id'], 'name': u['name'], 'estado': EST_PENDIENTE, 'evidencia': [],
+                              'intentos': [], 'comentario': '', 'hecho_at': None, 'validada_por_name': None,
+                              'validada_at': None, 'devuelta_por_name': None, 'devuelta_at': None, 'motivo': None})
+                nuevos_ids.append(u['id'])
+            else:
+                raise HTTPException(status_code=400, detail='Alguien de los elegidos no es de tu equipo o no puedes asignarle')
+        if nuevos_ids or quitados:
+            sets['asignados'] = lista
     if data.titulo is not None:
         if not data.titulo.strip():
             raise HTTPException(status_code=400, detail='El título no puede quedar vacío')
@@ -497,16 +571,23 @@ async def editar(tarea_id: str, data: TareaUpdate, user=Depends(get_current_user
         sets['recordatorios'] = []  # nueva fecha: los recordatorios vuelven a contar
     if sets:
         sets['updated_at'] = now_iso()
-        await db.tareas.update_one({'id': t['id']}, {'$set': sets,
-                                   '$push': {'mensajes': _sistema(f"{user['name']} editó la tarea.")}})
+        cambios = []
+        if nuevos_ids:
+            cambios.append('agregó a ' + ', '.join(a['name'] for a in sets['asignados'] if a['id'] in nuevos_ids))
+        if quitados:
+            cambios.append('quitó a ' + ', '.join(a['name'] for a in quitados))
+        texto = f"{user['name']} editó la tarea" + (f" ({'; '.join(cambios)})" if cambios else '') + '.'
+        await db.tareas.update_one({'id': t['id']}, {'$set': sets, '$push': {'mensajes': _sistema(texto)}})
+        if nuevos_ids:
+            await _avisar(nuevos_ids, 'tarea_asignada', f"{t['numero']}: {user['name']} te asignó \"{sets.get('titulo', t['titulo'])}\".", t, user)
     return await detalle(t['id'], user)
 
 
 @router.post('/{tarea_id}/cancelar')
 async def cancelar(tarea_id: str, texto: str = Form(''), user=Depends(get_current_user)):
     t = await _tarea_o_404(tarea_id)
-    if not es_validador(user, t):
-        raise HTTPException(status_code=403, detail='Solo el gerente o el jefe de la tienda cancela la tarea')
+    if not puede(user, t, 'cancelar'):
+        raise HTTPException(status_code=403, detail='No tienes permiso para cancelar esta tarea')
     if t['estado'] != 'abierta':
         raise HTTPException(status_code=409, detail='La tarea ya está cerrada o cancelada')
     ahora = now_iso()
@@ -519,6 +600,23 @@ async def cancelar(tarea_id: str, texto: str = Form(''), user=Depends(get_curren
     pendientes = [a['id'] for a in t['asignados'] if a['estado'] != EST_VALIDADA]
     await _avisar(pendientes, 'tarea_cancelada', f"{t['numero']}: {user['name']} canceló \"{t['titulo']}\".", t, user)
     return await detalle(t['id'], user)
+
+
+@router.delete('/{tarea_id}')
+async def eliminar(tarea_id: str, user=Depends(get_current_user)):
+    """Borra la tarea por completo. Solo mientras nadie la haya marcado hecha
+    (sin fotos ni validaciones); después solo se cancela, para no perder la
+    evidencia."""
+    t = await _tarea_o_404(tarea_id)
+    if not permisos.tiene(user, 'tareas.eliminar') or not es_validador(user, t):
+        raise HTTPException(status_code=403, detail='No tienes permiso para eliminar esta tarea')
+    if t.get('estado') != 'abierta' or not _sin_avance(t):
+        raise HTTPException(status_code=409, detail='Alguien ya avanzó en esta tarea: no se puede eliminar, solo cancelar')
+    # (como en el resto de la app, las fotos de los mensajes quedan en el almacenamiento)
+    await db.tareas.delete_one({'id': t['id']})
+    await _avisar([a['id'] for a in t['asignados']], 'tarea_cancelada',
+                  f"{t['numero']}: {user['name']} eliminó \"{t['titulo']}\".", t, user)
+    return {'message': f"Tarea {t['numero']} eliminada"}
 
 
 # --------------------------------------------------------------------------- #
@@ -571,8 +669,8 @@ async def _parte(t: dict, asignado_id: str) -> int:
 @router.post('/{tarea_id}/validar')
 async def validar(tarea_id: str, asignado_id: str = Form(...), user=Depends(get_current_user)):
     t = await _tarea_o_404(tarea_id)
-    if not es_validador(user, t):
-        raise HTTPException(status_code=403, detail='Solo el gerente o el jefe de la tienda valida')
+    if not puede(user, t, 'validar'):
+        raise HTTPException(status_code=403, detail='No tienes permiso para validar esta tarea')
     if t['estado'] != 'abierta':
         raise HTTPException(status_code=409, detail='La tarea ya está cerrada o cancelada')
     idx = await _parte(t, asignado_id)
@@ -596,8 +694,8 @@ async def validar(tarea_id: str, asignado_id: str = Form(...), user=Depends(get_
 @router.post('/{tarea_id}/devolver')
 async def devolver(tarea_id: str, asignado_id: str = Form(...), texto: str = Form(''), user=Depends(get_current_user)):
     t = await _tarea_o_404(tarea_id)
-    if not es_validador(user, t):
-        raise HTTPException(status_code=403, detail='Solo el gerente o el jefe de la tienda devuelve')
+    if not puede(user, t, 'validar'):
+        raise HTTPException(status_code=403, detail='No tienes permiso para devolver esta tarea')
     if t['estado'] != 'abierta':
         raise HTTPException(status_code=409, detail='La tarea ya está cerrada o cancelada')
     idx = await _parte(t, asignado_id)

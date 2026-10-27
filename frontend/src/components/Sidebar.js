@@ -181,14 +181,11 @@ function SidebarContent({ onNavigate }) {
     api.get('/mantenimiento/acceso').then(({ data }) => setMant(data || {})).catch(() => setMant({}));
   }, [user?.id, user?.module_access, location.pathname]);
 
-  // Build nav: insert "Inventario" y "Reportes" (Tienda-only) right after Sala de Juntas
+  // Build nav: "Reportes" (Tienda-only) right after Sala de Juntas. El
+  // inventario va dentro del grupo Activos ("Inventarios Autoservicio").
   const navItems = [...baseNavItems];
-  if (canAccessInventory(user)) {
-    navItems.splice(3, 0, { to: '/inventario', label: 'Inventario', icon: Boxes, testid: 'sidebar-nav-inventario' });
-  }
   if (canAccessReports(user)) {
-    const idx = navItems.findIndex((n) => n.to === '/inventario');
-    navItems.splice(idx >= 0 ? idx + 1 : 3, 0, { to: '/reportes', label: 'Reportes', icon: FileText, testid: 'sidebar-nav-reportes' });
+    navItems.splice(3, 0, { to: '/reportes', label: 'Reportes', icon: FileText, testid: 'sidebar-nav-reportes' });
   }
   if (canAccessCams(user)) {
     const idx = navItems.findIndex((n) => n.to === '/reportes');
@@ -219,7 +216,7 @@ function SidebarContent({ onNavigate }) {
     formularioChildren.push({ to: '/formularios/promociones', label: 'Promociones del mes', icon: Percent, testid: 'sidebar-nav-promociones-mes' });
   }
   if (verTickets) {
-    formularioChildren.push({ to: '/formularios/tickets', label: 'Tickets', icon: Ticket, testid: 'sidebar-nav-tickets', count: ticketsPendientes });
+    formularioChildren.push({ to: '/formularios/tickets', label: 'Seguimientos', icon: Ticket, testid: 'sidebar-nav-tickets', count: ticketsPendientes });
   }
   if (formularioChildren.length > 0) {
     const idx = navItems.findIndex((n) => n.to === '/reportes-cams');
@@ -230,14 +227,16 @@ function SidebarContent({ onNavigate }) {
     navItems.splice(idx >= 0 ? idx + 1 : navItems.length - 1, 0,
       { to: '/tareas', label: 'Tareas', icon: ListChecks, testid: 'sidebar-nav-tareas', count: tareasPendientes });
   }
-  // Grupo Activos: el registro de activos y su mantenimiento preventivo.
+  // Grupo Activos, en este orden: Activos, Checklists, Planificaciones,
+  // Mis mantenimientos e Inventarios Autoservicio.
   const activosChildren = [];
   if (verActivos) activosChildren.push({ to: '/activos', label: 'Activos', icon: Package, testid: 'sidebar-nav-activos', nuevo: 'activos', tour: 'menu-activos' });
+  if (mant.planificar) activosChildren.push({ to: '/mantenimiento/checklists', label: 'Checklists', icon: ListChecks, testid: 'sidebar-nav-checklists', nuevo: 'checklists', tour: 'menu-checklists' });
+  if (mant.ver_planes) activosChildren.push({ to: '/mantenimiento/planificaciones', label: 'Planificaciones', icon: CalendarRange, testid: 'sidebar-nav-planificaciones', nuevo: 'planificaciones', tour: 'menu-planificaciones' });
   if (mant.mis_tareas) {
     activosChildren.push({ to: '/mantenimiento', end: true, label: 'Mis mantenimientos', icon: Wrench, testid: 'sidebar-nav-mis-mantenimientos', count: mant.pendientes, nuevo: 'mis-mantenimientos', tour: 'menu-mis-mantenimientos' });
   }
-  if (mant.ver_planes) activosChildren.push({ to: '/mantenimiento/planificaciones', label: 'Planificaciones', icon: CalendarRange, testid: 'sidebar-nav-planificaciones', nuevo: 'planificaciones', tour: 'menu-planificaciones' });
-  if (mant.planificar) activosChildren.push({ to: '/mantenimiento/checklists', label: 'Checklists', icon: ListChecks, testid: 'sidebar-nav-checklists', nuevo: 'checklists', tour: 'menu-checklists' });
+  if (canAccessInventory(user)) activosChildren.push({ to: '/inventario', label: 'Inventarios Autoservicio', icon: Boxes, testid: 'sidebar-nav-inventario' });
   if (activosChildren.length) {
     const tareas = navItems.findIndex((n) => n.to === '/tareas');
     const idx = tareas >= 0 ? tareas : navItems.findIndex((n) => n.label === 'Formulario');

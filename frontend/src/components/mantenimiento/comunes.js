@@ -165,6 +165,7 @@ export function TareaFila({ t, ahora, onClick, mostrarPlan = true }) {
           {t.activo_codigo} · {t.activo_nombre} · {t.sucursal}{t.ubicacion ? ` · ${t.ubicacion}` : ''}
         </p>
         {mostrarPlan && <p className="text-[11px] text-muted-foreground truncate mt-0.5">{t.plan_numero} · {t.plan_nombre}</p>}
+        {t.responsable_nombre && <p className="text-[11px] text-muted-foreground truncate mt-0.5">Responsable: <span className="font-medium text-foreground">{t.responsable_nombre}</span></p>}
       </div>
       <div className="text-right shrink-0">
         <p className="text-[11px] text-muted-foreground">{t.estado === 'completada' ? 'Hecha' : t.estado === 'programada' ? 'Disponible' : 'Vence'}</p>

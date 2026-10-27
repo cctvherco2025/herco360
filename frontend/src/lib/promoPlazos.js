@@ -37,7 +37,7 @@ export function PlazoChip({ vence, prefijo = '' }) {
 
 export const PLAZOS_CAMPOS = [
   { key: 'responder_dias', label: 'Días para contestar', ayuda: 'Desde que se publica el mes' },
-  { key: 'revisar_dias', label: 'Días para revisar', ayuda: 'Desde que se contesta; también para validar un ticket corregido' },
-  { key: 'corregir_horas', label: 'Horas para corregir un ticket', ayuda: 'Desde que se abre o se reabre' },
+  { key: 'revisar_dias', label: 'Días para revisar', ayuda: 'Desde que se contesta; también para validar un seguimiento corregido' },
+  { key: 'corregir_horas', label: 'Horas para corregir un seguimiento', ayuda: 'Desde que se abre o se reabre' },
   { key: 'recordar_horas', label: 'Recordar antes de vencer (horas)', ayuda: 'Aviso a quien le toca actuar' },
 ];

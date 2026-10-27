@@ -345,7 +345,7 @@ async def revisar(tarea_id: str, data: RevisionInput, user=Depends(get_current_u
     if not puede_revisar(user, t):
         raise HTTPException(status_code=403, detail='Solo el jefe o el gerente de la tienda revisan esta categoría')
     if t['estado'] == 'con_observaciones':
-        raise HTTPException(status_code=409, detail='Esta categoría tiene un ticket abierto: atiéndela desde el ticket')
+        raise HTTPException(status_code=409, detail='Esta categoría tiene un seguimiento abierto: atiéndela desde el seguimiento')
     if t['estado'] != 'enviada':
         raise HTTPException(status_code=409, detail='Esta categoría no está esperando revisión')
     if data.accion not in ('guardar', 'observaciones', 'validar'):

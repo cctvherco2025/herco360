@@ -10,7 +10,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { canAccessOrgChart, RETAIL, departamentoDe, esSuperAdmin } from '@/lib/constants';
 import { useEstructura } from '@/lib/organizacion';
-import { CargosDepto, NuevoDepartamento, AccionesDepartamento, destinosPosibles } from '@/components/OrgAdmin';
+import { CargosDepto, NuevoDepartamento, AccionesDepartamento, destinosPosibles, PerfilesPermisos, usePermisosCatalogo } from '@/components/OrgAdmin';
 import { NativeSelect } from '@/components/recorridos/RecorridoWizard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -298,7 +298,10 @@ function AreaNodo({ area, hijas, gente, editable, acciones, todas, nivel = 0 }) 
   const color = [C.navy, C.cyan, C.green, C.orange, C.purple, C.sky][nivel % 6];
   const misHijas = hijas(area.id);
   return (
-    <div className={nivel ? 'mt-2 pl-3 sm:pl-5 border-l-2' : ''} style={nivel ? { borderColor: `${color}55` } : undefined}>
+    // sangría por nivel (el árbol se dibuja como lista: el plugin de edición
+    // visual de Emergent no soporta un componente que se dibuja a sí mismo)
+    <div className={nivel ? 'mt-2 pl-3 sm:pl-4 border-l-2' : ''}
+      style={nivel ? { borderColor: `${color}55`, marginLeft: `${(nivel - 1) * 14}px` } : undefined}>
       <div className="rounded-2xl border bg-card p-3 sm:p-4" style={{ borderTopColor: color, borderTopWidth: 3 }} data-testid="org-area">
         <div className="flex items-center justify-between gap-2">
           {editando && 'nombre' in editando ? (
@@ -356,9 +359,6 @@ function AreaNodo({ area, hijas, gente, editable, acciones, todas, nivel = 0 }) 
           </form>
         )}
       </div>
-      {misHijas.map((h) => (
-        <AreaNodo key={h.id} area={h} hijas={hijas} gente={gente} editable={editable} acciones={acciones} todas={todas} nivel={nivel + 1} />
-      ))}
     </div>
   );
 }
@@ -422,8 +422,17 @@ function OrganigramaDepto({ depto, recargar, titulo }) {
         </form>
       )}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        {hijas(null).map((a) => (
-          <AreaNodo key={a.id} area={a} hijas={hijas} gente={gente} editable={depto.puede_editar} acciones={acciones} todas={depto.areas} />
+        {/* cada área principal con sus subáreas debajo (las áreas vienen en orden de árbol, con su nivel) */}
+        {depto.areas.reduce((grupos, a) => {
+          if (!a.padre_id || !grupos.length) grupos.push([a]); else grupos[grupos.length - 1].push(a);
+          return grupos;
+        }, []).map((grupo) => (
+          <div key={grupo[0].id}>
+            {grupo.map((a) => (
+              <AreaNodo key={a.id} area={a} hijas={hijas} gente={gente} editable={depto.puede_editar} acciones={acciones}
+                todas={depto.areas} nivel={a.nivel_arbol || 0} />
+            ))}
+          </div>
         ))}
       </div>
       {sinArea.length > 0 && (
@@ -440,7 +449,10 @@ function OrganigramaDepto({ depto, recargar, titulo }) {
 export default function Organigrama() {
   const { user } = useAuth();
   const superAdmin = esSuperAdmin(user);
-  const { estructura, recargar } = useEstructura();
+  const { estructura, recargar: recargarEstructura } = useEstructura();
+  const { catalogo, recargar: recargarCatalogo } = usePermisosCatalogo();
+  // al cambiar perfiles o el perfil de un cargo se actualizan los dos
+  const recargar = async () => { await Promise.all([recargarEstructura(), recargarCatalogo()]); };
   // el super admin elige el departamento; los demás ven el suyo
   const [vista, setVista] = useState(departamentoDe(user));
   if (!canAccessOrgChart(user)) return <Navigate to="/" replace />;
@@ -455,7 +467,8 @@ export default function Organigrama() {
         <EncabezadoOrg deptos={superAdmin ? deptos : []} vista={depto.id} setVista={setVista} nombre={depto.nombre}
           superAdmin={superAdmin} depto={depto} recargar={recargar} />
         <OrganigramaDepto depto={depto} recargar={recargar} />
-        <CargosDepto depto={depto} recargar={recargar} />
+        <PerfilesPermisos catalogo={catalogo} recargar={recargar} />
+        <CargosDepto depto={depto} recargar={recargar} perfiles={catalogo?.perfiles} />
         <AccessManager depto={depto.id} nombreJefe={depto.cargos.find((c) => c.nivel === 'jefe_depto')?.nombre} />
       </div>
     );
@@ -495,7 +508,8 @@ export default function Organigrama() {
       </section>
 
       <OrganigramaDepto depto={depto} recargar={recargar} titulo="Áreas y subáreas de Ventas Retail" />
-      <CargosDepto depto={depto} recargar={recargar} />
+      <PerfilesPermisos catalogo={catalogo} recargar={recargar} />
+      <CargosDepto depto={depto} recargar={recargar} perfiles={catalogo?.perfiles} />
 
       {/* SECTION 2 — Matriz de permisos */}
       <section className="mb-8 rounded-[22px] border bg-card p-5 sm:p-7 shadow-card" data-testid="matrix-section">

@@ -13,6 +13,7 @@ from core import (db, get_current_user, require_admin, serialize_doc, now_iso,
                   filtro_depto, mismo_depto)
 import organizacion
 import mando
+import permisos
 from models import ProfileUpdate, RoleUpdate, AdminUserCreate, AdminUserUpdate, ModuleAccessUpdate
 from notifications import create_notification, log_activity
 from routes_groups import quitar_de_grupos
@@ -191,6 +192,7 @@ async def create_user(data: AdminUserCreate, admin=Depends(require_gestor_usuari
         'created_at': now_iso(),
     }
     await db.users.insert_one(doc)
+    await permisos.recalcular_usuario(doc['id'])
     await log_activity(admin['id'], admin['name'], admin.get('avatar_url'),
                        'creó un usuario', data.name, 'user', depto)
     doc.pop('password_hash', None)
@@ -343,6 +345,8 @@ async def update_user(user_id: str, data: AdminUserUpdate, admin=Depends(require
         updates['super_admin'] = bool(payload['super_admin']) and updates.get('role', target.get('role')) == 'admin'
     if updates:
         await db.users.update_one({'id': user_id}, {'$set': updates})
+        if 'cargo_id' in updates or 'role' in updates:
+            await permisos.recalcular_usuario(user_id)
     # desactivado (estado distinto de aprobado): sale de los grupos de Agenda
     if 'status' in updates and updates['status'] != 'approved':
         await quitar_de_grupos(user_id)

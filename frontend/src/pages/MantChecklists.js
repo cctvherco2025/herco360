@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
-import { ListChecks, Plus, Pencil, Trash2, Loader2, ArrowUp, ArrowDown, X, Info, Camera } from 'lucide-react';
+import { ListChecks, Plus, Pencil, Trash2, Loader2, ArrowUp, ArrowDown, X, Info, Camera, Eye, AlertTriangle } from 'lucide-react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -172,10 +172,77 @@ function ChecklistForm({ open, onOpenChange, checklist, plantilla, onSaved }) {
   );
 }
 
+// Ver un checklist sin editarlo: cada pregunta como la va a llenar el responsable.
+function ChecklistVer({ checklist, onOpenChange, onEditar }) {
+  const c = checklist;
+  return (
+    <Dialog open={!!c} onOpenChange={onOpenChange}>
+      <DialogContent className={`${DIALOG_CLS} sm:w-[min(640px,100%)]`}>
+        {c && (
+          <>
+            <DialogHeader className="px-6 pt-6 pb-2 text-left">
+              <DialogTitle className="font-heading text-xl">{c.nombre}</DialogTitle>
+              <DialogDescription>
+                {c.items.length} pregunta{c.items.length === 1 ? '' : 's'} · versión {c.version}
+                {c.descripcion ? ` · ${c.descripcion}` : ''}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-5 space-y-2.5" data-testid="chk-ver">
+              {c.antes_despues && (
+                <p className="flex items-center gap-2 rounded-xl bg-[rgba(0,165,223,0.08)] px-3 py-2 text-xs text-[#0284c7] dark:text-[#3cbef6]">
+                  <Camera className="h-4 w-4 shrink-0" /> Pide fotos de cómo se encontró el equipo (antes) y de cómo quedó (después).
+                </p>
+              )}
+              {c.items.map((it, i) => {
+                const fotos = modoFotos(it);
+                return (
+                  <div key={it.id} className="rounded-xl border p-3" data-testid="chk-ver-item">
+                    <div className="flex items-start gap-2">
+                      <span className="mt-0.5 h-6 w-6 shrink-0 grid place-items-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">{i + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground">{it.texto}</p>
+                        {it.ayuda && <p className="mt-0.5 text-xs text-muted-foreground">{it.ayuda}</p>}
+                        <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">{TIPOS_ITEM[it.tipo] || it.tipo}{it.tipo === 'numero' && it.unidad ? ` (${it.unidad})` : ''}</span>
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">{it.obligatorio ? 'Obligatoria' : 'Opcional'}</span>
+                          {fotos !== 'no' && <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground inline-flex items-center gap-1"><Camera className="h-3 w-3" /> {MODOS_FOTOS[fotos]}</span>}
+                        </div>
+                        {it.tipo === 'estado' && (
+                          <p className="mt-1.5 text-xs text-muted-foreground">Respuestas: Bien · <span className="text-[#dc2626] font-medium">Falla</span> · No aplica</p>
+                        )}
+                        {(it.opciones || []).length > 0 && (
+                          <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                            {it.opciones.map((o) => (
+                              <li key={o.texto} className={`rounded-lg border px-2 py-0.5 text-xs ${o.falla ? 'border-[rgba(220,38,38,0.35)] text-[#dc2626]' : 'text-foreground'}`}>
+                                {o.falla && <AlertTriangle className="inline h-3 w-3 mr-1 -mt-0.5" />}{o.texto}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <DialogFooter className="px-6 py-4 border-t gap-2 sm:gap-2 flex-row justify-end">
+              <Button variant="outline" onClick={() => onOpenChange(false)} className="rounded-xl">Cerrar</Button>
+              <Button onClick={onEditar} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="chk-ver-editar">
+                <Pencil className="h-4 w-4 mr-1.5" /> Editar
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function MantChecklists() {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(false);
   const [form, setForm] = useState(null);
+  const [ver, setVer] = useState(null); // checklist abierto en solo lectura
   const load = useCallback(async () => {
     try { const { data } = await api.get('/mantenimiento/checklists'); setRows(data); }
     catch (e) { setError(true); }
@@ -250,18 +317,25 @@ export default function MantChecklists() {
                     {c.items.length} pregunta{c.items.length === 1 ? '' : 's'}{c.antes_despues ? ' · antes y después' : ''} · versión {c.version}{c.en_uso ? ` · en ${c.en_uso} tarea${c.en_uso === 1 ? '' : 's'} planificada${c.en_uso === 1 ? '' : 's'}` : ' · sin usar'}
                   </p>
                 </div>
+                <button type="button" onClick={() => setVer(c)} aria-label={`Ver ${c.nombre}`} title="Ver" data-testid="chk-ver-boton"
+                  className="h-9 w-9 grid place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"><Eye className="h-4 w-4" /></button>
                 <button type="button" onClick={() => setForm({ checklist: c })} aria-label={`Editar ${c.nombre}`} className="h-9 w-9 grid place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"><Pencil className="h-4 w-4" /></button>
                 <button type="button" onClick={() => eliminar(c)} disabled={c.en_uso > 0} title={c.en_uso ? 'Lo usa una planificación' : 'Eliminar'} aria-label={`Eliminar ${c.nombre}`}
                   className="h-9 w-9 grid place-items-center rounded-lg text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)] disabled:opacity-30 disabled:hover:bg-transparent"><Trash2 className="h-4 w-4" /></button>
               </div>
               <ol className="mt-3 space-y-1 text-sm text-muted-foreground list-decimal pl-5">
                 {c.items.slice(0, 5).map((it) => <li key={it.id} className="truncate">{it.texto}</li>)}
-                {c.items.length > 5 && <li className="list-none -ml-5 text-xs">y {c.items.length - 5} más…</li>}
+                {c.items.length > 5 && (
+                  <li className="list-none -ml-5 text-xs">
+                    <button type="button" onClick={() => setVer(c)} className="text-[#00a5df] hover:underline">y {c.items.length - 5} más… ver todas</button>
+                  </li>
+                )}
               </ol>
             </div>
           ))}
         </div>
       )}
+      <ChecklistVer checklist={ver} onOpenChange={(v) => { if (!v) setVer(null); }} onEditar={() => { setForm({ checklist: ver }); setVer(null); }} />
       <ChecklistForm open={!!form} onOpenChange={(v) => { if (!v) setForm(null); }} checklist={form?.checklist} plantilla={form?.plantilla} onSaved={load} />
     </div>
   );

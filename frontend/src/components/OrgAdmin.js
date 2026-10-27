@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Check, X, Briefcase, Building2, Lock } from 'lucide-react';
+import { Plus, Pencil, Trash2, Check, X, Briefcase, Building2, Lock, KeyRound } from 'lucide-react';
 import api from '@/lib/api';
 import { RETAIL } from '@/lib/constants';
 import { NIVELES } from '@/lib/organizacion';
@@ -46,8 +46,10 @@ async function llamar(fn, ok, recargar) {
 }
 
 // ── Cargos ───────────────────────────────────────────────────────
-function CargoFila({ cargo, editable, recargar }) {
+function CargoFila({ cargo, editable, recargar, perfiles }) {
   const [edit, setEdit] = useState(null); // { nombre, nivel }
+  const cambiarPerfil = (perfil_id) => llamar(() => api.put(`/permisos/cargos/${cargo.id}`, { perfil_id }),
+    `${cargo.nombre}: perfil actualizado`, recargar);
   const guardar = async (e) => {
     e.preventDefault();
     if (await llamar(() => api.put(`/org/cargos/${cargo.id}`, edit), 'Cargo actualizado', recargar)) setEdit(null);
@@ -86,6 +88,17 @@ function CargoFila({ cargo, editable, recargar }) {
           {cargo.sistema && <Lock className="inline h-3 w-3 ml-1.5 -mt-0.5 text-muted-foreground" aria-label="del sistema" />}
         </p>
         <p className="text-[11px] text-muted-foreground">{NIVELES[cargo.nivel]} · {cargo.personas} persona{cargo.personas === 1 ? '' : 's'}</p>
+        {perfiles?.length > 0 && (
+          <label className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <KeyRound className="h-3 w-3 shrink-0" />
+            {editable ? (
+              <select value={cargo.perfil_id || ''} onChange={(e) => cambiarPerfil(e.target.value)} aria-label={`Perfil de ${cargo.nombre}`}
+                className="h-7 rounded-md border border-input bg-background px-1.5 text-[11px] text-foreground" data-testid="org-cargo-perfil">
+                {perfiles.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </select>
+            ) : <span>Perfil: {perfiles.find((p) => p.id === cargo.perfil_id)?.nombre || '—'}</span>}
+          </label>
+        )}
       </div>
       {editable && (
         <div className="flex shrink-0">
@@ -101,7 +114,7 @@ function CargoFila({ cargo, editable, recargar }) {
   );
 }
 
-export function CargosDepto({ depto, recargar }) {
+export function CargosDepto({ depto, recargar, perfiles }) {
   const [nuevo, setNuevo] = useState(null); // { nombre, nivel }
   const orden = Object.keys(NIVELES);
   const cargos = [...depto.cargos].sort((a, b) => orden.indexOf(a.nivel) - orden.indexOf(b.nivel) || a.nombre.localeCompare(b.nombre));
@@ -142,7 +155,7 @@ export function CargosDepto({ depto, recargar }) {
         </form>
       )}
       <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
-        {cargos.map((c) => <CargoFila key={c.id} cargo={c} editable={depto.puede_editar} recargar={recargar} />)}
+        {cargos.map((c) => <CargoFila key={c.id} cargo={c} editable={depto.puede_editar} recargar={recargar} perfiles={perfiles} />)}
       </ul>
       <p className="mt-3 text-[11px] text-muted-foreground">
         Niveles: {Object.entries(NIVELES).map(([k, v]) => `${v}: ${LEYENDA_NIVEL[k]}`).join(' · ')}.
@@ -252,4 +265,153 @@ export function destinosPosibles(areas, areaId) {
     });
   }
   return areas.filter((a) => !prohibidas.has(a.id));
+}
+
+
+// ── Perfiles de permisos (backend/permisos.py) ──────────────────
+export function usePermisosCatalogo() {
+  const [catalogo, setCatalogo] = useState(null);
+  const recargar = useCallback(() => api.get('/permisos/catalogo').then(({ data }) => setCatalogo(data)).catch(() => {}), []);
+  useEffect(() => { recargar(); }, [recargar]);
+  return { catalogo, recargar };
+}
+
+// Tabla de perfiles: qué acciones permite cada uno. La edita el super admin;
+// los cambios aplican de inmediato a todos los cargos que usan el perfil.
+export function PerfilesPermisos({ catalogo, recargar }) {
+  const [nuevo, setNuevo] = useState(null);
+  const [guardando, setGuardando] = useState(null);
+  if (!catalogo) return null;
+  const editable = catalogo.puede_editar_perfiles;
+  const acciones = catalogo.modulos.flatMap((m) => m.acciones.map((a) => ({ ...a, modulo: m.nombre })));
+  const alternar = async (p, accion) => {
+    const permisos = p.permisos.includes(accion) ? p.permisos.filter((x) => x !== accion) : [...p.permisos, accion];
+    setGuardando(`${p.id}:${accion}`);
+    await llamar(() => api.put(`/permisos/perfiles/${p.id}`, { nombre: p.nombre, descripcion: p.descripcion, permisos }), `${p.nombre} actualizado`, recargar);
+    setGuardando(null);
+  };
+  const crear = async (e) => {
+    e.preventDefault();
+    if (await llamar(() => api.post('/permisos/perfiles', { nombre: nuevo, permisos: [] }), `Perfil ${nuevo.trim()} creado`, recargar)) setNuevo(null);
+  };
+  const quitar = async (p) => {
+    const ok = await confirmar({
+      tipo: 'danger', titulo: `¿Quitar el perfil ${p.nombre}?`, mensaje: 'Ningún cargo lo usa. No se puede deshacer.',
+      textoConfirmar: 'Quitar', textoCargando: 'Quitando…', textoExito: 'Perfil quitado',
+      accion: () => api.delete(`/permisos/perfiles/${p.id}`),
+    });
+    if (ok) recargar();
+  };
+  return (
+    <section className="mb-8 rounded-[22px] border bg-card p-5 sm:p-7 shadow-card no-print" data-testid="perfiles-permisos">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="h-6 w-1.5 rounded-full bg-[#712146]" />
+          <div>
+            <h2 className="font-heading text-lg font-semibold text-foreground flex items-center gap-2"><KeyRound className="h-4 w-4 text-[#712146]" /> Perfiles de permisos</h2>
+            <p className="text-[12px] text-muted-foreground">Cada perfil es un paquete de acciones. Cada cargo usa un perfil; a una persona se le pueden dar excepciones en Usuarios.</p>
+          </div>
+        </div>
+        {editable && nuevo === null && (
+          <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setNuevo('')} data-testid="perfil-nuevo">
+            <Plus className="h-4 w-4 mr-1.5" /> Nuevo perfil
+          </Button>
+        )}
+      </div>
+      {nuevo !== null && (
+        <form onSubmit={crear} className="mb-3 flex gap-1.5">
+          <Input autoFocus value={nuevo} onChange={(e) => setNuevo(e.target.value)} placeholder="Nombre del perfil (ej. Supervisor sin eliminar)" className="h-10 max-w-sm" data-testid="perfil-nombre" />
+          <Button type="submit" size="sm" disabled={!nuevo.trim()} className="h-10 rounded-lg bg-[#1e395e] hover:bg-[#162c49] text-white">Crear</Button>
+          <Button type="button" size="sm" variant="ghost" className="h-10 rounded-lg" onClick={() => setNuevo(null)}><X className="h-4 w-4" /></Button>
+        </form>
+      )}
+      <div className="overflow-x-auto rounded-xl border">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="bg-muted/60">
+              <th className="px-3 py-3 text-left text-[12px] font-semibold text-foreground min-w-[200px]">Perfil</th>
+              {acciones.map((a) => (
+                <th key={a.id} className="px-2 py-3 text-center text-[12px] font-semibold text-foreground min-w-[96px]" title={a.ayuda}>
+                  <span className="block text-[10px] font-medium text-muted-foreground">{a.modulo}</span>{a.nombre}
+                </th>
+              ))}
+              {editable && <th className="w-10" />}
+            </tr>
+          </thead>
+          <tbody>
+            {catalogo.perfiles.map((p) => (
+              <tr key={p.id} className="border-t" data-testid="perfil-fila">
+                <td className="px-3 py-2.5">
+                  <p className="font-medium text-foreground">{p.nombre}</p>
+                  <p className="text-[11px] text-muted-foreground">{p.cargos} cargo{p.cargos === 1 ? '' : 's'}{p.descripcion ? ` · ${p.descripcion}` : ''}</p>
+                </td>
+                {acciones.map((a) => (
+                  <td key={a.id} className="px-2 py-2.5 text-center">
+                    <input type="checkbox" className="h-4 w-4 accent-[#1e395e]" checked={p.permisos.includes(a.id)}
+                      disabled={!editable || guardando === `${p.id}:${a.id}`} onChange={() => alternar(p, a.id)}
+                      aria-label={`${p.nombre}: ${a.nombre}`} data-testid={`perfil-${p.id}-${a.id}`} />
+                  </td>
+                ))}
+                {editable && (
+                  <td className="px-1">
+                    {!p.sistema && (
+                      <button type="button" aria-label={`Quitar ${p.nombre}`} disabled={p.cargos > 0} onClick={() => quitar(p)}
+                        title={p.cargos ? 'Lo usan cargos: cámbialos de perfil primero' : 'Quitar'}
+                        className="h-8 w-8 grid place-items-center rounded-lg text-muted-foreground hover:text-[#dc2626] hover:bg-muted disabled:opacity-30"><Trash2 className="h-3.5 w-3.5" /></button>
+                    )}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-3 text-[11px] text-muted-foreground">
+        Los administradores pueden todo en su departamento. Cada permiso aplica a las tareas de su gente: su tienda en Ventas Retail; su área y subáreas en los demás departamentos.
+        {!editable && ' Solo el super admin edita los perfiles.'}
+      </p>
+    </section>
+  );
+}
+
+// Excepciones de una persona: para cada acción, "según su cargo", "sí" o "no".
+export function ExcepcionesPermisos({ userId, onCambio }) {
+  const [datos, setDatos] = useState(null);
+  const [catalogo, setCatalogo] = useState(null);
+  useEffect(() => {
+    if (!userId) return;
+    api.get(`/permisos/usuario/${userId}`).then(({ data }) => setDatos(data)).catch(() => setDatos(false));
+    api.get('/permisos/catalogo').then(({ data }) => setCatalogo(data)).catch(() => {});
+  }, [userId]);
+  if (datos === false || !datos || !catalogo) return null;
+  const nombres = Object.fromEntries(catalogo.modulos.flatMap((m) => m.acciones.map((a) => [a.id, a.nombre])));
+  const cambiar = (accion, valor) => {
+    const v = valor === 'cargo' ? null : valor === 'si';
+    setDatos((d) => ({ ...d, acciones: d.acciones.map((a) => (a.id === accion ? { ...a, excepcion: v } : a)) }));
+    onCambio((prev) => ({ ...prev, [accion]: v }));
+  };
+  return (
+    <div className="space-y-1.5" data-testid="excepciones-permisos">
+      <Label className="flex items-center gap-1.5"><KeyRound className="h-3.5 w-3.5" /> Permisos de Tareas</Label>
+      {datos.es_admin ? (
+        <p className="text-xs text-muted-foreground rounded-lg bg-muted/50 px-3 py-2">Es administrador: puede todo en su departamento.</p>
+      ) : (
+        <div className="rounded-xl border divide-y">
+          <p className="px-3 py-2 text-[11px] text-muted-foreground">Por su cargo ({datos.cargo || '—'}) tiene el perfil <b>{datos.perfil?.nombre || '—'}</b>. Cambia solo lo que sea distinto para esta persona.</p>
+          {datos.acciones.map((a) => (
+            <div key={a.id} className="flex items-center justify-between gap-2 px-3 py-2">
+              <span className="text-sm">{nombres[a.id] || a.id}</span>
+              <select value={a.excepcion === true ? 'si' : a.excepcion === false ? 'no' : 'cargo'} onChange={(e) => cambiar(a.id, e.target.value)}
+                className={`h-8 rounded-md border px-2 text-xs ${a.excepcion === null || a.excepcion === undefined ? 'border-input bg-background' : 'border-[#ec9032] bg-[rgba(236,144,50,0.08)]'}`}
+                aria-label={`Permiso ${nombres[a.id]}`} data-testid={`excepcion-${a.id}`}>
+                <option value="cargo">Según su cargo ({a.por_cargo ? 'sí' : 'no'})</option>
+                <option value="si">Sí (excepción)</option>
+                <option value="no">No (excepción)</option>
+              </select>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }

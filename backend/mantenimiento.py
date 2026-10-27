@@ -182,7 +182,7 @@ async def acceso(user=Depends(get_current_user)):
     tiene_tareas = await db.mant_tareas.find_one({'responsable_id': user['id']}, {'_id': 1})
     pendientes = await db.mant_tareas.count_documents({'responsable_id': user['id'], 'estado': 'pendiente'})
     # quien planifica siempre ve "Mis mantenimientos" (aunque todavía no tenga tareas)
-    return {'planificar': planificar, 'ver_planes': planificar or bool(es_parte),
+    return {'planificar': planificar, 'ver_planes': planificar or bool(es_parte), 'ver_todas': user.get('role') == 'admin',
             'mis_tareas': bool(planificar or es_parte or tiene_tareas), 'pendientes': pendientes}
 
 
@@ -835,6 +835,48 @@ async def mis_tareas(user=Depends(get_current_user)):
         'pendientes': [_resumen_tarea(t) for t in pend if t['vence_en'] > ahora],
         'proximas': [_resumen_tarea(t) for t in abiertas if t['estado'] == 'programada' and t['disponible_desde'] <= en_7],
         'historial': [_resumen_tarea(t) for t in hechas],
+    })
+
+
+@router.get('/todas-tareas')
+async def todas_tareas(responsable_id: Optional[str] = None, sucursal: Optional[str] = None, user=Depends(get_current_user)):
+    """Para los admins: TODAS las tareas de mantenimiento generadas en su
+    departamento (el super admin, de todos), en cualquier estado y sin límite
+    de fechas: vencidas, por hacer, programadas, hechas, incompletas y
+    canceladas. Filtros por responsable y sucursal."""
+    if user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail='Solo los administradores ven todos los mantenimientos')
+    q = {}
+    if not es_super_admin(user):
+        cats = [c['id'] for c in await routes_activos._categorias(user)]
+        q['activo_categoria_id'] = {'$in': cats}
+    base = dict(q)
+    if responsable_id:
+        q['responsable_id'] = responsable_id
+    if sucursal:
+        q['sucursal'] = sucursal
+    ahora = _ahora()
+    proy = {'_id': 0, 'respuestas': 0, 'antes': 0, 'despues': 0}
+    abiertas = await db.mant_tareas.find({**q, 'estado': {'$in': list(ABIERTAS)}}, proy).sort('vence_en', 1).to_list(5000)
+    cerradas = await db.mant_tareas.find({**q, 'estado': {'$in': ['completada', 'incompleta', 'cancelada']}}, proy).sort('fecha', -1).to_list(5000)
+    # opciones de los filtros: quienes tienen tareas y en qué sucursales
+    resp_ids = await db.mant_tareas.distinct('responsable_id', base)
+    sucursales = sorted(s_ for s_ in await db.mant_tareas.distinct('sucursal', base) if s_)
+    gente = await _nombres(resp_ids + [t['responsable_id'] for t in abiertas + cerradas])
+
+    def fila(t):
+        return {**_resumen_tarea(t), 'responsable_nombre': (gente.get(t.get('responsable_id')) or {}).get('name')}
+    pend = [t for t in abiertas if t['estado'] == 'pendiente']
+    return serialize_doc({
+        'ahora': ahora,
+        'vencidas': [fila(t) for t in pend if t['vence_en'] <= ahora],
+        'pendientes': [fila(t) for t in pend if t['vence_en'] > ahora],
+        'programadas': [fila(t) for t in abiertas if t['estado'] == 'programada'],
+        'completadas': [fila(t) for t in cerradas if t['estado'] == 'completada'],
+        'incompletas': [fila(t) for t in cerradas if t['estado'] == 'incompleta'],
+        'canceladas': [fila(t) for t in cerradas if t['estado'] == 'cancelada'],
+        'filtros': {'responsables': sorted([{'id': i, 'name': gente[i]['name']} for i in resp_ids if i in gente], key=lambda x: x['name']),
+                    'sucursales': sucursales},
     })
 
 

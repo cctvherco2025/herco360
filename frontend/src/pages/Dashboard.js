@@ -40,7 +40,7 @@ function PromosPendientes() {
         <span className="h-9 w-9 rounded-full grid place-items-center bg-[rgba(22,163,74,0.12)]"><Percent className="h-4 w-4 text-[#16a34a]" /></span>
         <div>
           <h2 className="font-heading font-semibold">Promociones del mes</h2>
-          <p className="text-xs text-muted-foreground">{!hayPubs ? 'Tickets por atender' : jefe ? `Lo que contestó ${data.publicaciones[0].tienda}` : 'Elige tu tienda y categoría al contestar'}</p>
+          <p className="text-xs text-muted-foreground">{!hayPubs ? 'Seguimientos por atender' : jefe ? `Lo que contestó ${data.publicaciones[0].tienda}` : 'Elige tu tienda y categoría al contestar'}</p>
         </div>
       </div>
       <div className="space-y-2.5">
@@ -50,7 +50,7 @@ function PromosPendientes() {
               {tickets} ticket{tickets === 1 ? '' : 's'} por atender
               <span className="block text-xs text-muted-foreground font-normal">{jefe ? 'Correcciones por validar' : 'Inconsistencias por corregir'}</span>
             </p>
-            <Button size="sm" className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" onClick={() => navigate('/formularios/tickets')}>Ver tickets</Button>
+            <Button size="sm" className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" onClick={() => navigate('/formularios/tickets')}>Ver seguimientos</Button>
           </div>
         )}
         {hayPubs && data.publicaciones.map((p) => {

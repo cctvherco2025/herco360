@@ -653,7 +653,7 @@ export default function Inventario() {
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="font-heading text-2xl sm:text-3xl font-semibold flex items-center gap-2">
-            <Boxes className="h-7 w-7 text-[#00a5df]" /> Inventario
+            <Boxes className="h-7 w-7 text-[#00a5df]" /> Inventarios Autoservicio
           </h1>
           <p className="text-muted-foreground text-sm mt-0.5">Gestión de inventario por sucursal</p>
         </div>

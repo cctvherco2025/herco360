@@ -32,6 +32,7 @@ from pydantic import BaseModel
 
 from core import (db, get_current_user, serialize_doc, new_id, now_iso, RETAIL, LOGISTICA,
                   departamento_de, es_super_admin, filtro_depto)
+import permisos
 
 router = APIRouter(prefix='/org', tags=['organizacion'])
 logger = logging.getLogger('organizacion')
@@ -92,7 +93,8 @@ async def _cargo(depto, nombre, nivel='colaborador', sistema=False, orden=0):
     if c:
         return c
     c = {'id': new_id(), 'departamento': depto, 'nombre': nombre, 'clave': nombre, 'nivel': nivel,
-         'sistema': sistema, 'orden': orden, 'created_at': now_iso()}
+         'sistema': sistema, 'orden': orden, 'created_at': now_iso(),
+         'perfil_id': permisos.perfil_por_defecto(depto, nombre, nivel)}
     await db.org_cargos.insert_one(c)
     c.pop('_id', None)
     return c
@@ -488,7 +490,8 @@ async def crear_cargo(data: CargoInput, user=Depends(get_current_user)):
     if await db.org_cargos.find_one({'departamento': depto, 'nombre': {'$regex': f'^{re.escape(nombre)}$', '$options': 'i'}}):
         raise HTTPException(status_code=400, detail=f'Ya existe el cargo {nombre}')
     c = {'id': new_id(), 'departamento': depto, 'nombre': nombre, 'clave': nombre, 'nivel': data.nivel, 'sistema': False,
-         'orden': await db.org_cargos.count_documents({'departamento': depto}), 'created_at': now_iso(), 'created_by': user['name']}
+         'orden': await db.org_cargos.count_documents({'departamento': depto}), 'created_at': now_iso(), 'created_by': user['name'],
+         'perfil_id': permisos.perfil_por_defecto(depto, nombre, data.nivel)}
     await db.org_cargos.insert_one(c)
     c.pop('_id', None)
     return serialize_doc(c)

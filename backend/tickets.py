@@ -54,7 +54,7 @@ def puede_ver(user: dict, t: dict) -> bool:
 async def _ticket_o_404(ticket_id: str) -> dict:
     t = await db.tickets.find_one({'id': ticket_id}, {'_id': 0})
     if not t:
-        raise HTTPException(status_code=404, detail='Ticket no encontrado')
+        raise HTTPException(status_code=404, detail='Seguimiento no encontrado')
     return t
 
 
@@ -126,7 +126,7 @@ async def crear_ticket_promo(tarea: dict, lineas: list, revisor: dict, mes: str)
         'asignado_a': {'id': tarea.get('coordinador_id'), 'name': tarea.get('coordinador_name')},
         'estado': 'abierto', 'reaperturas': 0,
         'lineas': [{**ln, 'corregida': False, 'fotos': []} for ln in lineas],
-        'mensajes': [_sistema(f"{revisor['name']} abrió el ticket con {len(lineas)} "
+        'mensajes': [_sistema(f"{revisor['name']} abrió el seguimiento con {len(lineas)} "
                               f"línea{'s' if len(lineas) != 1 else ''} por corregir.")],
         'created_at': now_iso(), 'updated_at': now_iso(),
         'cerrado_por': None, 'cerrado_at': None,
@@ -199,7 +199,7 @@ async def contador(user=Depends(get_current_user)):
 async def detalle(ticket_id: str, user=Depends(get_current_user)):
     t = await _ticket_o_404(ticket_id)
     if not puede_ver(user, t):
-        raise HTTPException(status_code=403, detail='No puedes ver este ticket')
+        raise HTTPException(status_code=403, detail='No puedes ver este seguimiento')
     t['soy_asignado'] = es_asignado(user, t)
     t['soy_revisor'] = es_revisor(user, t)
     return serialize_doc(t)
@@ -209,7 +209,7 @@ async def detalle(ticket_id: str, user=Depends(get_current_user)):
 async def foto(ticket_id: str, foto_id: str, user=Depends(get_current_user)):
     t = await _ticket_o_404(ticket_id)
     if not puede_ver(user, t):
-        raise HTTPException(status_code=403, detail='No puedes ver este ticket')
+        raise HTTPException(status_code=403, detail='No puedes ver este seguimiento')
     fotos = [f for ln in t.get('lineas', []) for f in ln.get('fotos', [])] + \
             [f for m in t.get('mensajes', []) for f in m.get('fotos', [])]
     p = next((f for f in fotos if f['id'] == foto_id), None)
@@ -231,9 +231,9 @@ async def mensaje(ticket_id: str, texto: str = Form(''), fotos: List[UploadFile]
                   user=Depends(get_current_user)):
     t = await _ticket_o_404(ticket_id)
     if not puede_ver(user, t):
-        raise HTTPException(status_code=403, detail='No puedes escribir en este ticket')
+        raise HTTPException(status_code=403, detail='No puedes escribir en este seguimiento')
     if t['estado'] in ('cerrado', 'cancelado'):
-        raise HTTPException(status_code=409, detail='El ticket ya está cerrado')
+        raise HTTPException(status_code=409, detail='El seguimiento ya está cerrado')
     texto = (texto or '').strip()[:2000]
     subidas = await _subir_fotos(t['id'], fotos)
     if not texto and not subidas:
@@ -252,12 +252,12 @@ async def corregir_linea(ticket_id: str, item_id: str, corregida: bool = Form(Tr
     """El coordinador marca una línea como corregida y sube su foto."""
     t = await _ticket_o_404(ticket_id)
     if not es_asignado(user, t):
-        raise HTTPException(status_code=403, detail='Solo quien tiene asignado el ticket corrige sus líneas')
+        raise HTTPException(status_code=403, detail='Solo quien tiene asignado el seguimiento corrige sus líneas')
     if t['estado'] != 'abierto':
-        raise HTTPException(status_code=409, detail='El ticket no está abierto')
+        raise HTTPException(status_code=409, detail='El seguimiento no está abierto')
     idx = next((i for i, ln in enumerate(t['lineas']) if ln['item_id'] == item_id), None)
     if idx is None:
-        raise HTTPException(status_code=404, detail='Esa línea no está en el ticket')
+        raise HTTPException(status_code=404, detail='Esa línea no está en el seguimiento')
     subidas = await _subir_fotos(t['id'], fotos)
     upd = {f'lineas.{idx}.corregida': bool(corregida), 'updated_at': now_iso()}
     ops = {'$set': upd}
@@ -272,9 +272,9 @@ async def enviar_correccion(ticket_id: str, texto: str = Form(''), user=Depends(
     """El coordinador avisa que corrigió todo: cada línea corregida con foto."""
     t = await _ticket_o_404(ticket_id)
     if not es_asignado(user, t):
-        raise HTTPException(status_code=403, detail='Solo quien tiene asignado el ticket envía la corrección')
+        raise HTTPException(status_code=403, detail='Solo quien tiene asignado el seguimiento envía la corrección')
     if t['estado'] != 'abierto':
-        raise HTTPException(status_code=409, detail='El ticket no está abierto')
+        raise HTTPException(status_code=409, detail='El seguimiento no está abierto')
     faltan = [ln['titulo'] for ln in t['lineas'] if not (ln.get('corregida') and ln.get('fotos'))]
     if faltan:
         raise HTTPException(status_code=400, detail=f'Marca como corregida y sube la foto de: {", ".join(faltan[:3])}'
@@ -286,7 +286,7 @@ async def enviar_correccion(ticket_id: str, texto: str = Form(''), user=Depends(
                  'vence': promo_plazos.desde_ahora(plazos['revisar_dias'] * 24) if plazos else None},
         '$push': {'mensajes': _mensaje(user, texto, 'coordinador')}})
     if r.matched_count == 0:
-        raise HTTPException(status_code=409, detail='El ticket cambió; vuelve a abrirlo')
+        raise HTTPException(status_code=409, detail='El seguimiento cambió; vuelve a abrirlo')
     await _avisar(await _revisores_ids(t['tienda']), 'ticket_corregido',
                   f"{t['numero']}: {user['name']} corrigió {t['categoria']} de {t['tienda']}. Valídalo.", t, user)
     return await detalle(t['id'], user)
@@ -297,18 +297,18 @@ async def cerrar(ticket_id: str, texto: str = Form(''), user=Depends(get_current
     """Quien revisa valida en piso y cierra: la categoría queda validada."""
     t = await _ticket_o_404(ticket_id)
     if not es_revisor(user, t):
-        raise HTTPException(status_code=403, detail='Solo el jefe o el gerente de la tienda cierran el ticket')
+        raise HTTPException(status_code=403, detail='Solo el jefe o el gerente de la tienda cierran el seguimiento')
     if t['estado'] not in ('abierto', 'corregido'):
-        raise HTTPException(status_code=409, detail='El ticket ya está cerrado')
+        raise HTTPException(status_code=409, detail='El seguimiento ya está cerrado')
     ahora = now_iso()
     msgs = ([_mensaje(user, texto.strip()[:2000], 'revisor')] if (texto or '').strip() else []) + \
-        [_sistema(f"{user['name']} validó y cerró el ticket.")]
+        [_sistema(f"{user['name']} validó y cerró el seguimiento.")]
     r = await db.tickets.update_one({'id': t['id'], 'estado': t['estado']}, {
         '$set': {'estado': 'cerrado', 'cerrado_por': {'id': user['id'], 'name': user['name']},
                  'cerrado_at': ahora, 'updated_at': ahora, 'vence': None},
         '$push': {'mensajes': {'$each': msgs}}})
     if r.matched_count == 0:
-        raise HTTPException(status_code=409, detail='El ticket cambió; vuelve a abrirlo')
+        raise HTTPException(status_code=409, detail='El seguimiento cambió; vuelve a abrirlo')
     tarea_id = (t.get('origen') or {}).get('tarea_id')
     if tarea_id:
         await db.promo_tareas.update_one({'id': tarea_id, 'estado': 'con_observaciones'}, {'$set': {
@@ -323,9 +323,9 @@ async def reabrir(ticket_id: str, texto: str = Form(''), user=Depends(get_curren
     """Quien revisa no quedó conforme: vuelve al coordinador con un comentario."""
     t = await _ticket_o_404(ticket_id)
     if not es_revisor(user, t):
-        raise HTTPException(status_code=403, detail='Solo el jefe o el gerente de la tienda reabren el ticket')
+        raise HTTPException(status_code=403, detail='Solo el jefe o el gerente de la tienda reabren el seguimiento')
     if t['estado'] != 'corregido':
-        raise HTTPException(status_code=409, detail='Solo se reabre un ticket corregido')
+        raise HTTPException(status_code=409, detail='Solo se reabre un seguimiento corregido')
     texto = (texto or '').strip()[:2000]
     if not texto:
         raise HTTPException(status_code=400, detail='Escribe qué sigue mal para reabrirlo')
@@ -338,8 +338,8 @@ async def reabrir(ticket_id: str, texto: str = Form(''), user=Depends(get_curren
     r = await db.tickets.update_one({'id': t['id'], 'estado': 'corregido'}, {
         '$set': sets,
         '$push': {'mensajes': {'$each': [_mensaje(user, texto, 'revisor'),
-                                         _sistema(f"{user['name']} reabrió el ticket.")]}}})
+                                         _sistema(f"{user['name']} reabrió el seguimiento.")]}}})
     if r.matched_count == 0:
-        raise HTTPException(status_code=409, detail='El ticket cambió; vuelve a abrirlo')
+        raise HTTPException(status_code=409, detail='El seguimiento cambió; vuelve a abrirlo')
     await _avisar([t['asignado_a']['id']], 'ticket_reabierto', f"{t['numero']} reabierto por {user['name']}: {texto[:80]}", t, user)
     return await detalle(t['id'], user)

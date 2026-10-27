@@ -37,7 +37,7 @@ export default function TicketDetalle() {
 
   const load = useCallback(async () => {
     try { const { data } = await api.get(`/tickets/${id}`); setT(data); }
-    catch (e) { setError(e?.response?.data?.detail || 'No se pudo abrir el ticket'); }
+    catch (e) { setError(e?.response?.data?.detail || 'No se pudo abrir el seguimiento'); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
 
@@ -72,7 +72,7 @@ export default function TicketDetalle() {
     return (
       <div className="max-w-[560px] mx-auto pt-16 text-center">
         <p className="text-sm text-muted-foreground mb-4">{error}</p>
-        <Button asChild variant="outline" className="rounded-xl"><Link to="/formularios/tickets"><ArrowLeft className="h-4 w-4 mr-1.5" /> Tickets</Link></Button>
+        <Button asChild variant="outline" className="rounded-xl"><Link to="/formularios/tickets"><ArrowLeft className="h-4 w-4 mr-1.5" /> Seguimientos</Link></Button>
       </div>
     );
   }
@@ -86,7 +86,7 @@ export default function TicketDetalle() {
   return (
     <div className="max-w-[1000px] mx-auto pt-2 space-y-4" data-testid="ticket-detalle">
       <Link to="/formularios/tickets" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" /> Tickets
+        <ArrowLeft className="h-4 w-4" /> Seguimientos
       </Link>
 
       <div className="rounded-[18px] bg-card border shadow-card p-5 space-y-2">

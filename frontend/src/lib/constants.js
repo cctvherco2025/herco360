@@ -252,10 +252,18 @@ export const puedeVerTickets = (user) => esCoordinadorTienda(user) || esRevisorT
 export const esSupervisorTareas = (user) => user?.role === 'admin' || (user?.position || '').trim() === 'Director comercial';
 // Logística: por mando y sin tiendas; todos la ven, crean el Gerente y los Jefes.
 const deLogistica = fueraDeRetail;
-const mandoLogistica = (user) => deLogistica(user) && (esJefeDepto(user) || user.role === 'admin' || ['jefe', 'gerente'].includes(user.nivel));
-export const puedeVerTareas = (user) => esRevisorTienda(user) || esCoordinadorTienda(user) || esSupervisorTareas(user) || deLogistica(user);
-// Crean gerente y jefe de tienda (en Logística, el Gerente y los Jefes).
-export const puedeCrearTareas = (user) => esRevisorTienda(user) || mandoLogistica(user);
+// Permisos por acción (backend/permisos.py): los admins pueden todo en su
+// departamento; los demás, lo de su perfil (por cargo) más sus excepciones.
+export const tienePermiso = (user, accion) => user?.role === 'admin' || (user?.permisos || []).includes(accion);
+export const puedeVerTareas = (user) => esRevisorTienda(user) || esCoordinadorTienda(user) || esSupervisorTareas(user) || deLogistica(user)
+  || tienePermiso(user, 'tareas.ver_equipo') || tienePermiso(user, 'tareas.crear');
+// Crea quien tiene el permiso y gente a cargo: gerente y jefe de tienda (a
+// su tienda); el jefe del departamento y los admins (a todo el
+// departamento); un jefe o gerente de área (a su área y subáreas).
+const mandaEnArea = (user) => !!user?.area_id && (['jefe', 'gerente'].includes(user?.nivel)
+  || ['Jefe', 'Gerente'].includes((user?.position || '').trim()));
+export const puedeCrearTareas = (user) => tienePermiso(user, 'tareas.crear')
+  && (esRevisorTienda(user) || user?.role === 'admin' || esJefeDepto(user) || mandaEnArea(user));
 export const PRIORIDADES_TAREA = ['alta', 'media', 'baja'];
 
 export function canAdminPromos(user) {

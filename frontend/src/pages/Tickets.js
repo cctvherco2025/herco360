@@ -39,7 +39,7 @@ export default function Tickets() {
 
   const load = useCallback(async () => {
     try { const { data } = await api.get('/tickets'); setTickets(data); }
-    catch (e) { toast.error('No se pudieron cargar los tickets'); setTickets([]); }
+    catch (e) { toast.error('No se pudieron cargar los seguimientos'); setTickets([]); }
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -50,7 +50,7 @@ export default function Tickets() {
     <div className="max-w-[900px] mx-auto pt-2">
       <div className="mb-5">
         <h1 className="font-heading text-2xl sm:text-3xl font-semibold flex items-center gap-2">
-          <Ticket className="h-7 w-7 text-[#00a5df]" /> Tickets
+          <Ticket className="h-7 w-7 text-[#00a5df]" /> Seguimientos
         </h1>
         <p className="text-muted-foreground text-sm mt-0.5">Inconsistencias de Promociones del mes: se corrigen y las valida el jefe o el gerente de tienda.</p>
       </div>
@@ -73,7 +73,7 @@ export default function Tickets() {
         {tickets === null && <p className="text-sm text-muted-foreground text-center py-12">Cargando…</p>}
         {tickets && lista.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-12">
-            {filtro === 'atender' ? 'No tienes tickets por atender.' : 'Sin tickets en este filtro.'}
+            {filtro === 'atender' ? 'No tienes seguimientos por atender.' : 'Sin seguimientos en este filtro.'}
           </p>
         )}
         {lista.map((t) => {
