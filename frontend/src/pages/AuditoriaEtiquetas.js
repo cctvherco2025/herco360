@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Tags, Lock, Info } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { canAccessEtiquetas, canFillEtiquetas, canAdminEtiquetas } from '@/lib/constants';
+import { canAccessEtiquetas, canFillEtiquetas, canAdminEtiquetas, etiquetasSoloSuTienda } from '@/lib/constants';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import EtiquetasWizard, { useEtiquetasConfig } from '@/components/etiquetas/EtiquetasWizard';
 import Historial from '@/components/etiquetas/Historial';
@@ -25,7 +25,9 @@ export default function AuditoriaEtiquetas() {
           <h1 className="font-heading text-2xl sm:text-3xl font-semibold flex items-center gap-2">
             <Tags className="h-7 w-7 text-[#00a5df]" /> Auditoría de Etiquetas
           </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Auditoría semanal de etiquetas de precios — ECCP</p>
+          <p className="text-muted-foreground text-sm mt-0.5">
+            {etiquetasSoloSuTienda(user) ? `Auditorías de etiquetas de tu tienda (${etiquetasSoloSuTienda(user)}) — solo lectura` : 'Auditoría semanal de etiquetas de precios — ECCP'}
+          </p>
         </div>
         <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-[rgba(0,165,223,0.12)] text-[#00a5df] text-xs font-semibold px-3 py-1.5 shrink-0">
           <Lock className="h-3.5 w-3.5" /> Módulo restringido

@@ -9,7 +9,7 @@ import {
   fmtL, fmtFechaAud,
 } from '@/lib/etiquetasSchema';
 import { generateAuditoriaEtiquetasPdf } from '@/lib/etiquetasPdf';
-import { canAdminEtiquetas } from '@/lib/constants';
+import { canAdminEtiquetas, etiquetasSoloSuTienda } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -292,6 +292,8 @@ const SIN_FILTROS = { sucursal: '', departamento: '', coordinador: '', desde: ''
 
 export default function Historial({ cfg, refreshKey }) {
   const { user } = useAuth();
+  // el gerente de una tienda ve solo las de su tienda (el servidor también lo limita)
+  const suTienda = etiquetasSoloSuTienda(user);
   const isAdmin = canAdminEtiquetas(user);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -383,10 +385,14 @@ export default function Historial({ cfg, refreshKey }) {
         </div>
         <div className="space-y-1.5 min-w-0">
           <label className="text-xs text-muted-foreground">Sucursal</label>
-          <NativeSelect value={f.sucursal} onChange={setFiltro('sucursal')} className="h-10">
-            <option value="">Todas</option>
-            {ETQ_SUCURSALES.map((s) => <option key={s} value={s}>{s}</option>)}
-          </NativeSelect>
+          {suTienda ? (
+            <div className="h-10 flex items-center rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground" data-testid="etq-su-tienda">{suTienda}</div>
+          ) : (
+            <NativeSelect value={f.sucursal} onChange={setFiltro('sucursal')} className="h-10">
+              <option value="">Todas</option>
+              {ETQ_SUCURSALES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </NativeSelect>
+          )}
         </div>
         <div className="space-y-1.5 min-w-0">
           <label className="text-xs text-muted-foreground">Departamento</label>

@@ -199,6 +199,7 @@ function AccessManager({ depto, nombreJefe }) {
     { key: 'recorridos', label: 'Registrar Recorridos Preventivos', color: C.orange },
     { key: 'etiquetas', label: 'Registrar Auditoría de Etiquetas', color: C.green },
     { key: 'activos', label: 'Administrar Activos (todas las categorías)', color: C.navy },
+    { key: 'etiquetas_ver', label: 'Ver Auditoría de Etiquetas (todas las tiendas)', color: C.green },
   ];
   const otro = depto !== RETAIL;
   const GATED = otro ? TODOS.filter((m) => GATED_OTROS.includes(m.key)) : TODOS;

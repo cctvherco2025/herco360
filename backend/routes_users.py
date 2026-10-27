@@ -8,7 +8,7 @@ from core import (db, get_current_user, require_admin, serialize_doc, now_iso,
                   can_access_rutina, can_access_formularios_principal, can_access_promociones_mes,
                   can_create_custom_formulario, can_edit_rutina_schema, can_edit_flos_schema,
                   can_access_vacaciones, can_admin_promos, can_fill_guardias,
-                  can_fill_recorridos, can_fill_etiquetas, can_admin_activos,
+                  can_fill_recorridos, can_fill_etiquetas, can_admin_activos, can_ver_todas_etiquetas,
                   RETAIL, departamento_de, es_retail, es_jefe_depto, es_super_admin,
                   filtro_depto, mismo_depto)
 import organizacion
@@ -100,6 +100,7 @@ def _effective_access(u):
         'recorridos': can_fill_recorridos(u),
         'etiquetas': can_fill_etiquetas(u),
         'activos': can_admin_activos(u),
+        'etiquetas_ver': can_ver_todas_etiquetas(u),
     }
 
 

@@ -225,7 +225,7 @@ GATED_MODULES = (
     'inventario', 'reportes', 'cams', 'formulario', 'rutina',
     'formularios_principal', 'promociones_mes', 'formularios_custom',
     'rutina_schema', 'formulario_schema', 'vacaciones', 'promociones_admin',
-    'guardias', 'recorridos', 'etiquetas', 'activos',
+    'guardias', 'recorridos', 'etiquetas', 'activos', 'etiquetas_ver',
 )
 
 
@@ -693,8 +693,39 @@ def can_admin_etiquetas(user) -> bool:
     return can_admin_guardias(user)
 
 
+def sucursal_gerente_tienda(user) -> str:
+    """La tienda del gerente de tienda (Gerente del área Tienda de Retail),
+    o '' si no lo es."""
+    u = user or {}
+    if not es_retail(u) or (u.get('position') or '').strip() != 'Gerente' or (u.get('area') or '').strip() != 'Tienda':
+        return ''
+    suc = (u.get('sucursal') or '').strip()
+    return '' if suc in ('', 'Casa Matriz') else suc
+
+
+@solo_retail
+def can_ver_todas_etiquetas(user) -> bool:
+    """Ver (solo lectura) las auditorías de etiquetas de todas las tiendas:
+    permiso por persona desde Jerarquía (module_access.etiquetas_ver), p. ej.
+    para un gerente de Operación Tienda."""
+    return bool(user) and bool(_module_override(user, 'etiquetas_ver'))
+
+
+def etiquetas_solo_su_tienda(user) -> str:
+    """Si la persona ve Auditoría de Etiquetas solo por ser gerente de una
+    tienda: esa tienda (en solo lectura). '' si ve todas (registra,
+    administra o tiene el permiso de ver todas)."""
+    if can_fill_etiquetas(user) or can_admin_etiquetas(user) or can_ver_todas_etiquetas(user):
+        return ''
+    return sucursal_gerente_tienda(user)
+
+
 def can_access_etiquetas(user) -> bool:
-    return can_fill_etiquetas(user) or can_admin_etiquetas(user)
+    """Registran (ECCP) y administran: todas. Con el permiso "ver todas":
+    todas, en solo lectura. Los gerentes de tienda: las de su tienda, en solo
+    lectura."""
+    return (can_fill_etiquetas(user) or can_admin_etiquetas(user) or can_ver_todas_etiquetas(user)
+            or bool(sucursal_gerente_tienda(user)))
 
 
 async def require_etiquetas_access(user=Depends(get_current_user)):

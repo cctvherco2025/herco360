@@ -381,9 +381,27 @@ export function canAdminEtiquetas(user) {
   return canAdminGuardias(user);
 }
 
+// Gerente de una tienda (área Tienda de Retail): su tienda, o '' si no lo es.
+export const sucursalGerenteTienda = (user) => {
+  if (!user || !esRetail(user) || (user.position || '').trim() !== 'Gerente' || (user.area || '').trim() !== 'Tienda') return '';
+  const s = (user.sucursal || '').trim();
+  return s === 'Casa Matriz' ? '' : s;
+};
+
+// Ver (solo lectura) las de todas las tiendas: permiso por persona desde
+// Jerarquía (module_access.etiquetas_ver). Igual que core.can_ver_todas_etiquetas.
+export const canVerTodasEtiquetas = (user) => !!user && !fueraDeRetail(user) && !!(user.module_access || {}).etiquetas_ver;
+
+// Ven el historial: quien registra, administra o tiene "ver todas" (todas) y
+// el gerente de una tienda (las de su tienda, en solo lectura). Igual que
+// core.can_access_etiquetas.
 export function canAccessEtiquetas(user) {
-  return canFillEtiquetas(user) || canAdminEtiquetas(user);
+  return canFillEtiquetas(user) || canAdminEtiquetas(user) || canVerTodasEtiquetas(user) || !!sucursalGerenteTienda(user);
 }
+
+// '' si ve todas; la tienda, si solo ve las de su tienda.
+export const etiquetasSoloSuTienda = (user) => (canFillEtiquetas(user) || canAdminEtiquetas(user) || canVerTodasEtiquetas(user)
+  ? '' : sucursalGerenteTienda(user));
 
 // Activos — igual que core.can_admin_activos: administran (categorías y todos
 // los activos) admin, Director comercial o el permiso asignable 'activos'.

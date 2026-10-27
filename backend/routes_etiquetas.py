@@ -13,8 +13,9 @@ exhibido y del sistema (la diferencia la calcula el servidor). Fecha, hora, sema
 Sin seguimiento ni estados en esta versión (pedido explícito).
 
 Permisos (core.py): registrar = can_fill_etiquetas; historial =
-can_access_etiquetas (todos ven todo, solo lectura); editar, eliminar,
-configurar, estadísticas e informes = can_admin_etiquetas.
+can_access_etiquetas (solo lectura: quien registra o administra ve todas; el
+gerente de una tienda, solo las de su tienda); editar, eliminar, configurar,
+estadísticas e informes = can_admin_etiquetas.
 
 Configuración (db.etiquetas_config, documento 'current'): cantidad de
 etiquetas por auditoría y los rangos de color del cumplimiento. Cada
@@ -36,7 +37,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from core import (db, serialize_doc, new_id, now_iso, now_local,
-                  require_etiquetas_access, require_etiquetas_fill, require_etiquetas_admin)
+                  require_etiquetas_access, require_etiquetas_fill, require_etiquetas_admin,
+                  etiquetas_solo_su_tienda)
 from notifications import log_activity
 import storage
 
@@ -257,6 +259,8 @@ async def list_auditorias(sucursal: Optional[str] = None, departamento: Optional
                           coordinador: Optional[str] = None, desde: Optional[str] = None,
                           hasta: Optional[str] = None, semana: Optional[str] = None, mes: Optional[str] = None,
                           user=Depends(require_etiquetas_access)):
+    # el gerente de una tienda ve solo las de su tienda
+    sucursal = etiquetas_solo_su_tienda(user) or sucursal
     rows = await db.etiquetas_auditorias.find(
         _filtro(sucursal, departamento, coordinador, desde, hasta, semana, mes),
         {'_id': 0, 'etiquetas': 0, 'cambios': 0},
@@ -278,7 +282,15 @@ async def get_auditoria(aud_id: str, user=Depends(require_etiquetas_access)):
     row = await db.etiquetas_auditorias.find_one({'id': aud_id}, {'_id': 0})
     if not row:
         raise HTTPException(status_code=404, detail='Auditoría no encontrada')
+    _su_tienda(user, row)
     return serialize_doc(row)
+
+
+def _su_tienda(user, row):
+    """El gerente de una tienda solo abre las auditorías de su tienda."""
+    propia = etiquetas_solo_su_tienda(user)
+    if propia and row.get('sucursal') != propia:
+        raise HTTPException(status_code=403, detail='Solo puedes ver las auditorías de tu tienda')
 
 
 # ── Editar / eliminar (administrador) ────────────────────────────
@@ -355,9 +367,10 @@ async def list_log(user=Depends(require_etiquetas_admin)):
 
 @router.get('/auditorias/{aud_id}/foto/{photo_id}')
 async def get_photo(aud_id: str, photo_id: str, user=Depends(require_etiquetas_access)):
-    row = await db.etiquetas_auditorias.find_one({'id': aud_id}, {'_id': 0, 'etiquetas.photos': 1})
+    row = await db.etiquetas_auditorias.find_one({'id': aud_id}, {'_id': 0, 'etiquetas.photos': 1, 'sucursal': 1})
     if not row:
         raise HTTPException(status_code=404, detail='Auditoría no encontrada')
+    _su_tienda(user, row)
     photo = next((p for e in row.get('etiquetas', []) for p in e.get('photos', []) if p['id'] == photo_id), None)
     if not photo:
         raise HTTPException(status_code=404, detail='Foto no encontrada')
