@@ -43,7 +43,9 @@ async def register(data: RegisterInput):
     }
     await db.users.insert_one(user)
     import permisos
+    import acceso
     await permisos.recalcular_usuario(user['id'])
+    await acceso.preparar_usuario(user['id'])
     await notify_admins('usuario_pendiente', f"{data.name} pidió acceso a HERCO OPS: apruébalo en Usuarios", departamento=depto,
                         related_id=user['id'], related_type='user',
                         actor_name=data.name, actor_avatar=user['avatar_url'])
@@ -73,7 +75,8 @@ async def login(data: LoginInput):
     token = create_access_token(user['id'])
     user.pop('password_hash', None)
     user.pop('_id', None)
-    return {'token': token, 'user': user}
+    import acceso
+    return {'token': token, 'user': {**user, 'acceso': acceso.lista(user)}}
 
 
 # Antes cambiaba la contraseña de cualquiera con solo su correo. Ahora la
@@ -96,4 +99,5 @@ async def change_password(data: ChangePasswordInput, user=Depends(get_current_us
 
 @router.get('/me')
 async def me(user=Depends(get_current_user)):
-    return user
+    import acceso
+    return {**user, 'acceso': acceso.lista(user)}  # lo que puede (perfiles o reglas de antes)

@@ -173,13 +173,13 @@ function SidebarContent({ onNavigate }) {
   useEffect(() => {
     if (!user?.id) return;
     api.get('/activos/acceso').then(({ data }) => setVerActivos(!!data.ver)).catch(() => setVerActivos(false));
-  }, [user?.id, user?.module_access]);
+  }, [user?.id, user?.acceso]);
   // Mantenimiento: mis tareas (con contador), planificaciones y checklists.
   const [mant, setMant] = useState({});
   useEffect(() => {
     if (!user?.id) return;
     api.get('/mantenimiento/acceso').then(({ data }) => setMant(data || {})).catch(() => setMant({}));
-  }, [user?.id, user?.module_access, location.pathname]);
+  }, [user?.id, user?.acceso, location.pathname]);
 
   // Build nav: "Reportes" (Tienda-only) right after Sala de Juntas. El
   // inventario va dentro del grupo Activos ("Inventarios Autoservicio").

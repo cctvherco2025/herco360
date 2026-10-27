@@ -43,7 +43,7 @@ from core import (db, get_current_user, serialize_doc, new_id, now_iso, now_loca
 from notifications import create_notification
 import storage
 import mando
-import permisos
+import acceso
 
 router = APIRouter(prefix='/tareas', tags=['tareas'])
 logger = logging.getLogger('tareas')
@@ -112,7 +112,7 @@ def _es_tarea_log(t: dict) -> bool:
     return not (t or {}).get('tienda')
 
 
-# ---- Permisos (permisos.py) ----
+# ---- Permisos (acceso.py) ----
 # Cada acción pide el permiso ('tareas.crear', 'tareas.editar'…) Y que la
 # tarea sea de su gente según la estructura: su tienda en Retail; su área y
 # subáreas (o todo el departamento, el jefe del departamento) en los demás.
@@ -126,7 +126,7 @@ def puede_crear(user: dict) -> bool:
     """Permiso de crear y alguien a quien asignar: gerente y jefe de tienda
     (a su tienda); el jefe del departamento y sus admins (a todo el
     departamento); un jefe o gerente de área (a su área y subáreas)."""
-    return permisos.tiene(user, 'tareas.crear') and (es_revisor_tienda(user) or _mando_total(user) or _mando_area(user))
+    return acceso.tiene(user, 'tareas.crear') and (es_revisor_tienda(user) or _mando_total(user) or _mando_area(user))
 
 
 def _sin_avance(t: dict) -> bool:
@@ -137,7 +137,7 @@ def _sin_avance(t: dict) -> bool:
 
 def puede(user: dict, t: dict, accion: str) -> bool:
     """editar / validar / cancelar / eliminar sobre esta tarea."""
-    if not permisos.tiene(user, f'tareas.{accion}') or not es_validador(user, t):
+    if not acceso.tiene(user, f'tareas.{accion}') or not es_validador(user, t):
         return False
     if accion == 'eliminar':
         return t.get('estado') == 'abierta' and _sin_avance(t)
@@ -175,12 +175,12 @@ def puede_ver(user: dict, t: dict) -> bool:
     """Asignado, quien la creó, o quien ve las tareas de su equipo."""
     if mi_asignacion(user, t) is not None or (t.get('creado_por') or {}).get('id') == user.get('id'):
         return True
-    return permisos.tiene(user, 'tareas.ver_equipo') and es_validador(user, t)
+    return acceso.tiene(user, 'tareas.ver_equipo') and es_validador(user, t)
 
 
 def puede_ver_modulo(user: dict) -> bool:
     return (es_revisor_tienda(user) or es_coordinador_tienda(user) or _es_supervisor(user) or _de_logistica(user)
-            or any(permisos.tiene(user, a) for a in ('tareas.ver_equipo', 'tareas.crear')))
+            or any(acceso.tiene(user, a) for a in ('tareas.ver_equipo', 'tareas.crear')))
 
 
 async def _tarea_o_404(tarea_id: str) -> dict:
@@ -351,7 +351,7 @@ def _filtro_validar(user: dict) -> dict:
 
 def _valida(user: dict) -> bool:
     """Ve las tareas de su equipo (permiso y gente a cargo)."""
-    return _gestor_estructural(user) and permisos.tiene(user, 'tareas.ver_equipo')
+    return _gestor_estructural(user) and acceso.tiene(user, 'tareas.ver_equipo')
 
 
 def _filtro(user: dict) -> dict:
@@ -366,7 +366,7 @@ def _filtro(user: dict) -> dict:
 @router.get('/asignables')
 async def asignables(user=Depends(get_current_user)):
     # la usan quien crea y quien edita (para cambiar a las personas asignadas)
-    if not (puede_crear(user) or (permisos.tiene(user, 'tareas.editar') and _gestor_estructural(user))):
+    if not (puede_crear(user) or (acceso.tiene(user, 'tareas.editar') and _gestor_estructural(user))):
         raise HTTPException(status_code=403, detail='No tienes permiso para crear tareas')
     return serialize_doc(await _asignables(user))
 
@@ -379,7 +379,7 @@ async def contador(user=Depends(get_current_user)):
         return {'pendientes': 0}
     n = await db.tareas.count_documents(
         {'estado': 'abierta', 'asignados': {'$elemMatch': {'id': user['id'], 'estado': {'$in': [EST_PENDIENTE, EST_DEVUELTA]}}}})
-    if _gestor_estructural(user) and permisos.tiene(user, 'tareas.validar'):
+    if _gestor_estructural(user) and acceso.tiene(user, 'tareas.validar'):
         q = {'estado': 'abierta', 'asignados': {'$elemMatch': {'estado': EST_HECHA, 'id': {'$ne': user['id']}}},
              **_filtro_validar(user)}
         n += await db.tareas.count_documents(q)
@@ -401,7 +401,7 @@ async def listar(estado: str = None, user=Depends(get_current_user)):
 async def inicio(user=Depends(get_current_user)):
     """Bloque del Inicio. Coordinador: lo suyo por hacer. Gerente/jefe: lo que
     espera su validación."""
-    if not (_valida(user) and permisos.tiene(user, 'tareas.validar')):
+    if not (_valida(user) and acceso.tiene(user, 'tareas.validar')):
         # Sus tareas sin cerrar (pendiente/devuelta/hecha) y las validadas hace
         # poco (últimos 7 días), para que vea que tiene tareas aunque ya las cerró.
         corte = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
@@ -608,7 +608,7 @@ async def eliminar(tarea_id: str, user=Depends(get_current_user)):
     (sin fotos ni validaciones); después solo se cancela, para no perder la
     evidencia."""
     t = await _tarea_o_404(tarea_id)
-    if not permisos.tiene(user, 'tareas.eliminar') or not es_validador(user, t):
+    if not acceso.tiene(user, 'tareas.eliminar') or not es_validador(user, t):
         raise HTTPException(status_code=403, detail='No tienes permiso para eliminar esta tarea')
     if t.get('estado') != 'abierta' or not _sin_avance(t):
         raise HTTPException(status_code=409, detail='Alguien ya avanzó en esta tarea: no se puede eliminar, solo cancelar')

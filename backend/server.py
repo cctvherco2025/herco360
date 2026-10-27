@@ -13,6 +13,7 @@ import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifi
 import promo_tareas
 import organizacion
 import permisos
+import acceso
 import tickets
 import storage
 import reminders
@@ -82,6 +83,7 @@ api_router.include_router(mantenimiento.router)
 api_router.include_router(mantenimiento_reportes.router)
 api_router.include_router(organizacion.router)
 api_router.include_router(permisos.router)
+api_router.include_router(acceso.router)
 api_router.include_router(routes_formularios_custom.router)
 api_router.include_router(routes_diagnostico.router)
 api_router.include_router(routes_groups.router)

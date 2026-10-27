@@ -89,7 +89,8 @@ def fecha_corta(s: str) -> str:
 # --------------------------------------------------------------------------- #
 async def _admins_promos() -> list:
     users = await db.users.find(
-        {'status': 'approved', '$or': [{'role': 'admin'}, {'module_access.promociones_admin': True}]},
+        {'status': 'approved', '$or': [{'role': 'admin'}, {'acceso': 'promos.admin'},
+                                       {'acceso_migrado_at': {'$exists': False}, 'module_access.promociones_admin': True}]},
         {'_id': 0, 'id': 1}).to_list(100)
     return [u['id'] for u in users]
 

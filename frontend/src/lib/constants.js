@@ -93,141 +93,33 @@ export function reportTypeMeta(id) {
   return REPORT_TYPES.find((t) => t.id === id) || { id, label: id, color: '#1e395e', icon: 'FileText' };
 }
 
-// Inventario module access: Tienda staff, store managers, Jefe ECCP,
-// Operación manager, Director comercial (and admins to supervise).
-export function canAccessInventory(user) {
-  if (!user) return false;
-  if (fueraDeRetail(user)) return false;
-  if (user.role === 'admin') return true;
-  const cargo = (user.position || '').trim();
-  if (cargo === 'Director comercial') return true;
-  const ov = (user.module_access || {}).inventario;
-  if (ov !== undefined && ov !== null) return !!ov;
-  const area = (user.area || '').trim();
-  if (area === 'Tienda') return true;
-  if (cargo === 'Jefe' && area === 'ECCP') return true;
-  if (cargo === 'Gerente' && (area === 'Operación Tienda' || area === 'Tienda')) return true;
-  return false;
-}
+// ---- Acceso a los módulos (igual que core.py; motor en backend/acceso.py) ----
+// Lo que puede cada persona viene calculado del servidor en user.acceso: el
+// perfil de su cargo y área con sus excepciones, o el acceso total fijo de
+// los admins y del jefe del departamento. Aquí solo se pregunta; sobre qué
+// (su tienda, su área, su gente) lo sigue decidiendo cada módulo.
+export const puede = (user, permiso) => !!user && (user.acceso || []).includes(permiso);
 
-// Vacaciones: abierto a todos por defecto; se puede quitar por usuario
-// (override manual module_access.vacaciones). Igual que core.can_access_vacaciones.
-export function canAccessVacaciones(user) {
-  if (!user) return false;
-  if (user.role === 'admin') return true;
-  if ((user.position || '').trim() === 'Director comercial') return true;
-  const ov = (user.module_access || {}).vacaciones;
-  if (ov !== undefined && ov !== null) return !!ov;
-  return true;
-}
+export const canAccessInventory = (user) => puede(user, 'inventario');
+export const canAccessVacaciones = (user) => puede(user, 'vacaciones');
+export const canAccessReports = (user) => puede(user, 'reportes');
 
-// Reportes module: belongs to ECCP (owners) who deliver reports to Tienda.
-// Access limited to ECCP, Tienda and admins.
-export function canAccessReports(user) {
-  if (!user) return false;
-  if (fueraDeRetail(user)) return false;
-  if (user.role === 'admin') return true;
-  const cargo = (user.position || '').trim();
-  if (cargo === 'Director comercial') return true;
-  const ov = (user.module_access || {}).reportes;
-  if (ov !== undefined && ov !== null) return !!ov;
-  const area = (user.area || '').trim();
-  return area === 'ECCP' || area === 'Tienda';
-}
-
-// Organigrama / matriz de permisos: admins y el jefe de cada departamento
-// (Director comercial / Gerente de Logística), este solo con su gente.
+// Jerarquía y permisos: admins y el jefe de cada departamento (este, con su gente).
 export function canAccessOrgChart(user) {
   if (!user) return false;
   if (user.role === 'admin') return true;
   return esJefeDepto(user);
 }
 
-// Reportes CAMS (conteo de personas por cámara): dirección y administración por
-// defecto; Organigrama > Gestión de accesos puede dar/quitar acceso a otros.
-export function canAccessCams(user) {
-  if (!user) return false;
-  if (fueraDeRetail(user)) return false;
-  if (user.role === 'admin') return true;
-  const cargo = (user.position || '').trim();
-  if (cargo === 'Director comercial') return true;
-  const ov = (user.module_access || {}).cams;
-  if (ov !== undefined && ov !== null) return !!ov;
-  return false;
-}
+export const canAccessCams = (user) => puede(user, 'cams');
+export const canAccessFlos = (user) => puede(user, 'flos');
+export const canAccessRutina = (user) => puede(user, 'rutina');
+export const canFillRutina = (user) => puede(user, 'rutina.llenar');
+export const canEditRutinaSchema = (user) => puede(user, 'rutina.esquema');
+export const canEditFlosSchema = (user) => puede(user, 'flos.esquema');
+// Crear y publicar "Promociones del mes".
+export const canManagePromos = (user) => puede(user, 'promos.publicar');
 
-// Formulario (auditoría de piso FLOS): gerentes, Director comercial y admins
-// por defecto; Organigrama > Gestión de accesos puede dar/quitar acceso a otros.
-export function canAccessFlos(user) {
-  if (!user) return false;
-  if (fueraDeRetail(user)) return false;
-  if (user.role === 'admin') return true;
-  const cargo = (user.position || '').trim();
-  if (cargo === 'Director comercial') return true;
-  const ov = (user.module_access || {}).formulario;
-  if (ov !== undefined && ov !== null) return !!ov;
-  return cargo === 'Gerente';
-}
-
-// Rutina Operativa (evaluación mensual de Gerentes): ven el historial admins,
-// Director comercial, Gerentes (quienes la llenan) y el Jefe de Operación
-// Tienda (supervisa la operación de todas las tiendas). Override manual aplica.
-export function canAccessRutina(user) {
-  if (!user) return false;
-  if (fueraDeRetail(user)) return false;
-  if (user.role === 'admin') return true;
-  const cargo = (user.position || '').trim();
-  if (cargo === 'Director comercial') return true;
-  const ov = (user.module_access || {}).rutina;
-  if (ov !== undefined && ov !== null) return !!ov;
-  if (cargo === 'Gerente') return true;
-  return cargo === 'Jefe' && (user.area || '').trim() === 'Operación Tienda';
-}
-
-// Solo quienes efectivamente la llenan cada mes: Gerentes + admins/Director
-// comercial de soporte. El Jefe de Operación puede ver pero no crear.
-export function canFillRutina(user) {
-  if (!user) return false;
-  if (fueraDeRetail(user)) return false;
-  if (user.role === 'admin') return true;
-  const cargo = (user.position || '').trim();
-  return cargo === 'Director comercial' || cargo === 'Gerente';
-}
-
-// Editar el esquema (preguntas/opciones/puntajes) de Rutina Operativa:
-// permiso independiente y asignable desde Organigrama — admin/Director
-// comercial siempre, cualquier otro usuario solo por override manual
-// (default false; no se infiere de canAccessRutina/canFillRutina).
-export function canEditRutinaSchema(user) {
-  if (!user) return false;
-  if (fueraDeRetail(user)) return false;
-  if (user.role === 'admin') return true;
-  const cargo = (user.position || '').trim();
-  if (cargo === 'Director comercial') return true;
-  return !!(user.module_access || {}).rutina_schema;
-}
-
-// Editar el esquema (criterios/puntajes/acciones) de la auditoría FLOS:
-// mismo patrón que canEditRutinaSchema — permiso independiente y asignable
-// desde Organigrama, no se infiere de canAccessFlos.
-export function canEditFlosSchema(user) {
-  if (!user) return false;
-  if (fueraDeRetail(user)) return false;
-  if (user.role === 'admin') return true;
-  const cargo = (user.position || '').trim();
-  if (cargo === 'Director comercial') return true;
-  return !!(user.module_access || {}).formulario_schema;
-}
-
-// Quién puede crear/publicar "Promociones del mes" (mismo grupo que FLOS).
-export function canManagePromos(user) {
-  return canAccessFlos(user);
-}
-
-// "Administrar Promociones del mes": ver y administrar TODAS las publicaciones
-// de Promociones como si fueran propias. Se otorga por usuario
-// (module_access.promociones_admin); admin y Director comercial ya lo tienen.
-// Igual que core.can_admin_promos.
 // Promociones del mes: tiendas que participan según la sucursal del perfil
 // (mismo mapa que core.PROMO_TIENDAS en el servidor).
 export const PROMO_TIENDAS = { H1: 'Herco Max', H2: 'Herco Centro', H6: 'Herco JT' };
@@ -252,9 +144,8 @@ export const puedeVerTickets = (user) => esCoordinadorTienda(user) || esRevisorT
 export const esSupervisorTareas = (user) => user?.role === 'admin' || (user?.position || '').trim() === 'Director comercial';
 // Logística: por mando y sin tiendas; todos la ven, crean el Gerente y los Jefes.
 const deLogistica = fueraDeRetail;
-// Permisos por acción (backend/permisos.py): los admins pueden todo en su
-// departamento; los demás, lo de su perfil (por cargo) más sus excepciones.
-export const tienePermiso = (user, accion) => user?.role === 'admin' || (user?.permisos || []).includes(accion);
+// Permisos por acción ('tareas.crear'…), del perfil de la persona.
+export const tienePermiso = (user, accion) => puede(user, accion);
 export const puedeVerTareas = (user) => esRevisorTienda(user) || esCoordinadorTienda(user) || esSupervisorTareas(user) || deLogistica(user)
   || tienePermiso(user, 'tareas.ver_equipo') || tienePermiso(user, 'tareas.crear');
 // Crea quien tiene el permiso y gente a cargo: gerente y jefe de tienda (a
@@ -266,75 +157,19 @@ export const puedeCrearTareas = (user) => tienePermiso(user, 'tareas.crear')
   && (esRevisorTienda(user) || user?.role === 'admin' || esJefeDepto(user) || mandaEnArea(user));
 export const PRIORIDADES_TAREA = ['alta', 'media', 'baja'];
 
-export function canAdminPromos(user) {
-  if (!user) return false;
-  if (fueraDeRetail(user)) return false;
-  if (user.role === 'admin') return true;
-  if ((user.position || '').trim() === 'Director comercial') return true;
-  return !!(user.module_access || {}).promociones_admin;
-}
+// "Administrar Promociones del mes": ver y administrar TODAS las publicaciones.
+export const canAdminPromos = (user) => puede(user, 'promos.admin');
+// Pantalla /formularios (Hub) y su listado de formularios personalizados.
+export const canAccessFormulariosPrincipal = (user) => puede(user, 'formularios');
+// Tarjeta y pantalla "Promociones del mes".
+export const canAccessPromocionesMes = (user) => puede(user, 'promos');
+// Botón "Haz tu form personalizado".
+export const canCreateCustomFormulario = (user) => puede(user, 'formularios.crear');
 
-// ---- Formularios: permisos independientes del menú padre "Formulario" ----
-// formularios.principal: pantalla /formularios (Hub) y su listado de
-// formularios personalizados. formularios.promocionesMes: tarjeta/pantalla
-// "Promociones del mes". formularios.crearPersonalizado: botón "Haz tu form
-// personalizado". Los tres tienen override manual con prioridad absoluta
-// sobre cualquier default de rol (se consulta primero; si existe, ni se
-// evalúa el default) — un cambio de rol futuro nunca revive ni apaga un
-// permiso ya tocado a mano desde Organigrama.
-//
-// formularios.principal es el único con default "heredado": si nunca se ha
-// tocado el override, arranca habilitado para quien por rol ya tiene FLOS o
-// Rutina Operativa (para que un Gerente nuevo no dependa de que un admin le
-// active el Hub a mano). formularios.crearPersonalizado NO hereda de nada —
-// es una capacidad extra que un admin debe habilitar expresamente.
-export function canAccessFormulariosPrincipal(user) {
-  if (!user) return false;
-  if (user.role === 'admin') return true;
-  const cargo = (user.position || '').trim();
-  if (cargo === 'Director comercial') return true;
-  const ov = (user.module_access || {}).formularios_principal;
-  if (ov !== undefined && ov !== null) return !!ov;
-  if (!esRetail(user)) return true; // otros departamentos: sus formularios personalizados
-  return canAccessFlos(user) || canAccessRutina(user) || canAccessGuardias(user) || canAccessRecorridos(user)
-    || canAccessEtiquetas(user);
-}
-
-// formularios.promocionesMes: tarjeta y pantalla "Promociones del mes".
-// Este sí mantiene su default histórico (visible para cualquier usuario
-// logueado) porque nunca dependió de FLOS/Rutina — no hay riesgo de
-// derivación cruzada al mantenerlo así.
-export function canAccessPromocionesMes(user) {
-  if (!user) return false;
-  if (fueraDeRetail(user)) return false;
-  if (user.role === 'admin') return true;
-  const cargo = (user.position || '').trim();
-  if (cargo === 'Director comercial') return true;
-  const ov = (user.module_access || {}).promociones_mes;
-  if (ov !== undefined && ov !== null) return !!ov;
-  return true; // históricamente visible para cualquier usuario logueado
-}
-
-// formularios.crearPersonalizado: botón "Haz tu form personalizado".
-export function canCreateCustomFormulario(user) {
-  if (!user) return false;
-  if (user.role === 'admin' || esJefeDepto(user)) return true;
-  return !!(user.module_access || {}).formularios_custom;
-}
-
-// Revisión de Guardias (ECCP) — igual que core.can_fill_guardias /
-// can_admin_guardias. Registrar: Coordinador y Jefe del área ECCP, o quien
-// tenga el permiso 'guardias' desde Organigrama. Admin y Director comercial
-// ven, editan y eliminan todo, pero no registran (salvo que además sean
-// Coordinador/Jefe ECCP).
-export function canFillGuardias(user) {
-  if (!user) return false;
-  if (fueraDeRetail(user)) return false;
-  const ov = (user.module_access || {}).guardias;
-  if (ov !== undefined && ov !== null) return !!ov;
-  const cargo = (user.position || '').trim();
-  return (user.area || '').trim() === 'ECCP' && (cargo === 'Coordinador' || cargo === 'Jefe');
-}
+// Revisión de Guardias, Recorridos Preventivos y Auditoría de Etiquetas (ECCP):
+// registran quienes tienen el permiso; administran (ven, editan y eliminan
+// todo) los admins y el Director comercial.
+export const canFillGuardias = (user) => puede(user, 'guardias.registrar');
 
 export function canAdminGuardias(user) {
   if (!user) return false;
@@ -342,44 +177,12 @@ export function canAdminGuardias(user) {
   return user.role === 'admin' || (user.position || '').trim() === 'Director comercial';
 }
 
-export function canAccessGuardias(user) {
-  return canFillGuardias(user) || canAdminGuardias(user);
-}
-
-// Recorridos Preventivos en Tienda (ECCP) — igual que core.can_fill_recorridos
-// / can_admin_recorridos: mismo esquema que Guardias con su propio permiso
-// asignable ('recorridos').
-export function canFillRecorridos(user) {
-  if (!user) return false;
-  if (fueraDeRetail(user)) return false;
-  const ov = (user.module_access || {}).recorridos;
-  if (ov !== undefined && ov !== null) return !!ov;
-  const cargo = (user.position || '').trim();
-  return (user.area || '').trim() === 'ECCP' && (cargo === 'Coordinador' || cargo === 'Jefe');
-}
-
-export function canAdminRecorridos(user) {
-  return canAdminGuardias(user);
-}
-
-export function canAccessRecorridos(user) {
-  return canFillRecorridos(user) || canAdminRecorridos(user);
-}
-
-// Auditoría de Etiquetas de Precios (ECCP) — igual que core.can_fill_etiquetas
-// / can_admin_etiquetas, con su propio permiso asignable ('etiquetas').
-export function canFillEtiquetas(user) {
-  if (!user) return false;
-  if (fueraDeRetail(user)) return false;
-  const ov = (user.module_access || {}).etiquetas;
-  if (ov !== undefined && ov !== null) return !!ov;
-  const cargo = (user.position || '').trim();
-  return (user.area || '').trim() === 'ECCP' && (cargo === 'Coordinador' || cargo === 'Jefe');
-}
-
-export function canAdminEtiquetas(user) {
-  return canAdminGuardias(user);
-}
+export const canAccessGuardias = (user) => puede(user, 'guardias');
+export const canFillRecorridos = (user) => puede(user, 'recorridos.registrar');
+export const canAdminRecorridos = (user) => canAdminGuardias(user);
+export const canAccessRecorridos = (user) => puede(user, 'recorridos');
+export const canFillEtiquetas = (user) => puede(user, 'etiquetas.registrar');
+export const canAdminEtiquetas = (user) => canAdminGuardias(user);
 
 // Gerente de una tienda (área Tienda de Retail): su tienda, o '' si no lo es.
 export const sucursalGerenteTienda = (user) => {
@@ -388,27 +191,13 @@ export const sucursalGerenteTienda = (user) => {
   return s === 'Casa Matriz' ? '' : s;
 };
 
-// Ver (solo lectura) las de todas las tiendas: permiso por persona desde
-// Jerarquía (module_access.etiquetas_ver). Igual que core.can_ver_todas_etiquetas.
-export const canVerTodasEtiquetas = (user) => !!user && !fueraDeRetail(user) && !!(user.module_access || {}).etiquetas_ver;
+// Ver las auditorías de etiquetas de todas las tiendas.
+export const canVerTodasEtiquetas = (user) => puede(user, 'etiquetas.todas');
+export const canAccessEtiquetas = (user) => puede(user, 'etiquetas');
+// '' si ve todas; si no, la única tienda que ve (igual que core.etiquetas_solo_su_tienda).
+export const etiquetasSoloSuTienda = (user) => (canVerTodasEtiquetas(user) ? '' : (sucursalGerenteTienda(user) || '—'));
 
-// Ven el historial: quien registra, administra o tiene "ver todas" (todas) y
-// el gerente de una tienda (las de su tienda, en solo lectura). Igual que
-// core.can_access_etiquetas.
-export function canAccessEtiquetas(user) {
-  return canFillEtiquetas(user) || canAdminEtiquetas(user) || canVerTodasEtiquetas(user) || !!sucursalGerenteTienda(user);
-}
-
-// '' si ve todas; la tienda, si solo ve las de su tienda.
-export const etiquetasSoloSuTienda = (user) => (canFillEtiquetas(user) || canAdminEtiquetas(user) || canVerTodasEtiquetas(user)
-  ? '' : sucursalGerenteTienda(user));
-
-// Activos — igual que core.can_admin_activos: administran (categorías y todos
-// los activos) admin, Director comercial o el permiso asignable 'activos'.
-// Quién ve el módulo depende además de ser responsable de alguna categoría:
-// eso lo responde GET /activos/acceso.
-export function canAdminActivos(user) {
-  if (!user) return false;
-  if (user.role === 'admin' || esJefeDepto(user)) return true;
-  return !!(user.module_access || {}).activos;
-}
+// Activos: administran (categorías y todos los activos) quienes tienen el
+// permiso. Quién ve el módulo depende además de ser responsable de alguna
+// categoría: eso lo responde GET /activos/acceso.
+export const canAdminActivos = (user) => puede(user, 'activos.administrar');

@@ -9,7 +9,7 @@ import {
   SUCURSALES, RETAIL, departamentoDe, puedeGestionarUsuarios, esSuperAdmin, esJefeDepto,
 } from '@/lib/constants';
 import { useEstructura, nombreDepto, tonoDepto } from '@/lib/organizacion';
-import { ExcepcionesPermisos } from '@/components/OrgAdmin';
+import { ExcepcionesAcceso } from '@/components/AccesoAdmin';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -141,7 +141,7 @@ export default function Usuarios() {
         if (superAdmin) { payload.departamento = form.departamento; payload.super_admin = form.super_admin; }
         if (form.password) payload.password = form.password;
         await api.patch(`/users/${editing.id}`, payload);
-        if (Object.keys(excepciones).length) await api.put(`/permisos/usuario/${editing.id}`, { excepciones });
+        if (Object.keys(excepciones).length) await api.put(`/acceso/usuario/${editing.id}`, { excepciones });
         toast.success('Usuario actualizado');
       } else {
         await api.post('/users', { ...form, area_id: form.area_id || null, sucursal: enTienda ? form.sucursal : '' });
@@ -381,7 +381,12 @@ export default function Usuarios() {
                 </SelectContent>
               </Select>
             </div>}
-            {editing && <ExcepcionesPermisos key={editing.id} userId={editing.id} onCambio={setExcepciones} />}
+            {editing && (
+              <div className="space-y-1.5">
+                <Label>Permisos</Label>
+                <ExcepcionesAcceso key={editing.id} userId={editing.id} onCambio={setExcepciones} />
+              </div>
+            )}
             {superAdmin && form.role === 'admin' && (
               <label className="flex items-start gap-2.5 rounded-xl border p-3 cursor-pointer" data-testid="user-form-super">
                 <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#1e395e]" checked={form.super_admin}

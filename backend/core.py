@@ -218,42 +218,19 @@ def solo_retail(fn):
     return envuelta
 
 
-# ---- Inventory module access control ----
-# Allowed: Tienda staff, store managers, Jefe ECCP, Operación manager, Director comercial, admins.
-# Per-user overrides (user['module_access']) can grant/revoke access manually.
-GATED_MODULES = (
-    'inventario', 'reportes', 'cams', 'formulario', 'rutina',
-    'formularios_principal', 'promociones_mes', 'formularios_custom',
-    'rutina_schema', 'formulario_schema', 'vacaciones', 'promociones_admin',
-    'guardias', 'recorridos', 'etiquetas', 'activos', 'etiquetas_ver',
-)
+# ---- Acceso a los módulos ----
+# Qué puede hacer cada persona lo deciden los perfiles (acceso.py): el perfil
+# de su cargo y área con sus excepciones, o el acceso total fijo de los admins
+# y del jefe del departamento. Estas funciones solo preguntan; sobre qué (su
+# tienda, su área, su gente) lo sigue decidiendo cada módulo. Las reglas de
+# antes quedaron en acceso_legacy.py para comparar.
+def _puede(user, permiso: str) -> bool:
+    import acceso  # evita la importación circular
+    return bool(user) and acceso.tiene(user, permiso)
 
 
-def _module_override(user, module):
-    """Return True/False if a manual override exists for this module, else None."""
-    return (user.get('module_access') or {}).get(module)
-
-
-@solo_retail
 def can_access_inventory(user) -> bool:
-    if not user:
-        return False
-    if user.get('role') == 'admin':
-        return True
-    cargo = (user.get('position') or '').strip()
-    if cargo == 'Director comercial':
-        return True
-    ov = _module_override(user, 'inventario')
-    if ov is not None:
-        return bool(ov)
-    area = (user.get('area') or '').strip()
-    if area == 'Tienda':
-        return True
-    if cargo == 'Jefe' and area == 'ECCP':
-        return True
-    if cargo == 'Gerente' and area in ('Operación Tienda', 'Tienda'):
-        return True
-    return False
+    return _puede(user, 'inventario')
 
 
 async def require_inventory_access(user=Depends(get_current_user)):
@@ -262,39 +239,12 @@ async def require_inventory_access(user=Depends(get_current_user)):
     return user
 
 
-# ---- Reports module access control ----
-# The Reports module belongs to ECCP (owners) who deliver reports to Tienda.
-# Access is limited to ECCP, Tienda and admins. Per-user overrides apply.
-@solo_retail
 def can_access_reports(user) -> bool:
-    if not user:
-        return False
-    if user.get('role') == 'admin':
-        return True
-    cargo = (user.get('position') or '').strip()
-    if cargo == 'Director comercial':
-        return True
-    ov = _module_override(user, 'reportes')
-    if ov is not None:
-        return bool(ov)
-    area = (user.get('area') or '').strip()
-    return area in ('ECCP', 'Tienda')
+    return _puede(user, 'reportes')
 
 
-# ---- Vacaciones ----
-# Históricamente abierto a cualquier usuario logueado, y sigue así por defecto.
-# Se puede quitar por usuario (override manual en module_access.vacaciones).
 def can_access_vacaciones(user) -> bool:
-    if not user:
-        return False
-    if user.get('role') == 'admin':
-        return True
-    if (user.get('position') or '').strip() == 'Director comercial':
-        return True
-    ov = _module_override(user, 'vacaciones')
-    if ov is not None:
-        return bool(ov)
-    return True
+    return _puede(user, 'vacaciones')
 
 
 async def require_vacaciones_access(user=Depends(get_current_user)):
@@ -317,21 +267,8 @@ async def require_reports_access(user=Depends(get_current_user)):
     return user
 
 
-# ---- Reportes CAMS module access control ----
-# Base access: admins and Director comercial. Anyone else needs a manual override.
-@solo_retail
 def can_access_cams(user) -> bool:
-    if not user:
-        return False
-    if user.get('role') == 'admin':
-        return True
-    cargo = (user.get('position') or '').strip()
-    if cargo == 'Director comercial':
-        return True
-    ov = _module_override(user, 'cams')
-    if ov is not None:
-        return bool(ov)
-    return False
+    return _puede(user, 'cams')
 
 
 async def require_cams_access(user=Depends(get_current_user)):
@@ -340,21 +277,8 @@ async def require_cams_access(user=Depends(get_current_user)):
     return user
 
 
-# ---- Formulario (auditorías FLOS) module access control ----
-# Base access: admins, Director comercial y Gerentes. Per-user overrides apply.
-@solo_retail
 def can_access_formulario(user) -> bool:
-    if not user:
-        return False
-    if user.get('role') == 'admin':
-        return True
-    cargo = (user.get('position') or '').strip()
-    if cargo == 'Director comercial':
-        return True
-    ov = _module_override(user, 'formulario')
-    if ov is not None:
-        return bool(ov)
-    return cargo == 'Gerente'
+    return _puede(user, 'flos')
 
 
 async def require_formulario_access(user=Depends(get_current_user)):
@@ -363,20 +287,8 @@ async def require_formulario_access(user=Depends(get_current_user)):
     return user
 
 
-# Editar el esquema (criterios/puntajes/acciones) de la auditoría FLOS:
-# permiso independiente y asignable — admin/Director comercial siempre True,
-# cualquier otro usuario solo por override manual desde Organigrama (default
-# False; no se infiere de can_access_formulario).
-@solo_retail
 def can_edit_flos_schema(user) -> bool:
-    if not user:
-        return False
-    if user.get('role') == 'admin':
-        return True
-    cargo = (user.get('position') or '').strip()
-    if cargo == 'Director comercial':
-        return True
-    return bool(_module_override(user, 'formulario_schema'))
+    return _puede(user, 'flos.esquema')
 
 
 async def require_flos_schema_editor(user=Depends(get_current_user)):
@@ -385,28 +297,8 @@ async def require_flos_schema_editor(user=Depends(get_current_user)):
     return user
 
 
-# ---- Rutina Operativa (evaluación mensual de Gerentes) access control ----
-# Ven el historial: admins, Director comercial, Gerentes (quienes la llenan) y
-# el Jefe de Operación Tienda (supervisa la operación de todas las tiendas).
-# Per-user overrides apply on top of that baseline.
-@solo_retail
 def can_access_rutina(user) -> bool:
-    if not user:
-        return False
-    if user.get('role') == 'admin':
-        return True
-    cargo = (user.get('position') or '').strip()
-    if cargo == 'Director comercial':
-        return True
-    ov = _module_override(user, 'rutina')
-    if ov is not None:
-        return bool(ov)
-    if cargo == 'Gerente':
-        return True
-    area = (user.get('area') or '').strip()
-    if cargo == 'Jefe' and area == 'Operación Tienda':
-        return True
-    return False
+    return _puede(user, 'rutina')
 
 
 async def require_rutina_access(user=Depends(get_current_user)):
@@ -415,20 +307,8 @@ async def require_rutina_access(user=Depends(get_current_user)):
     return user
 
 
-# Editar el esquema (preguntas/opciones/puntajes) de Rutina Operativa: permiso
-# independiente y asignable — admin/Director comercial siempre True, para
-# cualquier otro usuario solo por override manual desde Organigrama (default
-# False; no se infiere de can_access_rutina).
-@solo_retail
 def can_edit_rutina_schema(user) -> bool:
-    if not user:
-        return False
-    if user.get('role') == 'admin':
-        return True
-    cargo = (user.get('position') or '').strip()
-    if cargo == 'Director comercial':
-        return True
-    return bool(_module_override(user, 'rutina_schema'))
+    return _puede(user, 'rutina.esquema')
 
 
 async def require_rutina_schema_editor(user=Depends(get_current_user)):
@@ -478,57 +358,22 @@ def es_coordinador_tienda(user) -> bool:
             and bool(tienda_promos(u)))
 
 
-@solo_retail
 def can_admin_promos(user) -> bool:
     """"Administrar Promociones del mes": ver y administrar TODAS las
-    publicaciones de Promociones como si fueran propias (abrirlas aunque no
-    esté en la audiencia, ver todas las respuestas/historial/resultados,
-    editar, eliminar). No viene por rol: se otorga por usuario
-    (module_access.promociones_admin). Admin y Director comercial ya lo tienen."""
-    if not user:
-        return False
-    if user.get('role') == 'admin':
-        return True
-    if (user.get('position') or '').strip() == 'Director comercial':
-        return True
-    return bool(_module_override(user, 'promociones_admin'))
+    publicaciones como si fueran propias (abrirlas aunque no esté en la
+    audiencia, ver todas las respuestas, historial y resultados, editar,
+    eliminar)."""
+    return _puede(user, 'promos.admin')
 
 
 def can_manage_promos(user) -> bool:
-    """Quién puede crear/publicar "Promociones del mes": admins, Director
-    comercial y Gerentes — el mismo grupo que ya define can_access_formulario."""
-    return can_access_formulario(user)
+    """Crear y publicar "Promociones del mes"."""
+    return _puede(user, 'promos.publicar')
 
 
-# ---- Formularios: permisos independientes del menú padre "Formulario" ----
-# formularios.principal -> pantalla /formularios (Hub) y su listado de
-# formularios personalizados. formularios.promocionesMes -> tarjeta/pantalla
-# "Promociones del mes". formularios.crearPersonalizado -> botón "Haz tu form
-# personalizado". Los tres tienen override manual con prioridad absoluta sobre
-# cualquier default de rol (se consulta primero; si existe, ni se evalúa el
-# default) — así un admin puede otorgar o revocar cada uno sin que un cambio
-# de rol futuro lo reactive/desactive solo.
-#
-# formularios.principal es el único con default "heredado": si nunca se ha
-# tocado el override, arranca habilitado para quien por rol ya tiene FLOS o
-# Rutina Operativa (para que un Gerente nuevo no dependa de que un admin le
-# active el Hub a mano). formularios.crearPersonalizado NO hereda de nada —
-# es una capacidad extra que un admin debe habilitar expresamente.
 def can_access_formularios_principal(user) -> bool:
-    if not user:
-        return False
-    if user.get('role') == 'admin':
-        return True
-    cargo = (user.get('position') or '').strip()
-    if cargo == 'Director comercial':
-        return True
-    ov = _module_override(user, 'formularios_principal')
-    if ov is not None:
-        return bool(ov)
-    if not es_retail(user):
-        return True  # otros departamentos: sus formularios personalizados (los de tienda no aplican)
-    return (can_access_formulario(user) or can_access_rutina(user) or can_access_guardias(user)
-            or can_access_recorridos(user) or can_access_etiquetas(user))
+    """Pantalla /formularios (Hub) y su listado de formularios personalizados."""
+    return _puede(user, 'formularios')
 
 
 async def require_formularios_principal_access(user=Depends(get_current_user)):
@@ -537,19 +382,8 @@ async def require_formularios_principal_access(user=Depends(get_current_user)):
     return user
 
 
-@solo_retail
 def can_access_promociones_mes(user) -> bool:
-    if not user:
-        return False
-    if user.get('role') == 'admin':
-        return True
-    cargo = (user.get('position') or '').strip()
-    if cargo == 'Director comercial':
-        return True
-    ov = _module_override(user, 'promociones_mes')
-    if ov is not None:
-        return bool(ov)
-    return True  # históricamente visible para cualquier usuario logueado
+    return _puede(user, 'promos')
 
 
 async def require_promociones_mes_access(user=Depends(get_current_user)):
@@ -565,44 +399,20 @@ async def require_promo_access(user=Depends(get_current_user)):
 
 
 def can_create_custom_formulario(user) -> bool:
-    """formularios.crearPersonalizado — botón "Haz tu form personalizado".
-    Permiso independiente: no se infiere de FLOS/Rutina, solo override
-    manual (admin y el jefe de cada departamento exceptuados)."""
-    if not user:
-        return False
-    if user.get('role') == 'admin' or es_jefe_depto(user):
-        return True
-    return bool(_module_override(user, 'formularios_custom'))
+    """Botón "Haz tu form personalizado"."""
+    return _puede(user, 'formularios.crear')
 
 
-@solo_retail
 def can_fill_rutina(user) -> bool:
-    """Solo quienes efectivamente llenan la rutina cada mes: Gerentes, y
-    admins/Director comercial para soporte. El Jefe de Operación puede
-    consultarla (can_access_rutina) pero no crear evaluaciones."""
-    if not user:
-        return False
-    if user.get('role') == 'admin':
-        return True
-    cargo = (user.get('position') or '').strip()
-    return cargo in ('Director comercial', 'Gerente')
+    """Llenar la rutina del mes (la consultan más personas: can_access_rutina)."""
+    return _puede(user, 'rutina.llenar')
 
 
-# ---- Revisión de Guardias (ECCP) ----
-# Registrar: Coordinador y Jefe del área ECCP por defecto; se puede dar o
-# quitar por usuario desde Organigrama (module_access.guardias). Admin y
-# Director comercial NO registran por el solo hecho de serlo (solo si además
-# son Coordinador/Jefe ECCP), pero ven, editan y eliminan todo.
-@solo_retail
+# ---- Revisión de Guardias, Recorridos Preventivos y Auditoría de Etiquetas (ECCP) ----
+# Registran quienes tienen el permiso (Coordinador y Jefe de ECCP); los
+# administran (ven, editan y eliminan todo) los admins y el Director comercial.
 def can_fill_guardias(user) -> bool:
-    if not user:
-        return False
-    ov = _module_override(user, 'guardias')
-    if ov is not None:
-        return bool(ov)
-    cargo = (user.get('position') or '').strip()
-    area = (user.get('area') or '').strip()
-    return area == 'ECCP' and cargo in ('Coordinador', 'Jefe')
+    return _puede(user, 'guardias.registrar')
 
 
 @solo_retail
@@ -613,7 +423,7 @@ def can_admin_guardias(user) -> bool:
 
 
 def can_access_guardias(user) -> bool:
-    return can_fill_guardias(user) or can_admin_guardias(user)
+    return _puede(user, 'guardias')
 
 
 async def require_guardias_access(user=Depends(get_current_user)):
@@ -634,19 +444,8 @@ async def require_guardias_admin(user=Depends(get_current_user)):
     return user
 
 
-# ---- Recorridos Preventivos en Tienda (ECCP) ----
-# Mismo esquema que Revisión de Guardias, con su propio permiso asignable
-# ('recorridos'): registra Coordinador/Jefe ECCP; administra admin/Director.
-@solo_retail
 def can_fill_recorridos(user) -> bool:
-    if not user:
-        return False
-    ov = _module_override(user, 'recorridos')
-    if ov is not None:
-        return bool(ov)
-    cargo = (user.get('position') or '').strip()
-    area = (user.get('area') or '').strip()
-    return area == 'ECCP' and cargo in ('Coordinador', 'Jefe')
+    return _puede(user, 'recorridos.registrar')
 
 
 def can_admin_recorridos(user) -> bool:
@@ -654,7 +453,7 @@ def can_admin_recorridos(user) -> bool:
 
 
 def can_access_recorridos(user) -> bool:
-    return can_fill_recorridos(user) or can_admin_recorridos(user)
+    return _puede(user, 'recorridos')
 
 
 async def require_recorridos_access(user=Depends(get_current_user)):
@@ -675,18 +474,8 @@ async def require_recorridos_admin(user=Depends(get_current_user)):
     return user
 
 
-# ---- Auditoría de Etiquetas de Precios (ECCP) ----
-# Mismo esquema que Guardias/Recorridos con su propio permiso ('etiquetas').
-@solo_retail
 def can_fill_etiquetas(user) -> bool:
-    if not user:
-        return False
-    ov = _module_override(user, 'etiquetas')
-    if ov is not None:
-        return bool(ov)
-    cargo = (user.get('position') or '').strip()
-    area = (user.get('area') or '').strip()
-    return area == 'ECCP' and cargo in ('Coordinador', 'Jefe')
+    return _puede(user, 'etiquetas.registrar')
 
 
 def can_admin_etiquetas(user) -> bool:
@@ -703,29 +492,24 @@ def sucursal_gerente_tienda(user) -> str:
     return '' if suc in ('', 'Casa Matriz') else suc
 
 
-@solo_retail
 def can_ver_todas_etiquetas(user) -> bool:
-    """Ver (solo lectura) las auditorías de etiquetas de todas las tiendas:
-    permiso por persona desde Jerarquía (module_access.etiquetas_ver), p. ej.
-    para un gerente de Operación Tienda."""
-    return bool(user) and bool(_module_override(user, 'etiquetas_ver'))
+    """Ver las auditorías de etiquetas de todas las tiendas."""
+    return _puede(user, 'etiquetas.todas')
+
+
+SIN_TIENDA = '—'  # no coincide con ninguna sucursal
 
 
 def etiquetas_solo_su_tienda(user) -> str:
-    """Si la persona ve Auditoría de Etiquetas solo por ser gerente de una
-    tienda: esa tienda (en solo lectura). '' si ve todas (registra,
-    administra o tiene el permiso de ver todas)."""
-    if can_fill_etiquetas(user) or can_admin_etiquetas(user) or can_ver_todas_etiquetas(user):
+    """'' si ve las auditorías de todas las tiendas; si no, la única tienda
+    que ve (el gerente de tienda, la suya; quien no tiene tienda, ninguna)."""
+    if can_ver_todas_etiquetas(user):
         return ''
-    return sucursal_gerente_tienda(user)
+    return sucursal_gerente_tienda(user) or SIN_TIENDA
 
 
 def can_access_etiquetas(user) -> bool:
-    """Registran (ECCP) y administran: todas. Con el permiso "ver todas":
-    todas, en solo lectura. Los gerentes de tienda: las de su tienda, en solo
-    lectura."""
-    return (can_fill_etiquetas(user) or can_admin_etiquetas(user) or can_ver_todas_etiquetas(user)
-            or bool(sucursal_gerente_tienda(user)))
+    return _puede(user, 'etiquetas')
 
 
 async def require_etiquetas_access(user=Depends(get_current_user)):
@@ -748,16 +532,10 @@ async def require_etiquetas_admin(user=Depends(get_current_user)):
 
 # ---- Activos (de cualquier categoría: CCTV, herramientas, vehículos…) ----
 # Administrar (crear categorías y manejar todos los activos de SU departamento):
-# admin, el jefe del departamento (Director comercial / Gerente de Logística) o
-# el permiso asignable 'activos' (Organigrama). Cada categoría
-# tiene además sus responsables, que registran y editan solo sus activos;
-# eso se valida en routes_activos.py contra la base.
+# quien tiene el permiso. Cada categoría tiene además sus responsables, que
+# registran y editan solo sus activos; eso se valida en routes_activos.py.
 def can_admin_activos(user) -> bool:
-    if not user:
-        return False
-    if user.get('role') == 'admin' or es_jefe_depto(user):
-        return True
-    return bool(_module_override(user, 'activos'))
+    return _puede(user, 'activos.administrar')
 
 
 async def require_activos_admin(user=Depends(get_current_user)):

@@ -33,6 +33,7 @@ from pydantic import BaseModel
 from core import (db, get_current_user, serialize_doc, new_id, now_iso, RETAIL, LOGISTICA,
                   departamento_de, es_super_admin, filtro_depto)
 import permisos
+import acceso
 
 router = APIRouter(prefix='/org', tags=['organizacion'])
 logger = logging.getLogger('organizacion')
@@ -319,6 +320,7 @@ async def crear_departamento(data: DeptoInput, user=Depends(get_current_user)):
     await db.org_departamentos.insert_one(d)
     for i, (n, nivel) in enumerate(CARGOS_NUEVO):
         await _cargo(d['id'], n, nivel, False, i)
+    await acceso.asegurar_departamento(d['id'])
     d.pop('_id', None)
     return serialize_doc(d)
 
@@ -352,6 +354,8 @@ async def borrar_departamento(did: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail=f'Tiene {n} persona(s): muévelas antes de eliminarlo')
     await db.org_areas.delete_many({'departamento': did})
     await db.org_cargos.delete_many({'departamento': did})
+    await db.acceso_perfiles.delete_many({'departamento': did})
+    await db.acceso_asignaciones.delete_many({'departamento': did})
     await db.org_departamentos.delete_one({'id': did})
     return {'message': f'Departamento {d["nombre"]} eliminado'}
 
@@ -417,6 +421,7 @@ async def _recalcular_caminos(area_id):
         i += 1
     for aid in ids:
         await db.users.update_many({'area_id': aid}, {'$set': {'area_path': await camino(aid)}})
+    await acceso.recalcular({'area_id': {'$in': ids}})
 
 
 @router.put('/areas/{aid}')
@@ -452,6 +457,7 @@ async def borrar_area(aid: str, user=Depends(get_current_user)):
     if n:
         raise HTTPException(status_code=400, detail=f'Tiene {n} persona(s): cámbialas de área primero')
     await db.org_areas.delete_one({'id': aid})
+    await db.acceso_asignaciones.delete_many({'area_id': aid})
     return {'message': f'Área {a["nombre"]} eliminada'}
 
 
@@ -519,6 +525,7 @@ async def editar_cargo(cid: str, data: CargoInput, user=Depends(get_current_user
         sets.update({'clave': nombre, 'nivel': data.nivel})
         await db.users.update_many({'cargo_id': cid}, {'$set': {'position': nombre, 'nivel': data.nivel}})
     await db.org_cargos.update_one({'id': cid}, {'$set': sets})
+    await acceso.recalcular({'cargo_id': cid})
     return serialize_doc(await _cargo_o_404(cid))
 
 
@@ -534,4 +541,5 @@ async def borrar_cargo(cid: str, user=Depends(get_current_user)):
     if await _ultimo_jefe(c):
         raise HTTPException(status_code=400, detail='Es el único cargo de jefe del departamento: no se puede quitar')
     await db.org_cargos.delete_one({'id': cid})
+    await db.acceso_asignaciones.delete_many({'cargo_id': cid})
     return {'message': f'Cargo {c["nombre"]} eliminado'}

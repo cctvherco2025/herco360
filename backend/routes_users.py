@@ -3,18 +3,14 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import List
 from pydantic import BaseModel
 from core import (db, get_current_user, require_admin, serialize_doc, now_iso,
-                  hash_password, new_id, require_access_manager, GATED_MODULES,
-                  can_access_inventory, can_access_reports, can_access_cams, can_access_formulario,
-                  can_access_rutina, can_access_formularios_principal, can_access_promociones_mes,
-                  can_create_custom_formulario, can_edit_rutina_schema, can_edit_flos_schema,
-                  can_access_vacaciones, can_admin_promos, can_fill_guardias,
-                  can_fill_recorridos, can_fill_etiquetas, can_admin_activos, can_ver_todas_etiquetas,
+                  hash_password, new_id,
                   RETAIL, departamento_de, es_retail, es_jefe_depto, es_super_admin,
                   filtro_depto, mismo_depto)
 import organizacion
 import mando
 import permisos
-from models import ProfileUpdate, RoleUpdate, AdminUserCreate, AdminUserUpdate, ModuleAccessUpdate
+import acceso
+from models import ProfileUpdate, RoleUpdate, AdminUserCreate, AdminUserUpdate
 from notifications import create_notification, log_activity
 from routes_groups import quitar_de_grupos
 
@@ -84,68 +80,6 @@ async def pending_count(user=Depends(get_current_user)):
     return {'count': count}
 
 
-def _effective_access(u):
-    return {
-        'inventario': can_access_inventory(u), 'reportes': can_access_reports(u),
-        'cams': can_access_cams(u), 'formulario': can_access_formulario(u),
-        'rutina': can_access_rutina(u),
-        'formularios_principal': can_access_formularios_principal(u),
-        'promociones_mes': can_access_promociones_mes(u),
-        'formularios_custom': can_create_custom_formulario(u),
-        'rutina_schema': can_edit_rutina_schema(u),
-        'formulario_schema': can_edit_flos_schema(u),
-        'vacaciones': can_access_vacaciones(u),
-        'promociones_admin': can_admin_promos(u),
-        'guardias': can_fill_guardias(u),
-        'recorridos': can_fill_recorridos(u),
-        'etiquetas': can_fill_etiquetas(u),
-        'activos': can_admin_activos(u),
-        'etiquetas_ver': can_ver_todas_etiquetas(u),
-    }
-
-
-@router.get('/access')
-async def list_access(manager=Depends(require_access_manager)):
-    """Users + their effective access to gated modules (for the access-management panel)."""
-    users = await db.users.find({'status': 'approved', **filtro_depto(manager)}, {'_id': 0, 'password_hash': 0}).sort('name', 1).to_list(500)
-    out = []
-    for u in users:
-        locked = u.get('role') == 'admin' or es_jefe_depto(u)
-        out.append({
-            'id': u['id'], 'name': u['name'], 'email': u.get('email'),
-            'position': u.get('position'), 'area': u.get('area'),
-            'departamento': departamento_de(u),
-            'avatar_url': u.get('avatar_url'), 'role': u.get('role'),
-            'locked': locked,  # full-access roles cannot be edited
-            'module_access': u.get('module_access') or {},
-            'access': _effective_access(u),
-        })
-    return serialize_doc(out)
-
-
-@router.patch('/{user_id}/module-access')
-async def set_module_access(user_id: str, data: ModuleAccessUpdate, manager=Depends(require_access_manager)):
-    if data.module not in GATED_MODULES:
-        raise HTTPException(status_code=400, detail='Módulo no válido')
-    target = await db.users.find_one({'id': user_id}, {'_id': 0})
-    if not target:
-        raise HTTPException(status_code=404, detail='Usuario no encontrado')
-    if not es_super_admin(manager) and not mismo_depto(manager, target):
-        raise HTTPException(status_code=403, detail='Esa persona es de otro departamento')
-    if target.get('role') == 'admin' or es_jefe_depto(target):
-        raise HTTPException(status_code=400, detail='Este rol ya tiene acceso total; no se puede modificar')
-    module_access = dict(target.get('module_access') or {})
-    if data.enabled is None:
-        module_access.pop(data.module, None)  # reset to role default
-    else:
-        module_access[data.module] = bool(data.enabled)
-    await db.users.update_one({'id': user_id}, {'$set': {'module_access': module_access}})
-    updated = await db.users.find_one({'id': user_id}, {'_id': 0, 'password_hash': 0})
-    await log_activity(manager['id'], manager['name'], manager.get('avatar_url'),
-                       'actualizó accesos de', updated['name'], 'user', departamento_de(updated))
-    return {'id': updated['id'], 'module_access': module_access, 'access': _effective_access(updated)}
-
-
 MANAGER_POSITIONS = {'Jefe', 'Gerente', 'Director comercial', 'Gerente de Logística'}
 
 
@@ -194,6 +128,7 @@ async def create_user(data: AdminUserCreate, admin=Depends(require_gestor_usuari
     }
     await db.users.insert_one(doc)
     await permisos.recalcular_usuario(doc['id'])
+    await acceso.preparar_usuario(doc['id'])
     await log_activity(admin['id'], admin['name'], admin.get('avatar_url'),
                        'creó un usuario', data.name, 'user', depto)
     doc.pop('password_hash', None)
@@ -281,6 +216,7 @@ async def change_role(user_id: str, data: RoleUpdate, admin=Depends(require_admi
     if data.role != 'admin':
         sets['super_admin'] = False
     await db.users.update_one({'id': user_id}, {'$set': sets})
+    await acceso.preparar_usuario(user_id)
     return {'message': 'Rol actualizado'}
 
 
@@ -348,6 +284,8 @@ async def update_user(user_id: str, data: AdminUserUpdate, admin=Depends(require
         await db.users.update_one({'id': user_id}, {'$set': updates})
         if 'cargo_id' in updates or 'role' in updates:
             await permisos.recalcular_usuario(user_id)
+        if any(k in updates for k in ('cargo_id', 'area_id', 'area_path', 'nivel', 'role', 'departamento', 'super_admin', 'position', 'area', 'sucursal')):
+            await acceso.preparar_usuario(user_id)
     # desactivado (estado distinto de aprobado): sale de los grupos de Agenda
     if 'status' in updates and updates['status'] != 'approved':
         await quitar_de_grupos(user_id)
