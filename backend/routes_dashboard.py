@@ -1,7 +1,7 @@
 """Dashboard summary + global search routes."""
 from datetime import timedelta
 from fastapi import APIRouter, Depends
-from core import db, get_current_user, serialize_doc, now_local, filtro_depto, es_logistica
+from core import db, get_current_user, serialize_doc, now_local, filtro_depto, es_retail, es_super_admin
 from routes_rooms import _derive_room_status
 import recurrence as rec
 
@@ -23,14 +23,14 @@ async def dashboard(user=Depends(get_current_user)):
     my_today = [a for a in today_acts
                 if a['created_by'] == user['id']
                 or any(p['user_id'] == user['id'] for p in a.get('participants', []))
-                or user['role'] == 'admin']
+                or es_super_admin(user)]
 
 
     # Upcoming (next 7 days, excluding today): actividades y repeticiones que empiezan en ese rango
     tomorrow = (now_local() + timedelta(days=1)).strftime('%Y-%m-%d')
     end = (now_local() + timedelta(days=7)).strftime('%Y-%m-%d')
     up_query = rec.filtro_rango(tomorrow, end)
-    if user['role'] != 'admin':
+    if not es_super_admin(user):
         up_query = {'$and': [up_query, {'$or': [
             {'created_by': user['id']},
             {'participants.user_id': user['id']},
@@ -43,7 +43,7 @@ async def dashboard(user=Depends(get_current_user)):
     room_status = 'Disponible'
     room_name = 'Sala de Juntas'
     # la Sala de Juntas es de Ventas Retail
-    if room and user.get('role') != 'admin' and es_logistica(user):
+    if room and not es_super_admin(user) and not es_retail(user):
         room = None
         room_status = None
     if room:
@@ -80,7 +80,7 @@ async def search(q: str = '', user=Depends(get_current_user)):
     rx = {'$regex': q.strip(), '$options': 'i'}
     # actividades de gente del mismo departamento (los admins, de todos)
     q_act = {'title': rx}
-    if user.get('role') != 'admin':
+    if not es_super_admin(user):
         mios = [u['id'] for u in await db.users.find(filtro_depto(user), {'_id': 0, 'id': 1}).to_list(5000)]
         q_act['created_by'] = {'$in': mios}
     activities = await db.activities.find(q_act, {'_id': 0}).limit(8).to_list(8)

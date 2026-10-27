@@ -1,7 +1,7 @@
 """Meeting room + reservation routes."""
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
-from core import db, get_current_user, serialize_doc, new_id, now_iso, today_local_str, local_hm, require_no_logistica
+from core import db, get_current_user, serialize_doc, new_id, now_iso, today_local_str, local_hm, require_retail
 from models import ReservationInput
 from notifications import create_notification, log_activity
 
@@ -54,7 +54,7 @@ async def _derive_room_status(room_id):
 
 
 @router.get('')
-async def list_rooms(user=Depends(require_no_logistica)):
+async def list_rooms(user=Depends(require_retail)):
     rooms = await db.rooms.find({}, {'_id': 0}).to_list(50)
     result = []
     for room in rooms:
@@ -66,14 +66,14 @@ async def list_rooms(user=Depends(require_no_logistica)):
 
 
 @router.get('/{room_id}/status')
-async def room_status(room_id: str, user=Depends(require_no_logistica)):
+async def room_status(room_id: str, user=Depends(require_retail)):
     status, current = await _derive_room_status(room_id)
     return {'status': status, 'current_reservation': serialize_doc(current)}
 
 
 @res_router.get('')
 async def list_reservations(date: str = None, room_id: str = None, upcoming: bool = False,
-                            user=Depends(require_no_logistica)):
+                            user=Depends(require_retail)):
     query = {}
     if date:
         query['date'] = date
@@ -86,7 +86,7 @@ async def list_reservations(date: str = None, room_id: str = None, upcoming: boo
 
 
 @res_router.post('')
-async def create_reservation(data: ReservationInput, user=Depends(require_no_logistica)):
+async def create_reservation(data: ReservationInput, user=Depends(require_retail)):
     # Cannot reserve on past dates.
     if data.date < _today_str():
         raise HTTPException(status_code=400, detail='No puedes reservar la sala en fechas pasadas')
@@ -127,7 +127,7 @@ async def create_reservation(data: ReservationInput, user=Depends(require_no_log
 
 
 @res_router.post('/{reservation_id}/cancel')
-async def cancel_reservation(reservation_id: str, user=Depends(require_no_logistica)):
+async def cancel_reservation(reservation_id: str, user=Depends(require_retail)):
     r = await db.reservations.find_one({'id': reservation_id}, {'_id': 0})
     if not r:
         raise HTTPException(status_code=404, detail='Reserva no encontrada')
@@ -143,7 +143,7 @@ async def cancel_reservation(reservation_id: str, user=Depends(require_no_logist
 
 
 @res_router.post('/{reservation_id}/finalize')
-async def finalize_reservation(reservation_id: str, user=Depends(require_no_logistica)):
+async def finalize_reservation(reservation_id: str, user=Depends(require_retail)):
     r = await db.reservations.find_one({'id': reservation_id}, {'_id': 0})
     if not r:
         raise HTTPException(status_code=404, detail='Reserva no encontrada')

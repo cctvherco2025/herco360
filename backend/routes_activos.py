@@ -41,7 +41,8 @@ from pydantic import BaseModel
 from pymongo import ReturnDocument
 
 from core import (db, serialize_doc, new_id, now_iso, get_current_user, require_activos_admin, can_admin_activos,
-                  RETAIL, LOGISTICA, DEPARTAMENTOS, departamento_de, es_logistica, filtro_depto, filtro_usuarios_depto)
+                  RETAIL, LOGISTICA, departamento_de, es_retail, es_super_admin, filtro_depto, filtro_usuarios_depto)
+import organizacion
 from notifications import log_activity
 import storage
 
@@ -49,20 +50,23 @@ router = APIRouter(prefix='/activos', tags=['activos'])
 logger = logging.getLogger('activos')
 
 SUCURSALES = ['H1', 'H2', 'H5', 'H6']  # ubicaciones de Ventas Retail
-# Logística tiene sus propias ubicaciones (las edita su gerente o un admin).
-UBICACIONES_LOGISTICA_INICIALES = ['Bodega central']
+# Los demás departamentos tienen sus propias ubicaciones (las edita quien
+# administra sus activos o el super admin).
+UBICACIONES_INICIALES = ['Bodega central']
 
 
 async def ubicaciones(depto):
-    if depto != LOGISTICA:
+    if (depto or RETAIL) == RETAIL:
         return list(SUCURSALES)
-    doc = await db.config.find_one({'_id': 'ubicaciones_logistica'}) or {}
-    return doc.get('ubicaciones') or list(UBICACIONES_LOGISTICA_INICIALES)
+    doc = await db.config.find_one({'_id': f'ubicaciones:{depto}'})
+    if not doc and depto == LOGISTICA:  # las que se guardaron antes de que hubiera más departamentos
+        doc = await db.config.find_one({'_id': 'ubicaciones_logistica'})
+    return (doc or {}).get('ubicaciones') or list(UBICACIONES_INICIALES)
 
 
 def depto_cat(cat) -> str:
     """Departamento de una categoría (las de antes, sin el campo, son de Retail)."""
-    return LOGISTICA if (cat or {}).get('departamento') == LOGISTICA else RETAIL
+    return (cat or {}).get('departamento') or RETAIL
 MAX_PHOTO_SIZE = 8 * 1024 * 1024
 TIPOS_CAMPO = {
     'texto': 'Texto', 'numero': 'Número entero', 'decimal': 'Número con decimales', 'fecha': 'Fecha',
@@ -330,25 +334,30 @@ async def meta(user=Depends(get_current_user)):
                                for h in todas.values() if h.get('padre_id') == c['id'] and h['id'] in {v['id'] for v in visibles}]})
     # ubicaciones de cada departamento; `sucursales` = las de la persona (los
     # admins, las de los dos) para filtrar la lista
-    ubic = {d: await ubicaciones(d) for d in DEPARTAMENTOS}
-    mias = ubic[departamento_de(user)] if user.get('role') != 'admin' else ubic[RETAIL] + ubic[LOGISTICA]
+    deptos = [d['id'] for d in await organizacion.departamentos()] if es_super_admin(user) else [departamento_de(user)]
+    ubic = {d: await ubicaciones(d) for d in deptos}
+    mias = [u for d in deptos for u in ubic[d]]
     for c in cats:
         c['departamento'] = depto_cat(c)
     return serialize_doc({'categorias': cats, 'sucursales': mias, 'ubicaciones': ubic, 'admin': admin,
-                          'departamento': departamento_de(user), 'es_admin_sistema': user.get('role') == 'admin',
+                          'departamento': departamento_de(user), 'es_admin_sistema': es_super_admin(user),
+                          'departamentos': [{'id': d['id'], 'nombre': d['nombre']} for d in await organizacion.departamentos()
+                                            if d['id'] in deptos],
                           'tipos_campo': TIPOS_CAMPO, 'iconos': ICONOS})
 
 
 class UbicacionesInput(BaseModel):
     ubicaciones: list
+    departamento: Optional[str] = None  # solo lo elige el super admin
 
 
-@router.put('/ubicaciones-logistica')
+@router.put('/ubicaciones')
 async def guardar_ubicaciones(data: UbicacionesInput, user=Depends(require_activos_admin)):
-    """Ubicaciones de los activos de Logística: las edita quien administra
-    Activos en Logística o un admin."""
-    if user.get('role') != 'admin' and not es_logistica(user):
-        raise HTTPException(status_code=403, detail='Las ubicaciones de Logística las edita Logística')
+    """Ubicaciones de los activos de un departamento que no es Retail (Retail
+    usa sus sucursales): las edita quien administra sus Activos o el super admin."""
+    depto = (data.departamento or departamento_de(user)) if es_super_admin(user) else departamento_de(user)
+    if depto == RETAIL:
+        raise HTTPException(status_code=400, detail='Ventas Retail usa sus sucursales (H1, H2, H5, H6)')
     lista = []
     for u in data.ubicaciones:
         u = _txt(u, 40)
@@ -357,12 +366,12 @@ async def guardar_ubicaciones(data: UbicacionesInput, user=Depends(require_activ
     if not lista:
         raise HTTPException(status_code=400, detail='Deja al menos una ubicación')
     # no se quita una ubicación que todavía tiene activos
-    cats_log = [c['id'] for c in await db.activo_categorias.find({'departamento': LOGISTICA}, {'_id': 0, 'id': 1}).to_list(500)]
-    for quitada in set(await ubicaciones(LOGISTICA)) - set(lista):
+    cats_log = [c['id'] for c in await db.activo_categorias.find({'departamento': depto}, {'_id': 0, 'id': 1}).to_list(500)]
+    for quitada in set(await ubicaciones(depto)) - set(lista):
         n = await db.activos.count_documents({'categoria_id': {'$in': cats_log}, 'sucursal': quitada})
         if n:
             raise HTTPException(status_code=400, detail=f'{quitada} tiene {n} activo(s): muévelos antes de quitarla')
-    await db.config.update_one({'_id': 'ubicaciones_logistica'}, {'$set': {'ubicaciones': lista}}, upsert=True)
+    await db.config.update_one({'_id': f'ubicaciones:{depto}'}, {'$set': {'ubicaciones': lista}}, upsert=True)
     return {'ubicaciones': lista}
 
 
@@ -386,7 +395,7 @@ async def list_categorias(user=Depends(require_activos_admin)):
 @router.get('/usuarios')
 async def list_usuarios(departamento: Optional[str] = None, user=Depends(require_activos_admin)):
     """Posibles responsables: gente del departamento (un admin elige cuál)."""
-    depto = departamento if (user.get('role') == 'admin' and departamento in DEPARTAMENTOS) else departamento_de(user)
+    depto = departamento if (es_super_admin(user) and departamento) else departamento_de(user)
     rows = await db.users.find({'status': 'approved', **filtro_usuarios_depto(depto)},
                                {'_id': 0, 'id': 1, 'name': 1, 'avatar_url': 1, 'position': 1, 'area': 1}).sort('name', 1).to_list(1000)
     return serialize_doc(rows)
@@ -418,7 +427,7 @@ async def _limpiar_categoria(data: CategoriaInput, user, actual=None):
     if not re.fullmatch(r'[A-Z]{2,5}', prefijo):
         raise HTTPException(status_code=400, detail='El prefijo debe tener de 2 a 5 letras (ej. HER, VEH)')
     # departamento: el de quien la crea; un admin lo elige (y lo cambia solo si no tiene activos)
-    if user.get('role') == 'admin' and data.departamento in DEPARTAMENTOS:
+    if es_super_admin(user) and await organizacion.existe_departamento(data.departamento):
         depto = data.departamento
     else:
         depto = depto_cat(actual) if actual else departamento_de(user)

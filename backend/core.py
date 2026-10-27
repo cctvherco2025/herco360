@@ -135,40 +135,53 @@ USER_PUBLIC_FIELDS = {'_id': 0, 'password_hash': 0}
 # ---- Departamentos ----
 # La app la usan departamentos con operaciones distintas y totalmente
 # separados: cada uno ve solo a su gente y sus datos (agenda, vacaciones,
-# tareas, activos, formularios). Solo los admins ven todos.
-# Los usuarios sin el campo son de Ventas Retail (los de siempre).
+# tareas, activos, formularios). La estructura (departamentos, áreas en árbol
+# y cargos con nivel de mando) vive en la base: ver organizacion.py.
+# Los usuarios y datos sin el campo son de Ventas Retail (los de siempre).
+#
+# Roles: el super admin (role admin + super_admin) ve y administra todo y
+# crea departamentos; un admin administra solo su departamento.
 RETAIL = 'Ventas Retail'
 LOGISTICA = 'Logística'
-DEPARTAMENTOS = (RETAIL, LOGISTICA)
 GERENTE_LOGISTICA = 'Gerente de Logística'
-# El jefe de cada departamento (ve todas sus áreas y gestiona sus accesos).
+# Jefe de departamento por nombre de cargo: solo para usuarios que todavía no
+# tienen `nivel` (antes de la migración de organizacion.asegurar).
 JEFES_DEPTO = {'Director comercial': RETAIL, GERENTE_LOGISTICA: LOGISTICA}
-CARGOS_LOGISTICA = [GERENTE_LOGISTICA, 'Jefe', 'Coordinador', 'Auxiliar']
-AREAS_LOGISTICA_INICIALES = ['Bodega', 'Distribución', 'Transporte']
 
 
 def departamento_de(user) -> str:
-    d = (user or {}).get('departamento')
-    return d if d in DEPARTAMENTOS else RETAIL
+    return (user or {}).get('departamento') or RETAIL
 
 
-def es_logistica(user) -> bool:
-    return departamento_de(user) == LOGISTICA
+def es_retail(user) -> bool:
+    return departamento_de(user) == RETAIL
+
+
+def es_super_admin(user) -> bool:
+    u = user or {}
+    return u.get('role') == 'admin' and bool(u.get('super_admin'))
 
 
 def es_jefe_depto(user) -> bool:
-    """Director comercial (Retail) o Gerente de Logística (Logística)."""
-    cargo = ((user or {}).get('position') or '').strip()
-    return JEFES_DEPTO.get(cargo) == departamento_de(user)
+    """El jefe del departamento (nivel jefe_depto): Director comercial en
+    Retail, Gerente de Logística en Logística, el que se defina en otros."""
+    u = user or {}
+    if u.get('nivel'):
+        return u['nivel'] == 'jefe_depto'
+    return JEFES_DEPTO.get((u.get('position') or '').strip()) == departamento_de(u)
+
+
+def filtro_departamento(depto: str, campo='departamento') -> dict:
+    """Filtro de Mongo de un departamento. Lo de Retail no siempre tiene el
+    campo (datos de antes): se incluye lo que no lo tiene."""
+    return {campo: {'$in': [None, RETAIL]}} if depto == RETAIL else {campo: depto}
 
 
 def filtro_depto(user, campo='departamento') -> dict:
-    """Filtro de Mongo para quedarse con lo del departamento de `user`
-    (vacío para los admins, que ven todo). Lo de Retail no siempre tiene el
-    campo (datos de antes), por eso se filtra con $ne Logística."""
-    if (user or {}).get('role') == 'admin':
+    """Lo del departamento de `user` (vacío para el super admin, que ve todo)."""
+    if es_super_admin(user):
         return {}
-    return {campo: LOGISTICA} if es_logistica(user) else {campo: {'$ne': LOGISTICA}}
+    return filtro_departamento(departamento_de(user), campo)
 
 
 def mismo_depto(a, b) -> bool:
@@ -177,30 +190,27 @@ def mismo_depto(a, b) -> bool:
 
 def filtro_usuarios_depto(depto: str) -> dict:
     """Filtro de usuarios de un departamento (para avisos y validaciones)."""
-    return {'departamento': LOGISTICA} if depto == LOGISTICA else {'departamento': {'$ne': LOGISTICA}}
+    return filtro_departamento(depto)
 
 
-async def ids_mismo_depto(user, ids) -> set:
-    """De `ids`, los usuarios que son del departamento de `user` (todos si es admin)."""
-    ids = [i for i in (ids or []) if i]
-    if not ids:
-        return set()
-    q = {'id': {'$in': ids}, **filtro_depto(user)}
-    return {u['id'] for u in await db.users.find(q, {'_id': 0, 'id': 1}).to_list(len(ids) + 10)}
+def ve_depto(user, depto) -> bool:
+    """¿Puede ver lo de ese departamento? (el suyo; el super admin, todos)."""
+    return es_super_admin(user) or departamento_de(user) == (depto or RETAIL)
 
 
-async def require_no_logistica(user=Depends(get_current_user)):
+async def require_retail(user=Depends(get_current_user)):
     """Módulos de Ventas Retail sin permiso propio (p. ej. Sala de Juntas)."""
-    if user.get('role') != 'admin' and es_logistica(user):
+    if not es_super_admin(user) and not es_retail(user):
         raise HTTPException(status_code=403, detail='Este módulo es de Ventas Retail')
     return user
 
 
 def solo_retail(fn):
-    """Módulos de Ventas Retail (tiendas, ECCP, promociones…): Logística no
-    los ve aunque tenga un permiso manual; los admins sí."""
+    """Módulos de Ventas Retail (tiendas, ECCP, promociones…): los demás
+    departamentos no los ven aunque tengan un permiso manual o sean admins de
+    su departamento; el super admin sí."""
     def envuelta(user, *args, **kwargs):
-        if user and user.get('role') != 'admin' and es_logistica(user):
+        if user and not es_super_admin(user) and not es_retail(user):
             return False
         return fn(user, *args, **kwargs)
     envuelta.__name__ = fn.__name__
@@ -515,8 +525,8 @@ def can_access_formularios_principal(user) -> bool:
     ov = _module_override(user, 'formularios_principal')
     if ov is not None:
         return bool(ov)
-    if es_logistica(user):
-        return True  # Logística: sus formularios personalizados (los de tienda no aplican)
+    if not es_retail(user):
+        return True  # otros departamentos: sus formularios personalizados (los de tienda no aplican)
     return (can_access_formulario(user) or can_access_rutina(user) or can_access_guardias(user)
             or can_access_recorridos(user) or can_access_etiquetas(user))
 

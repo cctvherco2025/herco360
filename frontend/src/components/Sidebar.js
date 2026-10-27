@@ -11,7 +11,7 @@ import { useTheme } from '@/context/ThemeContext';
 import {
   canAccessInventory, canAccessReports, canAccessOrgChart, canAccessCams, canAccessFlos, canAccessRutina,
   canAccessFormulariosPrincipal, canAccessPromocionesMes, canAccessVacaciones, puedeVerTickets, puedeVerTareas, canAccessGuardias, canAccessRecorridos, canAccessEtiquetas,
-  esLogistica,
+  esRetail, esSuperAdmin,
 } from '@/lib/constants';
 import { Logo, AppWordmark } from '@/components/Logo';
 import { NovedadPunto } from '@/components/Novedad';
@@ -254,8 +254,8 @@ function SidebarContent({ onNavigate }) {
     const idx = navItems.findIndex((n) => n.to === '/vacaciones');
     if (idx >= 0) navItems.splice(idx, 1);
   }
-  // Sala de Juntas es de Ventas Retail (Logística no la usa; los admins sí)
-  if (user?.role !== 'admin' && esLogistica(user)) {
+  // Sala de Juntas es de Ventas Retail (los demás departamentos no la usan)
+  if (!esSuperAdmin(user) && !esRetail(user)) {
     const idx = navItems.findIndex((n) => n.to === '/sala-de-juntas');
     if (idx >= 0) navItems.splice(idx, 1);
   }
@@ -298,7 +298,7 @@ function SidebarContent({ onNavigate }) {
           </Avatar>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-foreground">{user?.name}</p>
-            <p className="truncate text-xs text-[#00a5df] capitalize">{user?.role === 'admin' ? 'Administrador' : user?.position || 'Usuario'}</p>
+            <p className="truncate text-xs text-[#00a5df] capitalize">{esSuperAdmin(user) ? 'Super admin' : user?.role === 'admin' ? 'Administrador' : user?.position || 'Usuario'}</p>
           </div>
           <button onClick={logout} data-testid="sidebar-logout" title="Cerrar sesión"
             className="text-muted-foreground hover:text-[#dc2626] transition-colors">

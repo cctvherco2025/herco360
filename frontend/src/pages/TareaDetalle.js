@@ -196,7 +196,7 @@ export default function TareaDetalle() {
         </div>
         <h1 className="font-heading text-2xl font-semibold">{t.titulo}</h1>
         {t.descripcion && <p className="text-sm whitespace-pre-wrap">{t.descripcion}</p>}
-        <p className="text-sm text-muted-foreground">{t.tienda || t.area || 'Logística'} · asignó {t.creado_por?.name}</p>
+        <p className="text-sm text-muted-foreground">{t.tienda || t.area || 'Equipo'} · asignó {t.creado_por?.name}</p>
         {t.estado === 'cerrada' && <p className="text-xs rounded-xl bg-[rgba(22,163,74,0.12)] text-[#16a34a] px-3 py-2">Cerrada: todas las partes quedaron validadas.</p>}
         {t.estado === 'cancelada' && <p className="text-xs rounded-xl bg-muted px-3 py-2">Cancelada por {t.cancelada_por?.name} {timeAgoEs(t.cancelada_at)}.</p>}
       </div>

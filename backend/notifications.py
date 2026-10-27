@@ -2,8 +2,7 @@
 import asyncio
 import logging
 
-from core import (db, new_id, now_iso, LOGISTICA, RETAIL, GERENTE_LOGISTICA,
-                  filtro_usuarios_depto)
+from core import db, new_id, now_iso, RETAIL, filtro_usuarios_depto
 import push
 
 logger = logging.getLogger("notifications")
@@ -112,8 +111,10 @@ async def create_notification(user_id, ntype, message, related_id=None, related_
     return doc
 
 
-async def notify_admins(ntype, message, exclude_user_id=None, **kwargs):
-    admins = await db.users.find({'role': 'admin', 'status': 'approved'}, {'_id': 0, 'id': 1}).to_list(100)
+async def notify_admins(ntype, message, exclude_user_id=None, departamento=RETAIL, **kwargs):
+    """A los super admins y a los admins del departamento."""
+    admins = await db.users.find({'role': 'admin', 'status': 'approved', '$or': [
+        {'super_admin': True}, filtro_usuarios_depto(departamento)]}, {'_id': 0, 'id': 1}).to_list(100)
     for a in admins:
         if a['id'] == exclude_user_id:
             continue
@@ -121,18 +122,15 @@ async def notify_admins(ntype, message, exclude_user_id=None, **kwargs):
 
 
 async def notify_area_managers(area, ntype, message, exclude_user_id=None, departamento=RETAIL, **kwargs):
-    """Notify Jefe/Gerente of a given área and the jefe of the departamento.
-
-    Solo de ese departamento: en Retail el Director comercial (ve todas las
-    áreas); en Logística el Gerente de Logística.
-    """
-    jefe = GERENTE_LOGISTICA if departamento == LOGISTICA else 'Director comercial'
+    """Notify Jefe/Gerente of a given área and the jefe of the departamento
+    (nivel jefe_depto: Director comercial, Gerente de Logística…), solo de ese
+    departamento."""
     managers = await db.users.find({
         'status': 'approved',
         **filtro_usuarios_depto(departamento),
         '$or': [
-            {'area': area, 'position': {'$in': ['Jefe', 'Gerente', jefe]}},
-            {'position': jefe},
+            {'area': area, 'nivel': {'$in': ['jefe', 'gerente']}},
+            {'nivel': 'jefe_depto'},
         ],
     }, {'_id': 0, 'id': 1}).to_list(100)
     seen = set()

@@ -47,10 +47,13 @@ export default function Vacaciones() {
 
 function VacacionesPage() {
   const { user } = useAuth();
-  const isManager = user?.role === 'admin' || ['Jefe', 'Gerente', 'Director comercial', 'Gerente de Logística'].includes(user?.position);
+  // "Por autorizar": a quien manda (cualquier cargo de mando o nivel jefe, o
+  // a quien el servidor le asignó solicitudes para aprobar)
+  const [toReview, setToReview] = useState([]);
+  const isManager = user?.role === 'admin' || ['Jefe', 'Gerente', 'Director comercial'].includes(user?.position)
+    || ['jefe_depto', 'gerente', 'jefe'].includes(user?.nivel) || toReview.length > 0;
 
   const [mine, setMine] = useState([]);
-  const [toReview, setToReview] = useState([]);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
@@ -61,8 +64,8 @@ function VacacionesPage() {
 
   const load = useCallback(async () => {
     try { const { data } = await api.get('/vacations/mine'); setMine(data); } catch (e) {}
-    if (isManager) { try { const { data } = await api.get('/vacations/to-review'); setToReview(data); } catch (e) {} }
-  }, [isManager]);
+    try { const { data } = await api.get('/vacations/to-review'); setToReview(data); } catch (e) {}
+  }, []);
   useEffect(() => { load(); }, [load]);
 
   const setF = (k, v) => setForm((f) => ({ ...f, [k]: v }));

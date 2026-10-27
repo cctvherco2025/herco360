@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { canAdminActivos, DEPARTAMENTOS, LOGISTICA, RETAIL, departamentoDe, esLogistica } from '@/lib/constants';
+import { canAdminActivos, RETAIL, departamentoDe, esSuperAdmin } from '@/lib/constants';
+import { nombreDepto, tonoDepto } from '@/lib/organizacion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -75,9 +76,9 @@ function Responsables({ usuarios, value, onChange }) {
   );
 }
 
-function CategoriaForm({ open, onOpenChange, categoria, categorias, onSaved }) {
+function CategoriaForm({ open, onOpenChange, categoria, categorias, deptos, onSaved }) {
   const { user } = useAuth();
-  const esAdmin = user?.role === 'admin';
+  const esAdmin = esSuperAdmin(user); // solo el super admin elige el departamento
   const editando = !!categoria;
   const [form, setForm] = useState(vacia());
   const [saving, setSaving] = useState(false);
@@ -167,7 +168,7 @@ function CategoriaForm({ open, onOpenChange, categoria, categorias, onSaved }) {
                 <Label htmlFor="cat-depto">Departamento</Label>
                 <NativeSelect id="cat-depto" value={depto} disabled={tieneActivos}
                   onChange={(v) => setForm((f) => ({ ...f, departamento: v, responsables: [], padre_id: '', posicion_label: '', capacidad_campo: '' }))}>
-                  {DEPARTAMENTOS.map((d) => <option key={d} value={d}>{d}</option>)}
+                  {deptos.map((d) => <option key={d.id} value={d.id}>{d.nombre}</option>)}
                 </NativeSelect>
               </div>
             )}
@@ -310,7 +311,12 @@ export default function ActivosCategorias() {
   const navigate = useNavigate();
   const [cats, setCats] = useState(null);
   const [form, setForm] = useState(null); // { categoria? }
-  const esAdmin = user?.role === 'admin';
+  const esAdmin = esSuperAdmin(user);
+  // departamentos que la persona ve (el super admin, todos) y sus ubicaciones
+  const [meta, setMeta] = useState(null);
+  const cargarMeta = useCallback(() => api.get('/activos/meta').then(({ data }) => setMeta(data)).catch(() => {}), []);
+  useEffect(() => { cargarMeta(); }, [cargarMeta]);
+  const deptos = meta?.departamentos || [];
 
   const load = useCallback(async () => {
     try { const { data } = await api.get('/activos/categorias'); setCats(data); }
@@ -366,8 +372,7 @@ export default function ActivosCategorias() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="font-heading font-semibold truncate">{c.nombre}</h2>
                     <span className="font-mono text-[11px] font-semibold rounded-md px-1.5 py-0.5 bg-muted text-muted-foreground">{c.prefijo}-001</span>
-                    {esAdmin && <span className={`text-[11px] font-medium rounded-full px-2 py-0.5 ${c.departamento === LOGISTICA
-                      ? 'bg-[rgba(22,163,74,0.12)] text-[#16a34a]' : 'bg-[rgba(0,165,223,0.12)] text-[#0284c7] dark:text-[#3cbef6]'}`}>{c.departamento}</span>}
+                    {esAdmin && <span className={`text-[11px] font-medium rounded-full px-2 py-0.5 ${tonoDepto(deptos, c.departamento)}`}>{nombreDepto(deptos, c.departamento)}</span>}
                   </div>
                   {c.descripcion && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{c.descripcion}</p>}
                 </div>
@@ -401,38 +406,36 @@ export default function ActivosCategorias() {
         </div>
       )}
 
-      {(esAdmin || esLogistica(user)) && <UbicacionesLogistica />}
+      {deptos.filter((d) => d.id !== RETAIL).map((d) => (
+        <UbicacionesDepto key={d.id} depto={d} lista={meta.ubicaciones?.[d.id] || []} onSaved={cargarMeta} />
+      ))}
 
       <CategoriaForm open={!!form} onOpenChange={(v) => { if (!v) setForm(null); }} categoria={form?.categoria}
-        categorias={cats || []} onSaved={load} />
+        categorias={cats || []} deptos={deptos} onSaved={load} />
     </div>
   );
 }
 
-// Ubicaciones de los activos de Logística (Retail usa las sucursales H1, H2, H5, H6).
-function UbicacionesLogistica() {
-  const [lista, setLista] = useState(null);
+// Ubicaciones de los activos de un departamento que no es Retail (Retail usa
+// sus sucursales H1, H2, H5, H6). Una ubicación con activos no se puede quitar.
+function UbicacionesDepto({ depto, lista, onSaved }) {
   const [nueva, setNueva] = useState('');
   const [guardando, setGuardando] = useState(false);
-  useEffect(() => {
-    api.get('/activos/meta').then(({ data }) => setLista(data.ubicaciones?.[LOGISTICA] || [])).catch(() => setLista([]));
-  }, []);
   const guardar = async (ubicaciones) => {
     setGuardando(true);
     try {
-      const { data } = await api.put('/activos/ubicaciones-logistica', { ubicaciones });
-      setLista(data.ubicaciones);
+      await api.put('/activos/ubicaciones', { departamento: depto.id, ubicaciones });
       setNueva('');
       toast.success('Ubicaciones guardadas');
+      onSaved();
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'No se pudieron guardar las ubicaciones');
     } finally { setGuardando(false); }
   };
-  if (lista === null) return null;
   return (
-    <section className="mt-6 rounded-[18px] border bg-card shadow-card p-4 sm:p-5" data-testid="ubicaciones-logistica">
-      <h2 className="font-heading font-semibold">Ubicaciones de Logística</h2>
-      <p className="text-xs text-muted-foreground mt-0.5">Dónde están los activos de Logística (bodegas, CEDIS…). Ventas Retail usa sus sucursales.</p>
+    <section className="mt-6 rounded-[18px] border bg-card shadow-card p-4 sm:p-5" data-testid="ubicaciones-depto">
+      <h2 className="font-heading font-semibold">Ubicaciones de {depto.nombre}</h2>
+      <p className="text-xs text-muted-foreground mt-0.5">Dónde están sus activos (bodegas, CEDIS…). Ventas Retail usa sus sucursales.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         {lista.map((u) => (
           <span key={u} className="inline-flex items-center gap-1 rounded-full border bg-muted/40 pl-3 pr-1 py-1 text-sm">

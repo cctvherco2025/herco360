@@ -42,7 +42,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from core import (db, serialize_doc, new_id, now_iso, now_local, get_current_user, can_admin_activos,
-                  RETAIL, LOGISTICA, departamento_de, filtro_depto, filtro_usuarios_depto)
+                  RETAIL, departamento_de, es_super_admin, filtro_depto, filtro_usuarios_depto)
 from notifications import create_notification
 import mantenimiento_motor as motor
 import routes_activos
@@ -109,14 +109,14 @@ async def _usuario(uid, depto=None):
 
 
 def depto_plan(plan) -> str:
-    return LOGISTICA if (plan or {}).get('departamento') == LOGISTICA else RETAIL
+    return (plan or {}).get('departamento') or RETAIL
 
 
 async def _depto_de_categorias(cat_ids) -> str:
     """Departamento de una planificación según las categorías de sus activos
     (todas tienen que ser del mismo)."""
     cats = await db.activo_categorias.find({'id': {'$in': list(cat_ids)}}, {'_id': 0, 'departamento': 1}).to_list(500)
-    deptos = {LOGISTICA if c.get('departamento') == LOGISTICA else RETAIL for c in cats} or {RETAIL}
+    deptos = {c.get('departamento') or RETAIL for c in cats} or {RETAIL}
     if len(deptos) > 1:
         raise HTTPException(status_code=400, detail='Los activos de una planificación tienen que ser del mismo departamento')
     return deptos.pop()
@@ -155,7 +155,7 @@ async def _puede_gestionar_plan(user, plan):
     """Editar, pausar, reasignar: admin, supervisor, quien lo creó o
     responsable de todas las categorías de sus activos."""
     _, editables = await _contexto(user)
-    if user.get('role') == 'admin' or user['id'] in (plan.get('supervisor_id'), plan.get('created_by')):
+    if es_super_admin(user) or user['id'] in (plan.get('supervisor_id'), plan.get('created_by')):
         return True
     cats = set(plan.get('categoria_ids') or [])
     return bool(cats) and cats <= editables
@@ -605,7 +605,7 @@ async def _visible(user, plan):
 @router.get('/planes')
 async def list_planes(user=Depends(get_current_user)):
     admin, editables = await _contexto(user)
-    admin = user.get('role') == 'admin'
+    admin = es_super_admin(user)
     q = {} if admin else {'$or': [
         {'supervisor_id': user['id']}, {'created_by': user['id']}, {'responsables.usuario_id': user['id']},
         {'categoria_ids': {'$in': list(editables)}},
@@ -1321,7 +1321,7 @@ async def cumplimiento(desde: str, hasta: str, user=Depends(get_current_user)):
     await _requiere_planificador(user)
     admin, editables = await _contexto(user)
     q = {'fecha': {'$gte': desde, '$lte': hasta}, 'estado': {'$in': ['completada', 'incompleta']}}
-    if user.get('role') != 'admin':
+    if not es_super_admin(user):
         q['activo_categoria_id'] = {'$in': list(editables)}
     tareas = await db.mant_tareas.find(q, {'_id': 0, 'plan_id': 1, 'plan_numero': 1, 'plan_nombre': 1, 'responsable_id': 1, 'estado': 1, 'tardia': 1, 'fecha': 1}).to_list(20000)
 

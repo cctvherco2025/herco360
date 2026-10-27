@@ -9,9 +9,10 @@ from core import (db, get_current_user, require_admin, serialize_doc, now_iso,
                   can_create_custom_formulario, can_edit_rutina_schema, can_edit_flos_schema,
                   can_access_vacaciones, can_admin_promos, can_fill_guardias,
                   can_fill_recorridos, can_fill_etiquetas, can_admin_activos,
-                  RETAIL, LOGISTICA, DEPARTAMENTOS, GERENTE_LOGISTICA, CARGOS_LOGISTICA,
-                  AREAS_LOGISTICA_INICIALES, departamento_de, es_logistica, es_jefe_depto,
+                  RETAIL, departamento_de, es_retail, es_jefe_depto, es_super_admin,
                   filtro_depto, mismo_depto)
+import organizacion
+import mando
 from models import ProfileUpdate, RoleUpdate, AdminUserCreate, AdminUserUpdate, ModuleAccessUpdate
 from notifications import create_notification, log_activity
 from routes_groups import quitar_de_grupos
@@ -25,78 +26,45 @@ def avatar_for(name):
 
 
 # ---- Departamentos ----
-# Usuarios: los admins gestionan a todos; el Gerente de Logística aprueba,
-# crea y edita a la gente de Logística (no a otros gerentes ni admins, no
-# da rol de admin ni cambia el departamento). Eliminar sigue siendo de admins.
+# Gestionan usuarios (aprobar, crear, editar): el super admin a todos; un
+# admin a la gente de su departamento; y en los departamentos que no son
+# Retail también su jefe (no a admins ni a otro jefe del departamento).
+# Solo el super admin cambia a alguien de departamento o nombra super admins.
+def es_gestor(user) -> bool:
+    return user.get('role') == 'admin' or (es_jefe_depto(user) and not es_retail(user))
+
+
 async def require_gestor_usuarios(user=Depends(get_current_user)):
-    if user.get('role') == 'admin' or (es_jefe_depto(user) and es_logistica(user)):
+    if es_gestor(user):
         return user
     raise HTTPException(status_code=403, detail='Se requieren permisos de administrador')
 
 
 def _puede_gestionar(gestor, target) -> bool:
+    if es_super_admin(gestor):
+        return True
+    if not mismo_depto(gestor, target) or es_super_admin(target):
+        return False
     if gestor.get('role') == 'admin':
         return True
-    return (es_logistica(target) and target.get('role') != 'admin'
-            and (target.get('position') or '').strip() != GERENTE_LOGISTICA)
+    return target.get('role') != 'admin' and not es_jefe_depto(target)
 
 
-async def areas_logistica():
-    doc = await db.config.find_one({'_id': 'areas_logistica'}) or {}
-    return doc.get('areas') or list(AREAS_LOGISTICA_INICIALES)
-
-
-async def normalizar_depto(datos: dict, depto: str):
-    """Ajusta cargo, área y tienda al departamento (en `datos`, in place).
-    Retail: Director comercial → área Casa Matriz; solo el área Tienda tiene
-    sucursal. Logística: cargos y áreas de su organigrama, sin sucursal; el
-    Gerente de Logística va en el área Gerencia."""
-    cargo = (datos.get('position') or '').strip()
-    if depto == LOGISTICA:
-        if cargo and cargo not in CARGOS_LOGISTICA:
-            raise HTTPException(status_code=400, detail=f'En Logística el cargo debe ser: {", ".join(CARGOS_LOGISTICA)}')
-        if cargo == GERENTE_LOGISTICA:
-            datos['area'] = 'Gerencia'
-        elif datos.get('area') not in await areas_logistica():
-            raise HTTPException(status_code=400, detail='Elige un área de Logística')
-        datos['sucursal'] = 'Casa Matriz'
-    else:
-        if cargo == GERENTE_LOGISTICA:
-            raise HTTPException(status_code=400, detail='Ese cargo es de Logística')
-        if cargo == 'Director comercial':
-            datos['area'] = 'Casa Matriz'
-        if datos.get('area') != 'Tienda':
-            datos['sucursal'] = 'Casa Matriz'
-
-
-class AreasInput(BaseModel):
-    areas: List[str]
-
-
-@router.get('/organizacion')
-async def organizacion():
-    """Departamentos con sus cargos y áreas (para registrarse y editar
-    usuarios). Público: lo usa la pantalla de registro."""
-    return {
-        'departamentos': list(DEPARTAMENTOS),
-        'logistica': {'cargos': CARGOS_LOGISTICA, 'areas': await areas_logistica()},
-    }
-
-
-@router.put('/organizacion/areas-logistica')
-async def guardar_areas_logistica(data: AreasInput, user=Depends(get_current_user)):
-    """Áreas del organigrama de Logística: las editan un admin o el Gerente de Logística."""
-    if not (user.get('role') == 'admin' or (es_jefe_depto(user) and es_logistica(user))):
-        raise HTTPException(status_code=403, detail='Solo un admin o el Gerente de Logística')
-    areas = []
-    for a in data.areas:
-        a = (a or '').strip()[:60]
-        if a and a.lower() not in {x.lower() for x in areas} and a != 'Gerencia':
-            areas.append(a)
-    if not areas:
-        raise HTTPException(status_code=400, detail='Deja al menos un área')
-    await db.config.update_one({'_id': 'areas_logistica'}, {'$set': {'areas': areas}}, upsert=True)
-    return {'areas': areas}
+async def normalizar_depto(depto: str, datos: dict) -> dict:
+    """Cargo, área y tienda dentro del departamento, según su estructura
+    (organizacion). `datos` trae ids (cargo_id/area_id) o nombres
+    (position/area). Retail: el Director comercial va en Casa Matriz y solo el
+    área Tienda tiene sucursal."""
+    if not await organizacion.existe_departamento(depto):
+        raise HTTPException(status_code=400, detail='Elige un departamento válido')
+    area_nombre = (datos.get('area') or '').strip() or None
+    cargo_nombre = (datos.get('position') or '').strip() or None
+    if depto == RETAIL and cargo_nombre == 'Director comercial' and not datos.get('area_id'):
+        area_nombre = 'Casa Matriz'
+    out = await organizacion.resolver(depto, cargo_id=datos.get('cargo_id'), area_id=datos.get('area_id'),
+                                      cargo_nombre=cargo_nombre, area_nombre=area_nombre)
+    out['sucursal'] = (datos.get('sucursal') or '') if (depto == RETAIL and out['area'] == 'Tienda') else 'Casa Matriz'
+    return out
 
 
 @router.get('')
@@ -160,7 +128,7 @@ async def set_module_access(user_id: str, data: ModuleAccessUpdate, manager=Depe
     target = await db.users.find_one({'id': user_id}, {'_id': 0})
     if not target:
         raise HTTPException(status_code=404, detail='Usuario no encontrado')
-    if manager.get('role') != 'admin' and not mismo_depto(manager, target):
+    if not es_super_admin(manager) and not mismo_depto(manager, target):
         raise HTTPException(status_code=403, detail='Esa persona es de otro departamento')
     if target.get('role') == 'admin' or es_jefe_depto(target):
         raise HTTPException(status_code=400, detail='Este rol ya tiene acceso total; no se puede modificar')
@@ -176,20 +144,20 @@ async def set_module_access(user_id: str, data: ModuleAccessUpdate, manager=Depe
     return {'id': updated['id'], 'module_access': module_access, 'access': _effective_access(updated)}
 
 
-MANAGER_POSITIONS = {'Jefe', 'Gerente', 'Director comercial', GERENTE_LOGISTICA}
+MANAGER_POSITIONS = {'Jefe', 'Gerente', 'Director comercial', 'Gerente de Logística'}
 
 
 @router.get('/team')
 async def team_calendars(user=Depends(get_current_user)):
-    """Calendars a manager may overlay: same-área members of the same
-    departamento (admins see all; the jefe de departamento sees all of it)."""
+    """Calendarios que la persona puede superponer: su departamento entero
+    (admins y jefe del departamento) o la gente sobre la que manda (su área y
+    subáreas, ver mando.py)."""
     sees_all = user.get('role') == 'admin' or es_jefe_depto(user)
-    if not sees_all and user.get('position') not in MANAGER_POSITIONS:
-        return []
-    q = {'status': 'approved', 'id': {'$ne': user['id']}, **filtro_depto(user)}
-    if not sees_all:
-        q['area'] = user.get('area')
-    members = await db.users.find(q, {'_id': 0, 'password_hash': 0}).sort('name', 1).to_list(300)
+    if sees_all:
+        q = {'status': 'approved', 'id': {'$ne': user['id']}, **filtro_depto(user)}
+        members = await db.users.find(q, {'_id': 0, 'password_hash': 0}).sort('name', 1).to_list(500)
+    else:
+        members = sorted(await mando.subordinados(user), key=lambda m: m['name'])
     return serialize_doc([{
         'id': m['id'], 'name': m['name'], 'area': m.get('area'),
         'position': m.get('position'), 'avatar_url': m.get('avatar_url'),
@@ -202,13 +170,13 @@ async def create_user(data: AdminUserCreate, admin=Depends(require_gestor_usuari
     if await db.users.find_one({'email': email}):
         raise HTTPException(status_code=400, detail='El correo ya está registrado')
     es_admin = admin.get('role') == 'admin'
-    role = data.role if (es_admin and data.role in ('admin', 'user')) else 'user'
-    # el Gerente de Logística solo crea gente de Logística (y no otro gerente)
-    depto = (data.departamento if data.departamento in DEPARTAMENTOS else RETAIL) if es_admin else LOGISTICA
-    if not es_admin and (data.position or '').strip() == GERENTE_LOGISTICA:
+    sup = es_super_admin(admin)
+    # el super admin elige el departamento; los demás crean en el suyo
+    depto = (data.departamento or RETAIL) if sup else departamento_de(admin)
+    org = await normalizar_depto(depto, data.model_dump())
+    if not es_admin and org['nivel'] == 'jefe_depto':
         raise HTTPException(status_code=403, detail='Ese cargo lo asigna un administrador')
-    datos = {'position': data.position or 'Colaborador', 'area': data.area or '', 'sucursal': data.sucursal or ''}
-    await normalizar_depto(datos, depto)
+    role = data.role if (es_admin and data.role in ('admin', 'user')) else 'user'
     doc = {
         'id': new_id(),
         'name': data.name,
@@ -216,10 +184,8 @@ async def create_user(data: AdminUserCreate, admin=Depends(require_gestor_usuari
         'password_hash': hash_password(data.password),
         'role': role,
         'status': 'approved',
-        'position': datos['position'],
-        'departamento': depto,
-        'area': datos['area'],
-        'sucursal': datos['sucursal'],
+        **org,
+        'super_admin': bool(sup and data.super_admin and role == 'admin'),
         'avatar_url': avatar_for(data.name),
         'phone': '',
         'created_at': now_iso(),
@@ -301,11 +267,17 @@ async def reject_user(user_id: str, admin=Depends(require_gestor_usuarios)):
 
 @router.patch('/{user_id}/role')
 async def change_role(user_id: str, data: RoleUpdate, admin=Depends(require_admin)):
+    target = await db.users.find_one({'id': user_id}, {'_id': 0})
+    if not target or not _puede_gestionar(admin, target):
+        raise HTTPException(status_code=403, detail='Esa persona no es de tu departamento')
     if data.role not in ('admin', 'user'):
         raise HTTPException(status_code=400, detail='Rol inválido')
     if user_id == admin['id'] and data.role != 'admin':
         raise HTTPException(status_code=400, detail='No puedes quitarte tu propio rol de administrador')
-    await db.users.update_one({'id': user_id}, {'$set': {'role': data.role}})
+    sets = {'role': data.role}
+    if data.role != 'admin':
+        sets['super_admin'] = False
+    await db.users.update_one({'id': user_id}, {'$set': sets})
     return {'message': 'Rol actualizado'}
 
 
@@ -317,13 +289,14 @@ async def update_user(user_id: str, data: AdminUserUpdate, admin=Depends(require
     if not _puede_gestionar(admin, target):
         raise HTTPException(status_code=403, detail='Esa persona no es de tu departamento')
     payload = data.model_dump(exclude_none=True)
-    if admin.get('role') != 'admin':
-        # el Gerente de Logística no da rol de admin, no cambia el departamento
-        # ni nombra a otro gerente
-        payload.pop('role', None)
+    sup = es_super_admin(admin)
+    if not sup:
+        # solo el super admin cambia el departamento o nombra super admins
         payload.pop('departamento', None)
-        if (payload.get('position') or '').strip() == GERENTE_LOGISTICA:
-            raise HTTPException(status_code=403, detail='Ese cargo lo asigna un administrador')
+        payload.pop('super_admin', None)
+    if admin.get('role') != 'admin':
+        # el jefe del departamento no da rol de admin
+        payload.pop('role', None)
     updates = {}
     if 'email' in payload:
         new_email = payload['email'].lower()
@@ -331,7 +304,7 @@ async def update_user(user_id: str, data: AdminUserUpdate, admin=Depends(require
         if clash:
             raise HTTPException(status_code=400, detail='El correo ya está registrado')
         updates['email'] = new_email
-    for f in ('name', 'position', 'area', 'sucursal', 'status'):
+    for f in ('name', 'status'):
         if f in payload:
             updates[f] = payload[f]
     if 'role' in payload:
@@ -347,17 +320,27 @@ async def update_user(user_id: str, data: AdminUserUpdate, admin=Depends(require
             raise HTTPException(status_code=400, detail='La contraseña debe tener al menos 4 caracteres')
         updates['password_hash'] = hash_password(payload['password'])
     # cargo, área y tienda según el departamento (el actual o el nuevo)
-    depto = payload['departamento'] if payload.get('departamento') in DEPARTAMENTOS else departamento_de(target)
-    if depto != departamento_de(target):
-        updates['departamento'] = depto
-    datos = {f: updates.get(f, target.get(f)) for f in ('position', 'area', 'sucursal')}
-    if 'departamento' in updates or 'position' in updates or 'area' in updates:
-        await normalizar_depto(datos, depto)
-    elif depto == RETAIL and datos['area'] != 'Tienda':
-        datos['sucursal'] = 'Casa Matriz'
-    for f in ('position', 'area', 'sucursal'):
-        if datos.get(f) != target.get(f):
-            updates[f] = datos[f]
+    depto = payload.get('departamento') or departamento_de(target)
+    cambia_org = any(k in payload for k in ('departamento', 'position', 'area', 'cargo_id', 'area_id', 'sucursal'))
+    if cambia_org:
+        cambia_depto = depto != departamento_de(target)
+        datos = {
+            'cargo_id': payload.get('cargo_id') or (None if (cambia_depto or 'position' in payload) else target.get('cargo_id')),
+            'area_id': payload.get('area_id') or (None if (cambia_depto or 'area' in payload) else target.get('area_id')),
+            'position': payload.get('position', target.get('position')),
+            'area': payload.get('area', target.get('area')),
+            'sucursal': payload.get('sucursal', target.get('sucursal')),
+        }
+        org = await normalizar_depto(depto, datos)
+        if admin.get('role') != 'admin' and org['nivel'] == 'jefe_depto' and not es_jefe_depto(target):
+            raise HTTPException(status_code=403, detail='Ese cargo lo asigna un administrador')
+        for k, v in org.items():
+            if target.get(k) != v:
+                updates[k] = v
+    if sup and 'super_admin' in payload:
+        if user_id == admin['id'] and not payload['super_admin']:
+            raise HTTPException(status_code=400, detail='No puedes quitarte el super admin')
+        updates['super_admin'] = bool(payload['super_admin']) and updates.get('role', target.get('role')) == 'admin'
     if updates:
         await db.users.update_one({'id': user_id}, {'$set': updates})
     # desactivado (estado distinto de aprobado): sale de los grupos de Agenda
@@ -376,6 +359,8 @@ async def delete_user(user_id: str, admin=Depends(require_admin)):
     target = await db.users.find_one({'id': user_id})
     if not target:
         raise HTTPException(status_code=404, detail='Usuario no encontrado')
+    if not _puede_gestionar(admin, target):
+        raise HTTPException(status_code=403, detail='Esa persona no es de tu departamento')
     await db.users.delete_one({'id': user_id})
     await quitar_de_grupos(user_id)
     await log_activity(admin['id'], admin['name'], admin.get('avatar_url'),

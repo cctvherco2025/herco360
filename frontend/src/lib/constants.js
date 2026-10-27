@@ -50,31 +50,33 @@ export const CARGOS = ['Jefe', 'Jefe de tienda', 'Coordinador', 'Asesor Comercia
 // Cargos de mando: solo los asigna un admin desde Usuarios (dan acceso a más
 // módulos); no aparecen al registrarse (mismo criterio que
 // core.CARGOS_SOLO_ADMIN en el servidor).
-export const CARGOS_SOLO_ADMIN = ['Jefe de tienda', 'Jefe', 'Gerente', 'Director comercial', 'Gerente de Logística'];
+export const CARGOS_SOLO_ADMIN = ['Jefe de tienda', 'Jefe', 'Gerente', 'Director comercial'];
 export const CARGOS_PROPIOS = CARGOS.filter((c) => !CARGOS_SOLO_ADMIN.includes(c));
 export const AREAS = [
   'ECCP', 'Negocios País', 'Negocios Remotos', 'Caja', 'Ferrecréditos',
   'Operación Tienda', 'Centro de Servicio', 'Tienda', 'Auditoría',
 ];
 
-// ---- Departamentos (igual que core.py) ----
-// Ventas Retail y Logística están totalmente separados: cada uno ve solo a su
-// gente y sus datos; los admins ven todo. Sin el campo = Ventas Retail.
+// ---- Departamentos (igual que core.py; estructura en lib/organizacion.js) ----
+// Los departamentos están totalmente separados: cada uno ve solo a su gente y
+// sus datos. El super admin ve todo; un admin, solo su departamento.
+// Sin el campo = Ventas Retail.
 export const RETAIL = 'Ventas Retail';
 export const LOGISTICA = 'Logística';
-export const DEPARTAMENTOS = [RETAIL, LOGISTICA];
-export const GERENTE_LOGISTICA = 'Gerente de Logística';
-export const CARGOS_LOGISTICA = [GERENTE_LOGISTICA, 'Jefe', 'Coordinador', 'Auxiliar'];
-export const CARGOS_LOGISTICA_PROPIOS = CARGOS_LOGISTICA.filter((c) => !CARGOS_SOLO_ADMIN.includes(c));
-const JEFES_DEPTO = { 'Director comercial': RETAIL, [GERENTE_LOGISTICA]: LOGISTICA };
-export const departamentoDe = (user) => (DEPARTAMENTOS.includes(user?.departamento) ? user.departamento : RETAIL);
-export const esLogistica = (user) => departamentoDe(user) === LOGISTICA;
-// Director comercial (Retail) o Gerente de Logística (Logística).
-export const esJefeDepto = (user) => JEFES_DEPTO[(user?.position || '').trim()] === departamentoDe(user);
-// Aprueba, crea y edita usuarios: admins (a todos) y el Gerente de Logística (a Logística).
-export const puedeGestionarUsuarios = (user) => user?.role === 'admin' || (esJefeDepto(user) && esLogistica(user));
-// Módulos de Ventas Retail (tiendas, ECCP, promociones…): Logística no los ve.
-const fueraDeRetail = (user) => !!user && user.role !== 'admin' && esLogistica(user);
+const JEFES_DEPTO = { 'Director comercial': RETAIL, 'Gerente de Logística': LOGISTICA };
+export const departamentoDe = (user) => user?.departamento || RETAIL;
+export const esRetail = (user) => departamentoDe(user) === RETAIL;
+export const esSuperAdmin = (user) => user?.role === 'admin' && !!user?.super_admin;
+// El jefe del departamento (nivel jefe_depto): Director comercial, Gerente de Logística…
+export const esJefeDepto = (user) => (user?.nivel
+  ? user.nivel === 'jefe_depto'
+  : JEFES_DEPTO[(user?.position || '').trim()] === departamentoDe(user));
+// Aprueba, crea y edita usuarios: admins (el super, a todos; los demás, a su
+// departamento) y el jefe de los departamentos que no son Retail.
+export const puedeGestionarUsuarios = (user) => user?.role === 'admin' || (esJefeDepto(user) && !esRetail(user));
+// Módulos de Ventas Retail (tiendas, ECCP, promociones…): los demás
+// departamentos no los ven, aunque sean admins del suyo.
+const fueraDeRetail = (user) => !!user && !esSuperAdmin(user) && !esRetail(user);
 
 // Inventory branches (sucursales)
 export const SUCURSALES = ['H1', 'H2', 'H4', 'H5', 'H6'];
@@ -249,8 +251,8 @@ export const puedeVerTickets = (user) => esCoordinadorTienda(user) || esRevisorT
 // mismo criterio que _es_supervisor en backend/tareas.py.
 export const esSupervisorTareas = (user) => user?.role === 'admin' || (user?.position || '').trim() === 'Director comercial';
 // Logística: por mando y sin tiendas; todos la ven, crean el Gerente y los Jefes.
-const deLogistica = (user) => !!user && user.role !== 'admin' && esLogistica(user);
-const mandoLogistica = (user) => deLogistica(user) && (esJefeDepto(user) || (user.position || '').trim() === 'Jefe');
+const deLogistica = fueraDeRetail;
+const mandoLogistica = (user) => deLogistica(user) && (esJefeDepto(user) || user.role === 'admin' || ['jefe', 'gerente'].includes(user.nivel));
 export const puedeVerTareas = (user) => esRevisorTienda(user) || esCoordinadorTienda(user) || esSupervisorTareas(user) || deLogistica(user);
 // Crean gerente y jefe de tienda (en Logística, el Gerente y los Jefes).
 export const puedeCrearTareas = (user) => esRevisorTienda(user) || mandoLogistica(user);
@@ -285,7 +287,7 @@ export function canAccessFormulariosPrincipal(user) {
   if (cargo === 'Director comercial') return true;
   const ov = (user.module_access || {}).formularios_principal;
   if (ov !== undefined && ov !== null) return !!ov;
-  if (esLogistica(user)) return true; // Logística: sus formularios personalizados
+  if (!esRetail(user)) return true; // otros departamentos: sus formularios personalizados
   return canAccessFlos(user) || canAccessRutina(user) || canAccessGuardias(user) || canAccessRecorridos(user)
     || canAccessEtiquetas(user);
 }

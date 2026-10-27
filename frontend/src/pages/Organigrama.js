@@ -5,10 +5,13 @@ import { toast } from 'sonner';
 import {
   Crown, ClipboardCheck, Headphones, Globe, Map, CreditCard, Store, Coins,
   Check, X, Printer, Home, CalendarDays, Building2, Palmtree, Boxes, FileText,
-  ShieldCheck, Users, Info, SlidersHorizontal, Search as SearchIcon, Truck, Plus, Pencil, Trash2,
+  ShieldCheck, Users, Info, SlidersHorizontal, Search as SearchIcon, Plus, Pencil, Trash2,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { canAccessOrgChart, RETAIL, LOGISTICA, DEPARTAMENTOS, GERENTE_LOGISTICA, departamentoDe } from '@/lib/constants';
+import { canAccessOrgChart, RETAIL, departamentoDe, esSuperAdmin } from '@/lib/constants';
+import { useEstructura } from '@/lib/organizacion';
+import { CargosDepto, NuevoDepartamento, AccionesDepartamento, destinosPosibles } from '@/components/OrgAdmin';
+import { NativeSelect } from '@/components/recorridos/RecorridoWizard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -135,10 +138,11 @@ function DeptCard({ dept }) {
   );
 }
 
-// Permisos que se dan por persona en Logística (los de Retail no aplican).
-const GATED_LOGISTICA = ['vacaciones', 'activos', 'formularios_custom'];
+// Permisos que se dan por persona en los departamentos que no son Retail
+// (los de tienda no aplican).
+const GATED_OTROS = ['vacaciones', 'activos', 'formularios_custom'];
 
-function AccessManager({ depto }) {
+function AccessManager({ depto, nombreJefe }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -196,7 +200,8 @@ function AccessManager({ depto }) {
     { key: 'etiquetas', label: 'Registrar Auditoría de Etiquetas', color: C.green },
     { key: 'activos', label: 'Administrar Activos (todas las categorías)', color: C.navy },
   ];
-  const GATED = depto === LOGISTICA ? TODOS.filter((m) => GATED_LOGISTICA.includes(m.key)) : TODOS;
+  const otro = depto !== RETAIL;
+  const GATED = otro ? TODOS.filter((m) => GATED_OTROS.includes(m.key)) : TODOS;
 
   return (
     <section className="mt-8 rounded-[22px] border bg-card p-5 sm:p-7 shadow-card no-print" data-testid="access-manager-section">
@@ -207,7 +212,7 @@ function AccessManager({ depto }) {
             <h2 className="font-heading text-lg font-semibold text-foreground flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4" style={{ color: C.orange }} /> Gestión de accesos a módulos
             </h2>
-            <p className="text-[12px] text-muted-foreground">{depto === LOGISTICA ? 'Da o quita, por persona de Logística: Vacaciones, administrar Activos de Logística y crear formularios personalizados.' : <>Da o quita acceso a Inventario, Reportes, Reportes CAMS, cada permiso del módulo Formularios (principal, Evaluación FLOS, Rutina Operativa, Promociones del mes, Crear personalizado), quién puede editar los puntajes de Rutina Operativa y de la auditoría FLOS, quién registra Revisión de Guardias, Recorridos Preventivos y Auditoría de Etiquetas, y quién administra Activos, por usuario.</>}</p>
+            <p className="text-[12px] text-muted-foreground">{otro ? 'Da o quita, por persona: Vacaciones, administrar los Activos del departamento y crear formularios personalizados.' : <>Da o quita acceso a Inventario, Reportes, Reportes CAMS, cada permiso del módulo Formularios (principal, Evaluación FLOS, Rutina Operativa, Promociones del mes, Crear personalizado), quién puede editar los puntajes de Rutina Operativa y de la auditoría FLOS, quién registra Revisión de Guardias, Recorridos Preventivos y Auditoría de Etiquetas, y quién administra Activos, por usuario.</>}</p>
           </div>
         </div>
         <div className="relative w-full sm:w-72">
@@ -274,122 +279,159 @@ function AccessManager({ depto }) {
       )}
       <p className="mt-3 flex items-start gap-1.5 text-[12px] text-muted-foreground">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: C.orange }} />
-        {depto === LOGISTICA ? 'El Gerente de Logística' : 'Director Comercial'} y administradores conservan acceso total y no se pueden editar. Los cambios se aplican de inmediato; el usuario los verá en su próximo ingreso o al recargar.
+        {otro ? (nombreJefe || 'El jefe del departamento') : 'Director Comercial'} y administradores conservan acceso total y no se pueden editar. Los cambios se aplican de inmediato; el usuario los verá en su próximo ingreso o al recargar.
       </p>
     </section>
   );
 }
 
-function OrganigramaLogistica() {
-  const [areas, setAreas] = useState([]);
-  const [gente, setGente] = useState([]);
-  const [editando, setEditando] = useState(null); // { i, valor } | { nueva: '' }
-  const [guardando, setGuardando] = useState(false);
-  useEffect(() => {
-    api.get('/users/organizacion').then(({ data }) => setAreas(data.logistica?.areas || [])).catch(() => {});
-    api.get('/users', { params: { status: 'approved' } })
-      .then(({ data }) => setGente(data.filter((u) => departamentoDe(u) === LOGISTICA))).catch(() => {});
-  }, []);
-  const guardar = async (lista) => {
-    setGuardando(true);
-    try {
-      const { data } = await api.put('/users/organizacion/areas-logistica', { areas: lista });
-      setAreas(data.areas);
-      setEditando(null);
-      toast.success('Áreas guardadas');
-    } catch (e) {
-      toast.error(e?.response?.data?.detail || 'No se pudieron guardar las áreas');
-    } finally { setGuardando(false); }
-  };
-  const gerentes = gente.filter((u) => u.position === GERENTE_LOGISTICA);
-  const ORDEN = ['Jefe', 'Coordinador', 'Auxiliar'];
-  const deArea = (a) => gente.filter((u) => u.area === a && u.position !== GERENTE_LOGISTICA)
-    .sort((x, y) => ORDEN.indexOf(x.position) - ORDEN.indexOf(y.position) || x.name.localeCompare(y.name));
-  const sinArea = gente.filter((u) => u.position !== GERENTE_LOGISTICA && !areas.includes(u.area));
-  const colores = [C.navy, C.cyan, C.green, C.orange, C.purple, C.sky];
+// Árbol de áreas de un departamento (sin límite de niveles) con su gente.
+// Quien puede editar (super admin; admins y jefe del departamento) agrega
+// áreas y subáreas, las renombra o las quita (si no tienen gente ni subáreas;
+// las del sistema solo se renombran).
+const ORDEN_NIVEL = ['jefe_depto', 'gerente', 'jefe', 'coordinador', 'colaborador'];
 
+function AreaNodo({ area, hijas, gente, editable, acciones, todas, nivel = 0 }) {
+  const [editando, setEditando] = useState(null); // { nombre, padre_id } | { sub: '' }
+  const miembros = gente.filter((u) => u.area_id === area.id)
+    .sort((a, b) => ORDEN_NIVEL.indexOf(a.nivel) - ORDEN_NIVEL.indexOf(b.nivel) || a.name.localeCompare(b.name));
+  const color = [C.navy, C.cyan, C.green, C.orange, C.purple, C.sky][nivel % 6];
+  const misHijas = hijas(area.id);
   return (
-    <section className="mb-8 rounded-[22px] border bg-card p-5 sm:p-7 shadow-card" data-testid="org-logistica">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="h-6 w-1.5 rounded-full" style={{ background: C.green }} />
-          <h2 className="font-heading text-lg font-semibold text-foreground">Jerarquía de Logística</h2>
-        </div>
-        <Button variant="outline" size="sm" className="rounded-xl no-print" onClick={() => setEditando({ nueva: '' })} data-testid="org-area-nueva">
-          <Plus className="h-4 w-4 mr-1.5" /> Agregar área
-        </Button>
-      </div>
-
-      <div className="flex flex-col items-center">
-        <div className="w-full max-w-md rounded-2xl px-6 py-4 text-center shadow-md"
-          style={{ background: `linear-gradient(135deg, ${C.green}, #0f6b33)` }} data-testid="org-gerente-logistica">
-          <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-white/15">
-            <Truck className="h-6 w-6 text-white" />
-          </div>
-          <p className="text-base font-semibold text-white">Gerente de Logística</p>
-          <p className="text-[12px] text-white/80">
-            {gerentes.length ? gerentes.map((g) => g.name).join(', ') : 'Sin asignar'} · acceso total en Logística
-          </p>
-        </div>
-        <span className="h-6 w-px" style={{ background: '#cbd5e1' }} />
-        <span className="h-px w-[92%]" style={{ background: '#cbd5e1' }} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {areas.map((a, i) => {
-          const color = colores[i % colores.length];
-          const miembros = deArea(a);
-          return (
-            <div key={a} className="rounded-2xl border bg-card p-4" style={{ borderTopColor: color, borderTopWidth: 3 }} data-testid="org-area">
-              <div className="flex items-center justify-between gap-2">
-                {editando?.i === i ? (
-                  <form className="flex flex-1 gap-1.5" onSubmit={(e) => { e.preventDefault(); guardar(areas.map((x, k) => (k === i ? editando.valor : x))); }}>
-                    <Input autoFocus value={editando.valor} onChange={(e) => setEditando({ i, valor: e.target.value })} className="h-8" />
-                    <Button type="submit" size="sm" disabled={guardando} className="h-8 rounded-lg" style={{ background: C.navy }}><Check className="h-3.5 w-3.5" /></Button>
-                    <Button type="button" size="sm" variant="ghost" className="h-8 rounded-lg" onClick={() => setEditando(null)}><X className="h-3.5 w-3.5" /></Button>
-                  </form>
-                ) : (
-                  <>
-                    <p className="font-semibold text-foreground truncate">{a}</p>
-                    <div className="flex shrink-0 no-print">
-                      <button type="button" title="Cambiar nombre" onClick={() => setEditando({ i, valor: a })}
-                        className="h-7 w-7 grid place-items-center rounded-lg text-muted-foreground hover:bg-muted"><Pencil className="h-3.5 w-3.5" /></button>
-                      <button type="button" title={miembros.length ? 'Tiene personas: muévelas antes de quitar el área' : 'Quitar área'}
-                        disabled={!!miembros.length || areas.length === 1 || guardando} onClick={() => guardar(areas.filter((_, k) => k !== i))}
-                        className="h-7 w-7 grid place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-[#dc2626] disabled:opacity-30 disabled:hover:bg-transparent"><Trash2 className="h-3.5 w-3.5" /></button>
-                    </div>
-                  </>
-                )}
+    <div className={nivel ? 'mt-2 pl-3 sm:pl-5 border-l-2' : ''} style={nivel ? { borderColor: `${color}55` } : undefined}>
+      <div className="rounded-2xl border bg-card p-3 sm:p-4" style={{ borderTopColor: color, borderTopWidth: 3 }} data-testid="org-area">
+        <div className="flex items-center justify-between gap-2">
+          {editando && 'nombre' in editando ? (
+            <form className="flex-1 space-y-1.5" onSubmit={async (e) => { e.preventDefault(); if (await acciones.renombrar(area, editando.nombre, editando.padre_id)) setEditando(null); }}>
+              <div className="flex gap-1.5">
+                <Input autoFocus value={editando.nombre} onChange={(e) => setEditando({ ...editando, nombre: e.target.value })} className="h-8" aria-label="Nombre del área" />
+                <Button type="submit" size="sm" className="h-8 rounded-lg" style={{ background: C.navy }}><Check className="h-3.5 w-3.5" /></Button>
+                <Button type="button" size="sm" variant="ghost" className="h-8 rounded-lg" onClick={() => setEditando(null)}><X className="h-3.5 w-3.5" /></Button>
               </div>
-              <ul className="mt-2 space-y-1.5">
-                {miembros.length === 0 && <li className="text-[12px] text-muted-foreground">Sin personas todavía</li>}
-                {miembros.map((u) => (
-                  <li key={u.id} className="flex items-center gap-2 min-w-0">
-                    <img src={u.avatar_url} alt="" className="h-6 w-6 rounded-full border object-cover" />
-                    <span className="truncate text-[13px] text-foreground">{u.name}</span>
-                    <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{u.position}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          );
-        })}
-        {editando && 'nueva' in editando && (
-          <form className="rounded-2xl border border-dashed p-4 flex gap-1.5 items-start" onSubmit={(e) => { e.preventDefault(); guardar([...areas, editando.nueva]); }}>
-            <Input autoFocus value={editando.nueva} placeholder="Nombre del área" onChange={(e) => setEditando({ nueva: e.target.value })} className="h-9" data-testid="org-area-nombre" />
-            <Button type="submit" size="sm" disabled={guardando || !editando.nueva.trim()} className="h-9 rounded-lg" style={{ background: C.navy }}>Agregar</Button>
-            <Button type="button" size="sm" variant="ghost" className="h-9 rounded-lg" onClick={() => setEditando(null)}><X className="h-4 w-4" /></Button>
+              <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <span className="shrink-0">Debajo de</span>
+                <NativeSelect value={editando.padre_id || ''} onChange={(v) => setEditando({ ...editando, padre_id: v || null })}
+                  className="h-8 text-xs" aria-label="Área de arriba" data-testid="org-area-padre">
+                  <option value="">Ninguna (área principal)</option>
+                  {destinosPosibles(todas, area.id).map((a) => <option key={a.id} value={a.id}>{a.etiqueta}</option>)}
+                </NativeSelect>
+              </label>
+            </form>
+          ) : (
+            <>
+              <p className="font-semibold text-foreground truncate">
+                {area.nombre}
+                {area.sistema && <span className="ml-2 align-middle text-[10px] font-medium rounded-full px-1.5 py-0.5 bg-muted text-muted-foreground">del sistema</span>}
+              </p>
+              {editable && (
+                <div className="flex shrink-0 no-print">
+                  <button type="button" title="Agregar subárea" onClick={() => setEditando({ sub: '' })} data-testid="org-area-sub"
+                    className="h-7 w-7 grid place-items-center rounded-lg text-muted-foreground hover:bg-muted"><Plus className="h-3.5 w-3.5" /></button>
+                  <button type="button" title="Cambiar nombre o mover" onClick={() => setEditando({ nombre: area.nombre, padre_id: area.padre_id || null })}
+                    className="h-7 w-7 grid place-items-center rounded-lg text-muted-foreground hover:bg-muted"><Pencil className="h-3.5 w-3.5" /></button>
+                  <button type="button" title={area.sistema ? 'La usa el sistema: solo se renombra' : miembros.length || misHijas.length ? 'Tiene gente o subáreas' : 'Quitar área'}
+                    disabled={area.sistema || !!miembros.length || !!misHijas.length} onClick={() => acciones.quitar(area)}
+                    className="h-7 w-7 grid place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-[#dc2626] disabled:opacity-30 disabled:hover:bg-transparent"><Trash2 className="h-3.5 w-3.5" /></button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        {miembros.length > 0 && (
+          <ul className="mt-2 space-y-1.5">
+            {miembros.map((u) => (
+              <li key={u.id} className="flex items-center gap-2 min-w-0">
+                <img src={u.avatar_url} alt="" className="h-6 w-6 rounded-full border object-cover" />
+                <span className="truncate text-[13px] text-foreground">{u.name}</span>
+                <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{u.position}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {editando && 'sub' in editando && (
+          <form className="mt-2 flex gap-1.5" onSubmit={async (e) => { e.preventDefault(); if (await acciones.crear(editando.sub, area.id)) setEditando(null); }}>
+            <Input autoFocus value={editando.sub} placeholder={`Subárea de ${area.nombre}`} onChange={(e) => setEditando({ sub: e.target.value })} className="h-8" data-testid="org-subarea-nombre" />
+            <Button type="submit" size="sm" disabled={!editando.sub.trim()} className="h-8 rounded-lg" style={{ background: C.navy }}>Agregar</Button>
+            <Button type="button" size="sm" variant="ghost" className="h-8 rounded-lg" onClick={() => setEditando(null)}><X className="h-3.5 w-3.5" /></Button>
           </form>
         )}
       </div>
+      {misHijas.map((h) => (
+        <AreaNodo key={h.id} area={h} hijas={hijas} gente={gente} editable={editable} acciones={acciones} todas={todas} nivel={nivel + 1} />
+      ))}
+    </div>
+  );
+}
+
+function OrganigramaDepto({ depto, recargar, titulo }) {
+  const [gente, setGente] = useState([]);
+  const [nueva, setNueva] = useState(null);
+  useEffect(() => {
+    api.get('/users', { params: { status: 'approved' } })
+      .then(({ data }) => setGente(data.filter((u) => departamentoDe(u) === depto.id))).catch(() => {});
+  }, [depto.id]);
+  const llamar = async (fn, ok) => {
+    try { await fn(); toast.success(ok); await recargar(); return true; } catch (e) {
+      toast.error(e?.response?.data?.detail || 'No se pudo guardar'); return false;
+    }
+  };
+  const acciones = {
+    crear: (nombre, padre_id = null) => llamar(() => api.post('/org/areas', { departamento: depto.id, nombre, padre_id }), 'Área agregada'),
+    renombrar: (a, nombre, padre_id) => llamar(() => api.put(`/org/areas/${a.id}`, { nombre, padre_id: padre_id || null }), 'Área actualizada'),
+    quitar: (a) => llamar(() => api.delete(`/org/areas/${a.id}`), 'Área quitada'),
+  };
+  const hijas = (pid) => depto.areas.filter((a) => (a.padre_id || null) === pid);
+  const jefes = gente.filter((u) => u.nivel === 'jefe_depto');
+  const sinArea = gente.filter((u) => u.nivel !== 'jefe_depto' && !u.area_id);
+  const cargoJefe = depto.cargos.find((c) => c.nivel === 'jefe_depto');
+
+  return (
+    <section className="mb-8 rounded-[22px] border bg-card p-5 sm:p-7 shadow-card" data-testid="org-depto">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="h-6 w-1.5 rounded-full" style={{ background: C.green }} />
+          <h2 className="font-heading text-lg font-semibold text-foreground">{titulo || `Jerarquía de ${depto.nombre}`}</h2>
+        </div>
+        {depto.puede_editar && (
+          <Button variant="outline" size="sm" className="rounded-xl no-print" onClick={() => setNueva('')} data-testid="org-area-nueva">
+            <Plus className="h-4 w-4 mr-1.5" /> Agregar área
+          </Button>
+        )}
+      </div>
+
+      {!titulo && (
+        <div className="mb-4 flex flex-col items-center">
+          <div className="w-full max-w-md rounded-2xl px-6 py-4 text-center shadow-md"
+            style={{ background: `linear-gradient(135deg, ${C.green}, #0f6b33)` }} data-testid="org-jefe-depto">
+            <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-white/15">
+              <Crown className="h-6 w-6 text-white" />
+            </div>
+            <p className="text-base font-semibold text-white">{cargoJefe?.nombre || 'Jefe del departamento'}</p>
+            <p className="text-[12px] text-white/80">
+              {jefes.length ? jefes.map((g) => g.name).join(', ') : 'Sin asignar'} · manda en todo {depto.nombre}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {nueva !== null && (
+        <form className="mb-3 flex gap-1.5" onSubmit={async (e) => { e.preventDefault(); if (await acciones.crear(nueva)) setNueva(null); }}>
+          <Input autoFocus value={nueva} placeholder="Nombre del área" onChange={(e) => setNueva(e.target.value)} className="h-9 max-w-sm" data-testid="org-area-nombre" />
+          <Button type="submit" size="sm" disabled={!nueva.trim()} className="h-9 rounded-lg" style={{ background: C.navy }}>Agregar</Button>
+          <Button type="button" size="sm" variant="ghost" className="h-9 rounded-lg" onClick={() => setNueva(null)}><X className="h-4 w-4" /></Button>
+        </form>
+      )}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        {hijas(null).map((a) => (
+          <AreaNodo key={a.id} area={a} hijas={hijas} gente={gente} editable={depto.puede_editar} acciones={acciones} todas={depto.areas} />
+        ))}
+      </div>
       {sinArea.length > 0 && (
-        <p className="mt-4 text-[12px] text-muted-foreground">
-          Sin área: {sinArea.map((u) => u.name).join(', ')}. Asígnales un área en Usuarios.
-        </p>
+        <p className="mt-4 text-[12px] text-muted-foreground">Sin área: {sinArea.map((u) => u.name).join(', ')}. Asígnales un área en Usuarios.</p>
       )}
       <p className="mt-4 flex items-start gap-1.5 text-[12px] text-muted-foreground">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: C.orange }} />
-        Logística está separada de Ventas Retail: su gente solo ve a su departamento. Cargos: Gerente de Logística, Jefe, Coordinador y Auxiliar.
+        Las áreas pueden tener subáreas sin límite (agrégalas con +; con el lápiz se renombran o se mueven). El jefe de un área manda sobre ella y todo lo que cuelga.
       </p>
     </section>
   );
@@ -397,25 +439,32 @@ function OrganigramaLogistica() {
 
 export default function Organigrama() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
-  // admins eligen el departamento; el jefe de cada uno ve solo el suyo
+  const superAdmin = esSuperAdmin(user);
+  const { estructura, recargar } = useEstructura();
+  // el super admin elige el departamento; los demás ven el suyo
   const [vista, setVista] = useState(departamentoDe(user));
   if (!canAccessOrgChart(user)) return <Navigate to="/" replace />;
-  const depto = isAdmin ? vista : departamentoDe(user);
+  const deptos = estructura?.departamentos || [];
+  const depto = deptos.find((d) => d.id === (superAdmin ? vista : departamentoDe(user)));
+  if (!estructura) return <p className="py-16 text-center text-sm text-muted-foreground">Cargando…</p>;
+  if (!depto) return <Navigate to="/" replace />;
 
-  if (depto === LOGISTICA) {
+  if (depto.id !== RETAIL) {
     return (
       <div className="mx-auto max-w-[1400px] pb-10 print-area" data-testid="organigrama-page">
-        <EncabezadoOrg isAdmin={isAdmin} vista={depto} setVista={setVista} />
-        <OrganigramaLogistica />
-        <AccessManager depto={LOGISTICA} />
+        <EncabezadoOrg deptos={superAdmin ? deptos : []} vista={depto.id} setVista={setVista} nombre={depto.nombre}
+          superAdmin={superAdmin} depto={depto} recargar={recargar} />
+        <OrganigramaDepto depto={depto} recargar={recargar} />
+        <CargosDepto depto={depto} recargar={recargar} />
+        <AccessManager depto={depto.id} nombreJefe={depto.cargos.find((c) => c.nivel === 'jefe_depto')?.nombre} />
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-[1400px] pb-10 print-area" data-testid="organigrama-page">
-      <EncabezadoOrg isAdmin={isAdmin} vista={depto} setVista={setVista} />
+      <EncabezadoOrg deptos={superAdmin ? deptos : []} vista={depto.id} setVista={setVista} nombre={depto.nombre}
+        superAdmin={superAdmin} depto={depto} recargar={recargar} />
 
       {/* SECTION 1 — Organigrama */}
       <section className="mb-8 rounded-[22px] border bg-card p-5 sm:p-7 shadow-card" data-testid="org-section">
@@ -444,6 +493,9 @@ export default function Organigrama() {
           {DEPARTMENTS.map((d) => <DeptCard key={d.name} dept={d} />)}
         </div>
       </section>
+
+      <OrganigramaDepto depto={depto} recargar={recargar} titulo="Áreas y subáreas de Ventas Retail" />
+      <CargosDepto depto={depto} recargar={recargar} />
 
       {/* SECTION 2 — Matriz de permisos */}
       <section className="mb-8 rounded-[22px] border bg-card p-5 sm:p-7 shadow-card" data-testid="matrix-section">
@@ -586,7 +638,8 @@ export default function Organigrama() {
   );
 }
 
-function EncabezadoOrg({ isAdmin, vista, setVista }) {
+function EncabezadoOrg({ deptos, vista, setVista, nombre, superAdmin, depto, recargar }) {
+  const actual = { nombre };
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
@@ -594,16 +647,22 @@ function EncabezadoOrg({ isAdmin, vista, setVista }) {
           Jerarquía organizacional y acceso al sistema <span style={{ color: C.cyan }}>HERCO OPS</span>
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {vista === LOGISTICA ? 'Logística: estructura de mando y accesos' : 'Ventas Retail: estructura de mando y matriz de permisos por rol (RBAC)'}
+          {vista === RETAIL ? 'Ventas Retail: estructura de mando y matriz de permisos por rol (RBAC)' : `${actual?.nombre || 'Departamento'}: estructura de mando y accesos`}
         </p>
-        {isAdmin && (
-          <div className="mt-3 flex gap-1.5 no-print" data-testid="org-depto-tabs">
-            {DEPARTAMENTOS.map((d) => (
-              <button key={d} type="button" onClick={() => setVista(d)}
-                className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${vista === d
+        {superAdmin && (
+          <div className="mt-2">
+            <AccionesDepartamento depto={depto} recargar={recargar} onEliminado={() => setVista(RETAIL)} />
+          </div>
+        )}
+        {(deptos.length > 1 || superAdmin) && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 no-print" data-testid="org-depto-tabs">
+            {deptos.map((d) => (
+              <button key={d.id} type="button" onClick={() => setVista(d.id)}
+                className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${vista === d.id
                   ? 'text-white' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
-                style={vista === d ? { background: d === LOGISTICA ? C.green : C.navy } : undefined}>{d}</button>
+                style={vista === d.id ? { background: d.id === RETAIL ? C.navy : C.green } : undefined}>{d.nombre}</button>
             ))}
+            {superAdmin && <NuevoDepartamento recargar={recargar} onCreado={setVista} />}
           </div>
         )}
       </div>

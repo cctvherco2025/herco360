@@ -22,7 +22,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 
-from core import db, serialize_doc, get_current_user, RETAIL, LOGISTICA, departamento_de
+from core import db, serialize_doc, get_current_user, departamento_de, es_super_admin
+import organizacion
 import mantenimiento as mant
 import routes_activos
 import storage
@@ -53,7 +54,7 @@ async def _tareas(user, desde, hasta, sucursal=None, categoria=None, plan_id=Non
     admin, editables = await mant._contexto(user)
     # alcance: las categorías que maneja (quien administra, las de su departamento)
     q = {'fecha': {'$gte': desde, '$lte': hasta}}
-    if user.get('role') != 'admin':
+    if not es_super_admin(user):
         q['activo_categoria_id'] = {'$in': list(editables)}
     if categoria:
         q['activo_categoria_id'] = categoria if categoria in editables else '__ninguna__'
@@ -166,10 +167,10 @@ async def filtros(user=Depends(get_current_user)):
     await mant._requiere_planificador(user)
     admin, editables = await mant._contexto(user)
     cats = [c for c in await routes_activos._categorias(user) if c['id'] in editables]
-    q = {} if user.get('role') == 'admin' else {'categoria_ids': {'$in': list(editables)}}
+    q = {} if es_super_admin(user) else {'categoria_ids': {'$in': list(editables)}}
     planes = await db.mant_planes.find(q, {'_id': 0, 'id': 1, 'numero': 1, 'nombre': 1}).sort('numero', 1).to_list(1000)
-    if user.get('role') == 'admin':
-        sucursales = await routes_activos.ubicaciones(RETAIL) + await routes_activos.ubicaciones(LOGISTICA)
+    if es_super_admin(user):
+        sucursales = [u for d in await organizacion.departamentos() for u in await routes_activos.ubicaciones(d['id'])]
     else:
         sucursales = await routes_activos.ubicaciones(departamento_de(user))
     return serialize_doc({'sucursales': sucursales, 'categorias': [{'id': c['id'], 'nombre': c['nombre']} for c in cats],

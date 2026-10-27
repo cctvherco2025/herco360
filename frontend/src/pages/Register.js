@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -9,45 +9,33 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CARGOS_PROPIOS, AREAS, SUCURSALES, DEPARTAMENTOS, RETAIL, LOGISTICA, CARGOS_LOGISTICA_PROPIOS } from '@/lib/constants';
-import api from '@/lib/api';
+import { SUCURSALES, RETAIL } from '@/lib/constants';
+import { useOrgPublica } from '@/lib/organizacion';
 
 export default function Register() {
   const { register } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: '', email: '', departamento: RETAIL, position: '', area: '', sucursal: '', password: '' });
-  // áreas de Logística (las edita su gerente; se piden al servidor)
-  const [areasLogistica, setAreasLogistica] = useState([]);
-  useEffect(() => {
-    api.get('/users/organizacion').then(({ data }) => setAreasLogistica(data.logistica?.areas || [])).catch(() => {});
-  }, []);
-  const logistica = form.departamento === LOGISTICA;
-  const cargos = logistica ? CARGOS_LOGISTICA_PROPIOS : CARGOS_PROPIOS;
-  const areas = logistica ? areasLogistica : AREAS;
+  const [form, setForm] = useState({ name: '', email: '', departamento: RETAIL, cargo_id: '', area_id: '', sucursal: '', password: '' });
+  // departamentos con sus áreas y cargos (los define cada departamento)
+  const deptos = useOrgPublica();
+  const depto = (deptos || []).find((d) => d.id === form.departamento);
+  const cargos = depto?.cargos || [];
+  const areas = depto?.areas || [];
+  const enTienda = areas.find((a) => a.id === form.area_id)?.clave === 'Tienda';
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const setVal = (k) => (v) => setForm({ ...form, [k]: v });
 
-  const isDirector = form.position === 'Director comercial';
-
-  const onPositionChange = (v) => setForm({
-    ...form,
-    position: v,
-    // Director comercial oversees the whole company -> fixed to "Casa Matriz".
-    area: v === 'Director comercial' ? 'Casa Matriz' : (form.area === 'Casa Matriz' ? '' : form.area),
-    sucursal: '',
-  });
-
   const submit = async (e) => {
     e.preventDefault();
-    if (!form.position) { toast.error('Selecciona un cargo'); return; }
-    if (!isDirector && !form.area) { toast.error('Selecciona un área'); return; }
-    if (form.area === 'Tienda' && !form.sucursal) { toast.error('Selecciona tu tienda'); return; }
+    if (!form.cargo_id) { toast.error('Selecciona un cargo'); return; }
+    if (!form.area_id) { toast.error('Selecciona un área'); return; }
+    if (enTienda && !form.sucursal) { toast.error('Selecciona tu tienda'); return; }
     setLoading(true);
     try {
-      const data = await register(form);
+      const data = await register({ ...form, sucursal: enTienda ? form.sucursal : '' });
       if (data?.token) { toast.success(`Cuenta creada. ¡Bienvenido a ${APP_NAME}!`); navigate('/'); }
       else {
         // la cuenta queda pendiente hasta que un administrador la apruebe
@@ -102,13 +90,13 @@ export default function Register() {
             <div className="space-y-1.5">
               <Label>Departamento</Label>
               <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Departamento">
-                {DEPARTAMENTOS.map((d) => (
-                  <button key={d} type="button" role="radio" aria-checked={form.departamento === d}
-                    onClick={() => setForm({ ...form, departamento: d, position: '', area: '', sucursal: '' })}
-                    data-testid={`register-departamento-${d === LOGISTICA ? 'logistica' : 'retail'}`}
-                    className={`h-11 rounded-md border text-sm font-medium transition-colors ${form.departamento === d
+                {(deptos || []).map((d) => (
+                  <button key={d.id} type="button" role="radio" aria-checked={form.departamento === d.id}
+                    onClick={() => setForm({ ...form, departamento: d.id, cargo_id: '', area_id: '', sucursal: '' })}
+                    data-testid={`register-departamento-${d.id}`}
+                    className={`min-h-11 px-2 py-2 rounded-md border text-sm font-medium transition-colors ${form.departamento === d.id
                       ? 'border-[#1e395e] bg-[#1e395e] text-white' : 'border-input bg-background text-foreground hover:bg-muted'}`}>
-                    {d}
+                    {d.nombre}
                   </button>
                 ))}
               </div>
@@ -116,7 +104,7 @@ export default function Register() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Cargo</Label>
-                <Select value={form.position} onValueChange={onPositionChange}>
+                <Select value={form.cargo_id} onValueChange={setVal('cargo_id')}>
                   <SelectTrigger className="h-11" data-testid="register-position-select">
                     <div className="flex items-center gap-2 min-w-0">
                       <Briefcase className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -124,33 +112,26 @@ export default function Register() {
                     </div>
                   </SelectTrigger>
                   <SelectContent>
-                    {cargos.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    {cargos.map((c) => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
                 <Label>Área</Label>
-                {isDirector ? (
-                  <div className="h-11 flex items-center gap-2 rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground" data-testid="register-area-fixed">
-                    <Building className="h-4 w-4 shrink-0" />
-                    <span>Casa Matriz</span>
-                  </div>
-                ) : (
-                  <Select value={form.area} onValueChange={(v) => setForm({ ...form, area: v, sucursal: v === 'Tienda' ? form.sucursal : '' })}>
-                    <SelectTrigger className="h-11" data-testid="register-area-select">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Building className="h-4 w-4 text-muted-foreground shrink-0" />
-                        <SelectValue placeholder="Selecciona" />
-                      </div>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {areas.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                )}
+                <Select value={form.area_id} onValueChange={(v) => setForm({ ...form, area_id: v })}>
+                  <SelectTrigger className="h-11" data-testid="register-area-select">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Building className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <SelectValue placeholder="Selecciona" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {areas.map((a) => <SelectItem key={a.id} value={a.id}>{a.nombre}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-            {form.area === 'Tienda' && (
+            {enTienda && (
               <div className="space-y-1.5">
                 <Label>Tienda / Sucursal</Label>
                 <Select value={form.sucursal} onValueChange={setVal('sucursal')}>

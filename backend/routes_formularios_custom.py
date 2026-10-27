@@ -34,7 +34,7 @@ from core import (db, get_current_user, serialize_doc, new_id, now_iso, can_mana
                   require_promo_access, can_create_custom_formulario, require_formularios_principal_access,
                   require_promociones_mes_access, can_admin_promos, PROMO_TIENDAS,
                   es_jefe_tienda, es_gerente_tienda, es_coordinador_tienda, es_revisor_tienda,
-                  tienda_promos, RETAIL, LOGISTICA, departamento_de, es_jefe_depto, filtro_usuarios_depto)
+                  tienda_promos, RETAIL, departamento_de, es_jefe_depto, es_super_admin, filtro_usuarios_depto)
 from models import CustomFormInput
 import promo_analisis
 from notifications import create_notification
@@ -96,11 +96,11 @@ def _audience_match(user, audiencia: dict) -> bool:
 
 def _depto_form(form: dict) -> str:
     """Departamento del formulario (el de quien lo creó; los de antes, Retail)."""
-    return LOGISTICA if (form or {}).get('departamento') == LOGISTICA else RETAIL
+    return (form or {}).get('departamento') or RETAIL
 
 
 def _mismo_depto(user, form: dict) -> bool:
-    return user.get('role') == 'admin' or departamento_de(user) == _depto_form(form)
+    return es_super_admin(user) or departamento_de(user) == _depto_form(form)
 
 
 async def _resolve_audience_users(audiencia: dict, depto: str = RETAIL) -> list:
@@ -134,18 +134,18 @@ def _is_promo_admin(user, form: dict) -> bool:
 
 def _can_manage_form(user, form: dict) -> bool:
     """Editar / eliminar el formulario o vaciar su historial."""
-    return (user.get('role') == 'admin' or form.get('creator_id') == user['id']
+    return ((user.get('role') == 'admin' and _mismo_depto(user, form)) or form.get('creator_id') == user['id']
             or _is_promo_admin(user, form))
 
 
 def _can_fill(user, form: dict) -> bool:
     if form.get('status') == 'borrador' and form.get('creator_id') != user.get('id'):
         return False
-    if user.get('role') == 'admin':
+    if es_super_admin(user):
         return True
     if not _mismo_depto(user, form):
         return False  # los departamentos no ven los formularios del otro
-    if es_jefe_depto(user):
+    if user.get('role') == 'admin' or es_jefe_depto(user):
         return True
     if form.get('creator_id') == user.get('id'):
         return True
@@ -161,9 +161,9 @@ def _can_fill(user, form: dict) -> bool:
 
 
 def _sees_all_responses(user, form: dict) -> bool:
-    if user.get('role') == 'admin':
+    if es_super_admin(user):
         return True
-    if es_jefe_depto(user) and _mismo_depto(user, form):
+    if (user.get('role') == 'admin' or es_jefe_depto(user)) and _mismo_depto(user, form):
         return True
     if _is_promo_admin(user, form):
         return True

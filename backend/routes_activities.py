@@ -4,9 +4,10 @@ from collections import defaultdict
 from datetime import datetime, timedelta, date as date_cls
 from fastapi import APIRouter, HTTPException, Depends
 from core import (db, get_current_user, serialize_doc, new_id, now_iso, now_local, GERENTE_LOGISTICA,
-                  es_jefe_depto, es_logistica, filtro_depto, mismo_depto)
+                  es_jefe_depto, es_retail, es_super_admin, filtro_depto, mismo_depto)
 import recurrence as rec
 from models import ActivityInput, RespondInput
+import mando
 from notifications import create_notification, log_activity
 from reminders import DEFAULT_REMINDER_OFFSETS
 
@@ -290,11 +291,11 @@ async def list_activities(start: str = None, end: str = None, category: str = No
         target = await db.users.find_one({'id': user_id})
         if not target:
             raise HTTPException(status_code=404, detail='Usuario no encontrado')
-        pos = (user.get('position') or '').strip()
-        # el jefe del departamento ve a toda su gente; jefes y gerentes, a su
-        # área; nunca a alguien del otro departamento (salvo los admins)
-        allowed = user.get('role') == 'admin' or (mismo_depto(user, target) and (
-            es_jefe_depto(user) or (pos in MANAGER_POSITIONS and target.get('area') == user.get('area'))))
+        # el jefe del departamento y sus admins ven a toda su gente; un cargo
+        # de mando, a quien manda (su área y subáreas); nunca a alguien de
+        # otro departamento (salvo el super admin)
+        allowed = es_super_admin(user) or (mismo_depto(user, target) and (
+            user.get('role') == 'admin' or es_jefe_depto(user) or mando.manda_sobre(user, target)))
         if not allowed:
             raise HTTPException(status_code=403, detail='No puedes ver este calendario')
         target_id = user_id
@@ -322,7 +323,7 @@ async def get_activity(activity_id: str, user=Depends(get_current_user)):
 
 def _sin_sala(data, user):
     """La Sala de Juntas es de Ventas Retail."""
-    if data.uses_meeting_room and user.get('role') != 'admin' and es_logistica(user):
+    if data.uses_meeting_room and not es_super_admin(user) and not es_retail(user):
         raise HTTPException(status_code=403, detail='La Sala de Juntas es de Ventas Retail')
 
 

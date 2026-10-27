@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { QRCodeCanvas } from 'qrcode.react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { ROOM_STATES, esLogistica } from '@/lib/constants';
+import { ROOM_STATES, esRetail, esSuperAdmin } from '@/lib/constants';
 import { Navigate } from 'react-router-dom';
 import { capitalize, fullDateEs, ymd, MESES, MESES_CORTO, fmtHora, fmtRangoHoras } from '@/lib/time';
 import { WeekView, DayView, MonthView, startOfWeek, addDays } from '@/components/CalendarViews';
@@ -64,10 +64,10 @@ function StatusBadge({ status, size = 'sm' }) {
   );
 }
 
-// La Sala de Juntas es de Ventas Retail: Logística no entra (los admins sí).
+// La Sala de Juntas es de Ventas Retail: los demás departamentos no entran (el super admin sí).
 export default function SalaDeJuntas() {
   const { user } = useAuth();
-  if (user && user.role !== 'admin' && esLogistica(user)) return <Navigate to="/" replace />;
+  if (user && !esSuperAdmin(user) && !esRetail(user)) return <Navigate to="/" replace />;
   return <SalaDeJuntasPagina />;
 }
 

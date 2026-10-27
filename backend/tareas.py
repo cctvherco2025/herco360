@@ -19,10 +19,11 @@ La tarea completa queda:
 
 Tiendas que participan en Promociones del mes: H1 (Herco Max), H2 (Herco Centro) y H6 (Herco JT).
 
-Logística (sin tiendas) funciona por mando: el Gerente de Logística asigna a
-Jefes, Coordinadores y Auxiliares de cualquier área; cada Jefe, a los
-Coordinadores y Auxiliares de su área. Valida quien la creó, el Gerente de
-Logística o el Jefe del área de la tarea. Nadie de Retail las ve (salvo admins).
+Los demás departamentos (Logística y los que se creen; sin tiendas) funcionan
+por mando (mando.py): el jefe del departamento (y sus admins) asigna a
+cualquiera de su departamento; cada jefe o gerente de área, a quien manda
+(su área y todas sus subáreas). Valida quien la creó, el jefe del
+departamento o un jefe/gerente del área de la tarea o de un área superior. Nadie de otro departamento las ve (salvo el super admin).
 Fechas de los campos de auditoría (created_at, etc.) en UTC (now_iso). La
 fecha límite es un día (YYYY-MM-DD) en hora de la empresa.
 """
@@ -38,9 +39,10 @@ from pymongo import ReturnDocument
 
 from core import (db, get_current_user, serialize_doc, new_id, now_iso, now_local,
                   es_revisor_tienda, es_coordinador_tienda, tienda_promos, PROMO_TIENDAS, JEFE_TIENDA,
-                  LOGISTICA, GERENTE_LOGISTICA, es_logistica, es_jefe_depto)
+                  RETAIL, departamento_de, es_retail, es_super_admin, es_jefe_depto, filtro_departamento)
 from notifications import create_notification
 import storage
+import mando
 
 router = APIRouter(prefix='/tareas', tags=['tareas'])
 logger = logging.getLogger('tareas')
@@ -80,21 +82,27 @@ def _es_supervisor(user: dict) -> bool:
     return u.get('role') == 'admin' or (u.get('position') or '').strip() == 'Director comercial'
 
 
-# ---- Logística: por mando, sin tiendas ----
+# ---- Departamentos que no son Retail: por mando, sin tiendas ----
+NIVELES_ASIGNABLES = ('gerente', 'jefe', 'coordinador', 'colaborador')
+
+
 def _de_logistica(user: dict) -> bool:
-    return (user or {}).get('role') != 'admin' and es_logistica(user)
+    """Persona de un departamento que trabaja por mando (no Retail)."""
+    return not es_super_admin(user) and not es_retail(user)
 
 
 def _gerente_log(user: dict) -> bool:
-    return _de_logistica(user) and es_jefe_depto(user)
+    """Jefe del departamento o admin del departamento: manda en todo él."""
+    return _de_logistica(user) and (es_jefe_depto(user) or (user or {}).get('role') == 'admin')
 
 
 def _jefe_log(user: dict) -> bool:
-    return _de_logistica(user) and ((user or {}).get('position') or '').strip() == 'Jefe'
+    """Jefe o gerente de un área: manda en su área."""
+    return _de_logistica(user) and (user or {}).get('nivel') in ('jefe', 'gerente')
 
 
 def _es_tarea_log(t: dict) -> bool:
-    return (t or {}).get('departamento') == LOGISTICA
+    return ((t or {}).get('departamento') or RETAIL) != RETAIL
 
 
 def puede_crear(user: dict) -> bool:
@@ -108,8 +116,17 @@ def es_validador(user: dict, t: dict) -> bool:
     En Logística: quien la creó, el Gerente de Logística o el Jefe de su área."""
     u = user or {}
     if _es_tarea_log(t):
-        return (u.get('role') == 'admin' or _gerente_log(u) or (t.get('creado_por') or {}).get('id') == u.get('id')
-                or (_jefe_log(u) and t.get('area') and t.get('area') == u.get('area')))
+        if es_super_admin(u):
+            return True
+        if departamento_de(u) != t.get('departamento'):
+            return False
+        if _gerente_log(u) or (t.get('creado_por') or {}).get('id') == u.get('id'):
+            return True
+        if not _jefe_log(u):
+            return False
+        if t.get('area_path') is not None:  # el área de la tarea o una de sus subáreas
+            return u.get('area_id') in t['area_path']
+        return bool(t.get('area')) and t.get('area') == u.get('area')  # tareas de antes
     if _de_logistica(u):
         return False
     return _es_supervisor(u) or (es_revisor_tienda(u) and tienda_promos(u) == t.get('tienda'))
@@ -145,8 +162,11 @@ async def _validadores_ids(t: dict) -> list:
     """Gerentes y jefes de la tienda (a quienes se avisa cuando se marca hecha).
     En Logística: quien la creó, el Gerente de Logística y el Jefe del área."""
     if _es_tarea_log(t):
-        ors = [{'position': GERENTE_LOGISTICA}] + ([{'position': 'Jefe', 'area': t['area']}] if t.get('area') else [])
-        users = await db.users.find({'status': 'approved', 'departamento': LOGISTICA, '$or': ors}, {'_id': 0, 'id': 1}).to_list(50)
+        if t.get('area_path'):
+            ors = [{'nivel': 'jefe_depto'}, {'nivel': {'$in': ['jefe', 'gerente']}, 'area_id': {'$in': t['area_path']}}]
+        else:
+            ors = [{'nivel': 'jefe_depto'}] + ([{'nivel': {'$in': ['jefe', 'gerente']}, 'area': t['area']}] if t.get('area') else [])
+        users = await db.users.find({'status': 'approved', 'departamento': t['departamento'], '$or': ors}, {'_id': 0, 'id': 1}).to_list(50)
         return list(dict.fromkeys([(t.get('creado_por') or {}).get('id')] + [u['id'] for u in users]))
     tienda = t.get('tienda')
     users = await db.users.find(
@@ -162,14 +182,15 @@ async def _asignables(user: dict) -> list:
     Logística: el Gerente, a Jefes, Coordinadores y Auxiliares; un Jefe, a los
     Coordinadores y Auxiliares de su área."""
     if _de_logistica(user):
-        q = {'status': 'approved', 'departamento': LOGISTICA, 'id': {'$ne': user['id']}}
         if _gerente_log(user):
-            q['position'] = {'$in': ['Jefe', 'Coordinador', 'Auxiliar']}
+            q = {'status': 'approved', 'departamento': departamento_de(user), 'id': {'$ne': user['id']},
+                 'nivel': {'$in': list(NIVELES_ASIGNABLES)}}
+            users = await db.users.find(q, {'_id': 0, 'id': 1, 'name': 1, 'position': 1, 'area': 1, 'nivel': 1}).to_list(500)
         else:
-            q.update({'position': {'$in': ['Coordinador', 'Auxiliar']}, 'area': user.get('area')})
-        users = await db.users.find(q, {'_id': 0, 'id': 1, 'name': 1, 'position': 1, 'area': 1}).to_list(300)
-        orden = {'Jefe': 0, 'Coordinador': 1, 'Auxiliar': 2}
-        users.sort(key=lambda u: (u.get('area') or '', orden.get(u['position'], 3), u['name']))
+            # un jefe o gerente de área: a quien manda (su área y subáreas)
+            users = [{k: p.get(k) for k in ('id', 'name', 'position', 'area', 'nivel')}
+                     for p in await mando.subordinados(user)]
+        users.sort(key=lambda u: (u.get('area') or '', NIVELES_ASIGNABLES.index(u['nivel']) if u.get('nivel') in NIVELES_ASIGNABLES else 9, u['name']))
         return users
     tienda = tienda_promos(user)
     es_gerente = (user.get('position') or '').strip() == 'Gerente'
@@ -270,15 +291,17 @@ def _pintar(t: dict, user: dict) -> dict:
 def _filtro_validar(user: dict) -> dict:
     """Tareas que la persona valida (gerente/jefe de tienda, supervisor, o
     Gerente/Jefe de Logística)."""
-    if user.get('role') == 'admin':
+    if es_super_admin(user):
         return {}
     if _gerente_log(user):
-        return {'departamento': LOGISTICA}
+        return {'departamento': departamento_de(user)}
     if _jefe_log(user):
-        return {'departamento': LOGISTICA, '$or': [{'area': user.get('area')}, {'creado_por.id': user['id']}]}
+        return {'departamento': departamento_de(user), '$or': [
+            {'area_path': user.get('area_id')}, {'creado_por.id': user['id']},
+            {'area_path': {'$exists': False}, 'area': user.get('area')}]}
     if _es_supervisor(user):
-        return {'departamento': {'$ne': LOGISTICA}}
-    return {'tienda': tienda_promos(user), 'departamento': {'$ne': LOGISTICA}}
+        return filtro_departamento(RETAIL)
+    return {'tienda': tienda_promos(user), **filtro_departamento(RETAIL)}
 
 
 def _valida(user: dict) -> bool:
@@ -432,8 +455,11 @@ async def crear(data: TareaCreate, user=Depends(get_current_user)):
     t = {
         'id': new_id(), 'numero': f"TAREA-{n['n']:04d}", 'tienda': tienda,
         # Logística: sin tienda; el área es la del Jefe que la creó (el Gerente: todas)
-        'departamento': LOGISTICA if log else None,
+        'departamento': departamento_de(user) if log else None,
         'area': (user.get('area') if _jefe_log(user) else None) if log else None,
+        # el área de la tarea y su camino: la validan los jefes de esa área y de las de arriba
+        'area_id': user.get('area_id') if (log and _jefe_log(user)) else None,
+        'area_path': list(user.get('area_path') or []) if (log and _jefe_log(user)) else None,
         'titulo': data.titulo.strip(), 'descripcion': (data.descripcion or '').strip(),
         'prioridad': _normalizar_prioridad(data.prioridad), 'fecha_limite': _validar_fecha(data.fecha_limite),
         'creado_por': {'id': user['id'], 'name': user['name']},

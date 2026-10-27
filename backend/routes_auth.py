@@ -1,7 +1,7 @@
 """Auth routes: register, login, me."""
 from fastapi import APIRouter, HTTPException, Depends
 from core import (db, hash_password, verify_password, create_access_token, new_id, now_iso, get_current_user,
-                  CARGOS_SOLO_ADMIN, DEPARTAMENTOS, RETAIL, LOGISTICA, GERENTE_LOGISTICA)
+                  CARGOS_SOLO_ADMIN, RETAIL, filtro_usuarios_depto)
 from models import RegisterInput, LoginInput, ChangePasswordInput
 from notifications import notify_admins, create_notification
 from routes_users import normalizar_depto
@@ -24,9 +24,11 @@ async def register(data: RegisterInput):
     if (data.position or '').strip() in CARGOS_SOLO_ADMIN:
         raise HTTPException(status_code=400,
                             detail='Ese cargo lo asigna un administrador. Regístrate con tu cargo actual.')
-    depto = data.departamento if data.departamento in DEPARTAMENTOS else RETAIL
-    datos = {'position': data.position or 'Colaborador', 'area': data.area or '', 'sucursal': data.sucursal or ''}
-    await normalizar_depto(datos, depto)
+    depto = data.departamento or RETAIL
+    org = await normalizar_depto(depto, data.model_dump())
+    if org['nivel'] in ('jefe_depto', 'gerente', 'jefe'):
+        raise HTTPException(status_code=400,
+                            detail='Ese cargo lo asigna un administrador. Regístrate con tu cargo actual.')
     user = {
         'id': new_id(),
         'name': data.name,
@@ -34,22 +36,20 @@ async def register(data: RegisterInput):
         'password_hash': hash_password(data.password),
         'role': 'user',
         'status': 'pending',  # un administrador la aprueba antes de poder entrar
-        'position': datos['position'],
-        'departamento': depto,
-        'area': datos['area'],
-        'sucursal': datos['sucursal'],
+        **org,
         'avatar_url': avatar_for(data.name),
         'phone': '',
         'created_at': now_iso(),
     }
     await db.users.insert_one(user)
-    await notify_admins('usuario_pendiente', f"{data.name} pidió acceso a HERCO OPS: apruébalo en Usuarios",
+    await notify_admins('usuario_pendiente', f"{data.name} pidió acceso a HERCO OPS: apruébalo en Usuarios", departamento=depto,
                         related_id=user['id'], related_type='user',
                         actor_name=data.name, actor_avatar=user['avatar_url'])
-    if depto == LOGISTICA:
-        # también la aprueba el Gerente de Logística
-        gerentes = await db.users.find({'position': GERENTE_LOGISTICA, 'departamento': LOGISTICA,
-                                        'status': 'approved', 'role': {'$ne': 'admin'}}, {'_id': 0, 'id': 1}).to_list(20)
+    if depto != RETAIL:
+        # también la aprueba el jefe del departamento (los admins ya se avisaron)
+        gerentes = await db.users.find({**filtro_usuarios_depto(depto), 'status': 'approved',
+                                        'nivel': 'jefe_depto', 'role': {'$ne': 'admin'}},
+                                       {'_id': 0, 'id': 1}).to_list(50)
         for g in gerentes:
             await create_notification(g['id'], 'usuario_pendiente',
                                       f"{data.name} pidió acceso a HERCO OPS: apruébalo en Usuarios",

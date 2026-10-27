@@ -11,6 +11,7 @@ from seed import (seed_if_needed, migrate_activity_colors, seed_inventory, boots
                   migrate_room_info, migrate_activity_reminders, migrate_activity_ranges)
 import routes_auth, routes_users, routes_activities, routes_rooms, routes_notifications, routes_dashboard, routes_inventory, routes_reports, routes_public, routes_vacations, routes_push, routes_cams, routes_formulario, routes_rutina, routes_formularios_custom, routes_diagnostico, routes_groups, routes_guardias, routes_recorridos, routes_etiquetas, routes_activos, mantenimiento, mantenimiento_reportes
 import promo_tareas
+import organizacion
 import tickets
 import storage
 import reminders
@@ -78,6 +79,7 @@ api_router.include_router(routes_etiquetas.router)
 api_router.include_router(routes_activos.router)
 api_router.include_router(mantenimiento.router)
 api_router.include_router(mantenimiento_reportes.router)
+api_router.include_router(organizacion.router)
 api_router.include_router(routes_formularios_custom.router)
 api_router.include_router(routes_diagnostico.router)
 api_router.include_router(routes_groups.router)
@@ -118,6 +120,13 @@ async def startup():
         await routes_activos.ensure_indexes()
         await routes_activos.ensure_defaults()
         await mantenimiento.ensure_indexes()
+    except Exception as e:
+        logger.error(f'Seed error: {e}')
+    try:
+        # estructura de la organización (departamentos, áreas, cargos) y
+        # ubicación de cada usuario en ella; idempotente
+        await organizacion.ensure_indexes()
+        await organizacion.asegurar()
     except Exception as e:
         logger.error(f'Seed error: {e}')
     try:

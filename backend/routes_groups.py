@@ -21,7 +21,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from core import db, get_current_user, serialize_doc, new_id, now_iso, filtro_depto
+from core import db, get_current_user, serialize_doc, new_id, now_iso, filtro_depto, es_super_admin
 
 router = APIRouter(prefix='/groups', tags=['groups'])
 
@@ -45,7 +45,7 @@ def _nombre_key(nombre: str) -> str:
 
 
 def _es_admin(user) -> bool:
-    return user.get('role') == 'admin'
+    return es_super_admin(user)
 
 
 def puede_ver(user, g: dict) -> bool:
