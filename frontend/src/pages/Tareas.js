@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { ListChecks, Plus, Loader2, CalendarClock } from 'lucide-react';
+import { ListChecks, Plus, Loader2, CalendarClock, Search, X } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { timeAgoEs } from '@/lib/time';
@@ -125,21 +125,7 @@ function NuevaTarea({ open, onOpenChange, onCreada }) {
           </div>
           <div className="space-y-1.5">
             <Label>Asignar a</Label>
-            {gente.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No hay a quién asignar en tu equipo.</p>
-            ) : (
-              <div className="space-y-1.5 rounded-xl border p-2 max-h-[200px] overflow-y-auto">
-                {gente.map((g) => (
-                  <label key={g.id} className="flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-muted/50 cursor-pointer" data-testid="tarea-asignable">
-                    <Checkbox checked={sel.includes(g.id)} onCheckedChange={() => toggle(g.id)} />
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-sm font-medium truncate">{g.name}</span>
-                      <span className="block text-[11px] text-muted-foreground">{g.position}{g.area ? ` · ${g.area}` : ''}</span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-            )}
+            <SelectorPersonas gente={gente} sel={sel} onToggle={toggle} />
           </div>
         </div>
         <DialogFooter className="px-6 py-4 border-t gap-2 sm:gap-2">
@@ -235,6 +221,64 @@ export default function Tareas() {
       </motion.div>
 
       <NuevaTarea open={nueva} onOpenChange={setNueva} onCreada={load} />
+    </div>
+  );
+}
+
+// Elegir personas para una tarea: buscador (nombre, cargo o área; sin
+// importar tildes ni mayúsculas), las elegidas arriba como etiquetas (se
+// quitan ahí mismo, aunque el buscador las oculte) y la lista con casillas.
+// `bloqueadas`: ids que no se pueden quitar (ya avanzaron en su parte).
+const normalizar = (v) => (v || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+export function SelectorPersonas({ gente, sel, onToggle, bloqueadas = [], vacio = 'No hay a quién asignar en tu equipo.' }) {
+  const [q, setQ] = useState('');
+  if (!gente.length) return <p className="text-sm text-muted-foreground">{vacio}</p>;
+  const palabras = normalizar(q).split(/\s+/).filter(Boolean);
+  const visibles = palabras.length
+    ? gente.filter((g) => { const t = normalizar(`${g.name} ${g.position || ''} ${g.area || ''}`); return palabras.every((p) => t.includes(p)); })
+    : gente;
+  const elegidas = gente.filter((g) => sel.includes(g.id));
+  return (
+    <div className="space-y-2" data-testid="selector-personas">
+      {elegidas.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {elegidas.map((g) => (
+            <span key={g.id} className="inline-flex items-center gap-1 rounded-full bg-[rgba(0,165,223,0.12)] pl-2.5 pr-1 py-0.5 text-xs font-medium text-[#0284c7] dark:text-[#3cbef6]">
+              {g.name}
+              {!bloqueadas.includes(g.id) && (
+                <button type="button" onClick={() => onToggle(g.id)} aria-label={`Quitar a ${g.name}`}
+                  className="h-5 w-5 grid place-items-center rounded-full hover:bg-[rgba(0,165,223,0.2)]"><X className="h-3 w-3" /></button>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="relative">
+        <Search className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre, cargo o área…"
+          className="h-10 pl-9 pr-9" aria-label="Buscar persona" data-testid="selector-personas-buscar" />
+        {q && (
+          <button type="button" onClick={() => setQ('')} aria-label="Limpiar búsqueda"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 h-6 w-6 grid place-items-center rounded-md text-muted-foreground hover:bg-muted"><X className="h-3.5 w-3.5" /></button>
+        )}
+      </div>
+      <div className="space-y-1 rounded-xl border p-2 max-h-[220px] overflow-y-auto">
+        {visibles.length === 0 && <p className="px-2 py-3 text-center text-sm text-muted-foreground">Nadie coincide con “{q.trim()}”</p>}
+        {visibles.map((g) => {
+          const bloqueada = bloqueadas.includes(g.id);
+          return (
+            <label key={g.id} className={`flex items-center gap-2.5 rounded-lg px-2 py-2 ${bloqueada ? 'opacity-70' : 'hover:bg-muted/50 cursor-pointer'}`} data-testid="tarea-asignable">
+              <Checkbox checked={sel.includes(g.id)} disabled={bloqueada} onCheckedChange={() => onToggle(g.id)} />
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm font-medium truncate">{g.name}</span>
+                <span className="block text-[11px] text-muted-foreground">{bloqueada ? 'ya avanzó en su parte' : `${g.position || ''}${g.area ? ` · ${g.area}` : ''}`}</span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      <p className="text-[11px] text-muted-foreground">{sel.length} persona{sel.length === 1 ? '' : 's'} elegida{sel.length === 1 ? '' : 's'}</p>
     </div>
   );
 }

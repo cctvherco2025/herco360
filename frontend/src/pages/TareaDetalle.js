@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AuthedImg } from '@/components/customform/CustomFormHistorial';
@@ -18,7 +17,7 @@ import PhotoZoomDialog, { ZOOM_IMG_CLASS } from '@/components/PhotoZoomDialog';
 import { confirmar } from '@/components/ConfirmDialog';
 import CalendarioFecha from '@/components/CalendarioFecha';
 import { PRIORIDADES_TAREA } from '@/lib/constants';
-import { EstadoTarea, PrioridadTarea, FechaLimite, PRIORIDAD_META } from '@/pages/Tareas';
+import { EstadoTarea, PrioridadTarea, FechaLimite, PRIORIDAD_META, SelectorPersonas } from '@/pages/Tareas';
 
 async function fotosAFormData(fd, files) {
   for (const file of Array.from(files || [])) {
@@ -98,15 +97,8 @@ function EditarTarea({ open, onOpenChange, tarea, onGuardada }) {
           </div>
           <div className="space-y-1.5">
             <Label>Personas asignadas</Label>
-            <div className="space-y-1 rounded-xl border p-2 max-h-[180px] overflow-y-auto">
-              {gente.map((g) => (
-                <label key={g.id} className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 ${g.avanzo ? 'opacity-70' : 'cursor-pointer hover:bg-muted/50'}`} data-testid="tarea-editar-persona">
-                  <Checkbox checked={sel.includes(g.id)} disabled={g.avanzo} onCheckedChange={() => toggle(g)} />
-                  <span className="flex-1 min-w-0 text-sm truncate">{g.name}</span>
-                  <span className="text-[11px] text-muted-foreground shrink-0">{g.avanzo ? 'ya avanzó' : g.position || ''}</span>
-                </label>
-              ))}
-            </div>
+            <SelectorPersonas gente={gente} sel={sel} onToggle={(id) => toggle(gente.find((g) => g.id === id))}
+              bloqueadas={gente.filter((g) => g.avanzo).map((g) => g.id)} />
           </div>
         </div>
         <DialogFooter className="px-6 py-4 border-t gap-2 sm:gap-2">
