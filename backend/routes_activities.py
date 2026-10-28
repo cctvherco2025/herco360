@@ -293,11 +293,11 @@ async def list_activities(start: str = None, end: str = None, category: str = No
         target = await db.users.find_one({'id': user_id})
         if not target:
             raise HTTPException(status_code=404, detail='Usuario no encontrado')
-        # el jefe del departamento y sus admins ven a toda su gente; un cargo
-        # de mando, a quien manda (su área y subáreas); nunca a alguien de
-        # otro departamento (salvo el super admin)
+        # el jefe del departamento y sus admins ven a toda su gente; quien
+        # tiene gente a cargo, a su equipo según su perfil (mando.py); nunca a
+        # alguien de otro departamento (salvo el super admin)
         allowed = es_super_admin(user) or (mismo_depto(user, target) and (
-            user.get('role') == 'admin' or es_jefe_depto(user) or mando.manda_sobre(user, target)))
+            user.get('role') == 'admin' or es_jefe_depto(user) or await mando.ve_a(user, target)))
         if not allowed:
             raise HTTPException(status_code=403, detail='No puedes ver este calendario')
         target_id = user_id

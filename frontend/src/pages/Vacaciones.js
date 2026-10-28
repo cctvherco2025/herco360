@@ -47,11 +47,12 @@ export default function Vacaciones() {
 
 function VacacionesPage() {
   const { user } = useAuth();
-  // "Por autorizar": a quien manda (cualquier cargo de mando o nivel jefe, o
-  // a quien el servidor le asignó solicitudes para aprobar)
+  // "Por autorizar": a quien aprueba (su perfil, Gente a cargo; ver mando.py),
+  // a los admins o a quien el servidor le asignó solicitudes para aprobar
   const [toReview, setToReview] = useState([]);
-  const isManager = user?.role === 'admin' || ['Jefe', 'Gerente', 'Director comercial'].includes(user?.position)
-    || ['jefe_depto', 'gerente', 'jefe'].includes(user?.nivel) || toReview.length > 0;
+  const aprueba = user?.mando ? user.mando.aprueba
+    : ['Jefe', 'Gerente', 'Director comercial'].includes(user?.position) || ['jefe_depto', 'gerente', 'jefe'].includes(user?.nivel);
+  const isManager = user?.role === 'admin' || aprueba || toReview.length > 0;
 
   const [mine, setMine] = useState([]);
   const [open, setOpen] = useState(false);

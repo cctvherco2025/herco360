@@ -20,20 +20,28 @@ Matriz) es "del sistema" (`sistema`): se puede renombrar pero no borrar. Su
 `clave` es el nombre de siempre y es lo que se guarda en el usuario
 (`position` / `area`), así el código que depende de esos nombres sigue igual.
 
+Tiendas de Retail: cada tienda es una subárea de Tienda (que puede
+llamarse "Tiendas" y estar debajo de Operación Tienda). Las subáreas de
+tienda guardan su `sucursal` (H1, H2…) y la clave 'Tienda', así que quien
+está en una tienda sigue teniendo `area` 'Tienda' y su sucursal sale de la
+subárea.
+
 Quién edita: el super admin todo; en su departamento, sus admins y su jefe
 (nivel jefe_depto). Crear departamentos: solo el super admin.
 """
 import logging
 import re
+from collections import Counter
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from core import (db, get_current_user, serialize_doc, new_id, now_iso, RETAIL, LOGISTICA,
-                  departamento_de, es_super_admin, filtro_depto)
+                  departamento_de, es_super_admin, es_jefe_depto, filtro_depto)
 import permisos
 import acceso
+import mando
 
 router = APIRouter(prefix='/org', tags=['organizacion'])
 logger = logging.getLogger('organizacion')
@@ -77,9 +85,19 @@ async def ensure_indexes():
     await db.org_cargos.create_index('departamento')
 
 
+TIENDA = 'Tienda'
+
+
+async def _por_clave(depto, clave):
+    """El área con esa clave, esté donde esté (las que se movieron debajo de
+    otra también cuentan). Primero las principales; nunca una subárea de tienda."""
+    return await db.org_areas.find_one({'departamento': depto, 'clave': clave, 'sucursal': {'$exists': False}},
+                                       {'_id': 0}, sort=[('padre_id', 1)])
+
+
 async def _area(depto, nombre, padre_id=None, sistema=False, orden=0):
-    """Busca (o crea) un área por nombre bajo un padre."""
-    a = await db.org_areas.find_one({'departamento': depto, 'padre_id': padre_id, 'clave': nombre}, {'_id': 0})
+    """Busca (o crea, como área principal) un área por su clave."""
+    a = await _por_clave(depto, nombre)
     if a:
         return a
     a = {'id': new_id(), 'departamento': depto, 'nombre': nombre, 'clave': nombre, 'padre_id': padre_id,
@@ -194,9 +212,11 @@ def _ordenar_arbol(areas: list) -> list:
 
 
 async def resolver(depto: str, cargo_id: Optional[str] = None, area_id: Optional[str] = None,
-                   cargo_nombre: Optional[str] = None, area_nombre: Optional[str] = None) -> dict:
+                   cargo_nombre: Optional[str] = None, area_nombre: Optional[str] = None,
+                   sucursal: Optional[str] = None) -> dict:
     """Valida cargo y área dentro del departamento y devuelve lo que se guarda
-    en el usuario. Acepta ids (pantallas nuevas) o nombres (compatibilidad)."""
+    en el usuario. Acepta ids (pantallas nuevas) o nombres (compatibilidad).
+    Si eligen Tienda y una sucursal que tiene su subárea, queda en la subárea."""
     cargo = None
     if cargo_id:
         cargo = await db.org_cargos.find_one({'id': cargo_id, 'departamento': depto}, {'_id': 0})
@@ -210,15 +230,20 @@ async def resolver(depto: str, cargo_id: Optional[str] = None, area_id: Optional
         if not area:
             raise HTTPException(status_code=400, detail='Elige un área del departamento')
     elif area_nombre:
-        area = await db.org_areas.find_one({'departamento': depto, '$or': [{'clave': area_nombre}, {'nombre': area_nombre}]}, {'_id': 0})
+        q = {'departamento': depto, '$or': [{'clave': area_nombre}, {'nombre': area_nombre}]}
+        area = (await db.org_areas.find_one({**q, 'sucursal': {'$exists': False}}, {'_id': 0}, sort=[('padre_id', 1)])
+                or await db.org_areas.find_one(q, {'_id': 0}))
         if not area:
             raise HTTPException(status_code=400, detail='Elige un área del departamento')
+    if area and area.get('clave') == TIENDA and not area.get('sucursal') and (sucursal or '').strip():
+        area = await db.org_areas.find_one({'padre_id': area['id'], 'sucursal': sucursal.strip()}, {'_id': 0}) or area
     if not area and cargo['nivel'] != 'jefe_depto':
         raise HTTPException(status_code=400, detail='Elige el área')
     return {
         'departamento': depto, 'cargo_id': cargo['id'], 'nivel': cargo['nivel'], 'position': cargo['clave'],
         'area_id': area['id'] if area else None, 'area': area['clave'] if area else '',
         'area_path': await camino(area['id']) if area else [],
+        'sucursal_area': (area or {}).get('sucursal'),
     }
 
 
@@ -257,7 +282,8 @@ async def publico():
         etq = _etiquetas(areas)
         out.append({
             'id': d['id'], 'nombre': d['nombre'],
-            'areas': [{'id': a['id'], 'nombre': etq[a['id']], 'clave': a['clave']} for a in _ordenar_arbol(areas)],
+            'areas': [{'id': a['id'], 'nombre': etq[a['id']], 'clave': a['clave'], 'sucursal': a.get('sucursal')}
+                      for a in _ordenar_arbol(areas)],
             'cargos': [{'id': c['id'], 'nombre': c['nombre'], 'clave': c['clave'], 'nivel': c['nivel']}
                        for c in await cargos_de(d['id']) if not es_cargo_de_mando(c)],
         })
@@ -292,6 +318,66 @@ async def estructura(user=Depends(get_current_user)):
             'cargos': [{**c, 'personas': conteo_c.get(c['id'], 0)} for c in cargos],
         })
     return serialize_doc({'departamentos': out, 'niveles': NIVELES, 'super_admin': es_super_admin(user)})
+
+
+@router.get('/organigrama')
+async def organigrama(departamento: Optional[str] = None, user=Depends(get_current_user)):
+    """Organigrama del departamento, para que cualquiera de él lo vea (sin
+    nombres): sus áreas y, en cada una, sus cargos con cuánta gente hay, a
+    quién le reportan (aprueba sus vacaciones) y a quién ven (mando.py)."""
+    depto = departamento if (es_super_admin(user) and departamento) else departamento_de(user)
+    d = await db.org_departamentos.find_one({'id': depto}, {'_id': 0})
+    if not d:
+        raise HTTPException(status_code=404, detail='Departamento no encontrado')
+    areas = _ordenar_arbol(await areas_de(depto))
+    cargos = {c['id']: c for c in await cargos_de(depto)}
+    gente = await mando.gente_de(depto)
+    por_id = {u['id']: u for u in gente}
+    perfil = await mando.por_perfil()
+
+    def grupo_de(u):
+        return f"{u.get('area_id') or '-'}|{u.get('cargo_id') or '-'}"
+
+    grupos, reportan = {}, Counter()
+    for u in gente:
+        gid = grupo_de(u)
+        c = cargos.get(u.get('cargo_id')) or {}
+        g = grupos.setdefault(gid, {
+            'id': gid, 'area_id': u.get('area_id'), 'cargo_id': u.get('cargo_id'),
+            'cargo': c.get('nombre') or u.get('position') or 'Sin cargo', 'nivel': mando.nivel_de(u),
+            'jefe_depto': es_jefe_depto(u), 'personas': 0, 'aprueba': False,
+            'aprobadores': set(), 've': set(), 've_personas': set()})
+        g['personas'] += 1
+        g['aprueba'] = g['aprueba'] or es_jefe_depto(u) or mando.aprueba(u, perfil)
+        for aid in mando.aprobadores_de(u, gente, perfil):
+            g['aprobadores'].add(grupo_de(por_id[aid]))
+            reportan[grupo_de(por_id[aid])] += 1
+        for p in mando.visibles_de(u, gente, perfil):
+            g['ve'].add(grupo_de(p))
+            g['ve_personas'].add(p['id'])
+    lista = sorted(grupos.values(), key=lambda g: (mando.RANGO.get(g['nivel'], 9), g['cargo']))
+    personas_area = Counter(u.get('area_id') for u in gente)
+    puede = puede_editar(user, depto)
+    avisos = []
+    if puede:
+        nombre_area = {a['id']: a['nombre'] for a in areas}
+        for a in areas:
+            if not personas_area.get(a['id']) and not any(h.get('padre_id') == a['id'] for h in areas):
+                avisos.append({'texto': f"{a['nombre']}: nadie registrado en esta área", 'area_id': a['id']})
+        for g in lista:
+            if g['aprueba'] and not g['jefe_depto'] and not reportan.get(g['id']) and not g['ve_personas']:
+                avisos.append({'texto': f"{g['cargo']} · {nombre_area.get(g['area_id'], 'sin área')}: no tiene a nadie a cargo",
+                               'grupo_id': g['id']})
+    return serialize_doc({
+        'departamento': {'id': d['id'], 'nombre': d['nombre']},
+        'areas': [{'id': a['id'], 'nombre': a['nombre'], 'padre_id': a.get('padre_id'), 'nivel_arbol': a['nivel_arbol'],
+                   'personas': personas_area.get(a['id'], 0)} for a in areas],
+        'grupos': [{**g, 'aprobadores': sorted(g['aprobadores']), 've': sorted(g['ve']), 've_personas': len(g['ve_personas']),
+                    'le_reportan': reportan.get(g['id'], 0)} for g in lista],
+        'personas': len(gente),
+        'puede_editar': puede,
+        'avisos': avisos,
+    })
 
 
 def filtro_departamento(depto) -> dict:
@@ -402,11 +488,13 @@ async def crear_area(data: AreaInput, user=Depends(get_current_user)):
     nombre = _txt(data.nombre, 60)
     if not nombre:
         raise HTTPException(status_code=400, detail='Escribe el nombre del área')
-    await _validar_padre(depto, data.padre_id)
+    padre = await _validar_padre(depto, data.padre_id)
     await _nombre_libre(depto, data.padre_id, nombre)
     a = {'id': new_id(), 'departamento': depto, 'nombre': nombre, 'clave': nombre, 'padre_id': data.padre_id or None,
          'sistema': False, 'orden': await db.org_areas.count_documents({'departamento': depto, 'padre_id': data.padre_id or None}),
          'created_at': now_iso(), 'created_by': user['name']}
+    if padre and padre.get('clave') == TIENDA and not padre.get('sucursal'):
+        a.update(clave=TIENDA, sucursal=nombre)  # una tienda nueva: su sucursal es el nombre
     await db.org_areas.insert_one(a)
     a.pop('_id', None)
     return serialize_doc(a)
@@ -435,8 +523,8 @@ async def editar_area(aid: str, data: AreaInput, user=Depends(get_current_user))
     await _validar_padre(a['departamento'], padre_id, mover_id=aid)
     await _nombre_libre(a['departamento'], padre_id, nombre, excluir=aid)
     sets = {'nombre': nombre, 'padre_id': padre_id, 'updated_at': now_iso()}
-    if not a.get('sistema'):
-        # las del sistema guardan su clave (la usa el código); las demás, el nombre
+    if not a.get('sistema') and not a.get('sucursal'):
+        # las del sistema y las tiendas guardan su clave (la usa el código); las demás, el nombre
         sets['clave'] = nombre
         await db.users.update_many({'area_id': aid}, {'$set': {'area': nombre}})
     await db.org_areas.update_one({'id': aid}, {'$set': sets})

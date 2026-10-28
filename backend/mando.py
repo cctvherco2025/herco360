@@ -1,25 +1,35 @@
-"""Mando: quién manda sobre quién, según el árbol de áreas y el nivel del cargo.
+"""Mando: quién aprueba a quién y a quién ve cada uno.
 
 Cada usuario guarda su departamento, su área (`area_id`), el camino desde la
-raíz (`area_path`) y el `nivel` de su cargo (ver organizacion.py). Con eso:
+raíz (`area_path`) y el `nivel` de su cargo (ver organizacion.py).
 
-- El jefe del departamento (nivel jefe_depto) manda sobre todo su departamento.
-- Un cargo de mando (gerente o jefe) manda sobre su área y todas sus
-  subáreas, a cualquier profundidad. En su misma área, solo sobre quien tiene
-  un nivel menor (un jefe no manda sobre otro jefe ni sobre el gerente).
-- Ventas Retail conserva su regla de siempre en una misma área: los cargos de
-  mando (Jefe, Gerente) mandan sobre cualquiera de su área.
+- El equipo de una persona lo da la estructura: su área y todas sus
+  subáreas; en su misma área, solo quien tiene un nivel menor (dos gerentes
+  de la misma área no están uno en el equipo del otro).
+- Qué hace con su equipo lo dice su perfil (acceso.py, «Gente a cargo»):
+  `equipo.aprobar` aprueba las vacaciones de quienes le reportan (de quien
+  es el responsable más cercano) y los ve; `equipo.ver_todo` ve los
+  calendarios y vacaciones de todo su equipo, aunque no los apruebe.
+- El jefe del departamento (nivel jefe_depto) ve a todo su departamento y
+  aprueba a quien no tiene a nadie más cerca.
+
+Mientras no se active el mando por perfil (db.config 'mando_por_perfil',
+lo activa scripts/estructura_mando.py) sigue la regla de antes: aprueban y
+ven a todo su equipo los cargos de mando, y en Ventas Retail los de mando
+mandan sobre cualquiera de su misma área.
 
 Se usa para: aprobar vacaciones (el responsable más cercano), ver calendarios
-del equipo y asignar/validar tareas en los departamentos que trabajan por mando.
+y vacaciones del equipo y asignar tareas en las áreas que trabajan por mando.
 """
-from core import db, RETAIL, departamento_de, es_retail, es_jefe_depto, mismo_depto, filtro_departamento
+import acceso
+from core import db, departamento_de, es_retail, es_jefe_depto, mismo_depto, filtro_departamento
 
 RANGO = {'jefe_depto': 0, 'gerente': 1, 'jefe': 2, 'coordinador': 3, 'colaborador': 4}
 # Retail: cargos de mando de siempre (para usuarios aún sin nivel)
 MANDO_RETAIL = {'Jefe', 'Gerente', 'Director comercial'}
 NIVEL_POR_CARGO = {'Director comercial': 'jefe_depto', 'Gerente de Logística': 'jefe_depto', 'Gerente': 'gerente',
                    'Jefe': 'jefe', 'Jefe de tienda': 'jefe', 'Coordinador': 'coordinador'}
+CONFIG = 'mando_por_perfil'
 
 
 def nivel_de(u) -> str:
@@ -28,66 +38,114 @@ def nivel_de(u) -> str:
 
 
 def es_mando(u) -> bool:
-    """Tiene un cargo que manda sobre un área. En Retail, los de siempre
-    (Jefe, Gerente, Director comercial: el Jefe de tienda no aprueba vacaciones)."""
+    """Regla de antes: tiene un cargo que manda sobre un área. En Retail, los
+    de siempre (Jefe, Gerente, Director comercial: el Jefe de tienda no
+    aprueba vacaciones). La siguen usando Tareas y las solicitudes de antes."""
     if es_retail(u):
         return ((u or {}).get('position') or '').strip() in MANDO_RETAIL
     return nivel_de(u) in ('jefe_depto', 'gerente', 'jefe')
 
 
-def manda_sobre(jefe, persona) -> bool:
+async def por_perfil() -> bool:
+    """¿Ya manda el perfil (equipo.aprobar / equipo.ver_todo)?"""
+    return bool(await db.config.find_one({'_id': CONFIG, 'activo': True}, {'_id': 1}))
+
+
+# --------------------------------------------------------------------------- #
+#  Reglas (sin base: reciben a la gente ya cargada; las usa también el script)
+# --------------------------------------------------------------------------- #
+def aprueba(u, perfil: bool) -> bool:
+    return acceso.tiene(u, 'equipo.aprobar') if perfil else es_mando(u)
+
+
+def ve_todo(u, perfil: bool) -> bool:
+    return acceso.tiene(u, 'equipo.ver_todo') if perfil else es_mando(u)
+
+
+def _camino(u) -> list:
+    return (u or {}).get('area_path') or ([u['area_id']] if (u or {}).get('area_id') else [])
+
+
+def en_equipo(jefe, persona, perfil: bool) -> bool:
+    """¿`persona` está debajo de `jefe` en la estructura?"""
     if not jefe or not persona or jefe.get('id') == persona.get('id') or not mismo_depto(jefe, persona):
         return False
     if es_jefe_depto(jefe):
         return True
-    if not es_mando(jefe) or not jefe.get('area_id'):
-        return False
-    camino = persona.get('area_path') or ([persona['area_id']] if persona.get('area_id') else [])
-    if jefe['area_id'] not in camino:
+    if not jefe.get('area_id') or jefe['area_id'] not in _camino(persona):
         return False
     if persona.get('area_id') != jefe['area_id']:
         return True  # está en una subárea
-    if es_retail(jefe):
-        return True  # Retail: en la misma área, como siempre
+    if not perfil and es_retail(jefe):
+        return True  # regla de antes: en Retail, cualquiera de su misma área
     return RANGO.get(nivel_de(persona), 9) > RANGO.get(nivel_de(jefe), 9)
 
 
-PROY = {'_id': 0, 'id': 1, 'name': 1, 'avatar_url': 1, 'position': 1, 'area': 1, 'area_id': 1, 'area_path': 1,
-        'nivel': 1, 'departamento': 1, 'status': 1}
+def aprobadores_de(persona, gente: list, perfil: bool) -> list:
+    """Quién aprueba lo de `persona`: quienes aprueban en el área más cercana
+    hacia arriba y la tienen en su equipo; si no hay nadie, el jefe del
+    departamento. `gente`: los aprobados de su departamento."""
+    otros = [c for c in gente if c.get('id') != persona.get('id')]
+    for area_id in reversed(_camino(persona)):
+        cerca = [c['id'] for c in otros if c.get('area_id') == area_id and not es_jefe_depto(c)
+                 and aprueba(c, perfil) and en_equipo(c, persona, perfil)]
+        if cerca:
+            return cerca
+    return [j['id'] for j in otros if es_jefe_depto(j)]
+
+
+def visibles_de(jefe, gente: list, perfil: bool) -> list:
+    """A quién ve `jefe` (calendarios y vacaciones): todo el departamento el
+    jefe del departamento; si no, todo su equipo o solo quienes le reportan."""
+    if es_jefe_depto(jefe):
+        return [p for p in gente if p.get('id') != jefe.get('id') and mismo_depto(jefe, p)]
+    equipo = [p for p in gente if en_equipo(jefe, p, perfil)]
+    if ve_todo(jefe, perfil):
+        return equipo
+    if aprueba(jefe, perfil):
+        return [p for p in equipo if jefe['id'] in aprobadores_de(p, gente, perfil)]
+    return []
+
+
+# --------------------------------------------------------------------------- #
+#  Con la base
+# --------------------------------------------------------------------------- #
+async def gente_de(depto, solo_aprobados=True) -> list:
+    q = filtro_departamento(depto)
+    if solo_aprobados:
+        q = {**q, 'status': 'approved'}
+    return await db.users.find(q, {'_id': 0, 'password_hash': 0}).to_list(3000)
 
 
 async def subordinados(jefe, solo_aprobados=True) -> list:
-    """Personas sobre las que `jefe` manda (de su departamento)."""
+    """Personas que `jefe` ve (de su departamento)."""
     if not jefe:
         return []
-    q = {**filtro_departamento(departamento_de(jefe)), 'id': {'$ne': jefe['id']}}
-    if solo_aprobados:
-        q['status'] = 'approved'
-    if not es_jefe_depto(jefe):
-        if not es_mando(jefe) or not jefe.get('area_id'):
-            return []
-        q['$or'] = [{'area_path': jefe['area_id']}, {'area_id': jefe['area_id']}]
-    rows = await db.users.find(q, PROY).to_list(3000)
-    return [p for p in rows if manda_sobre(jefe, p)]
+    return visibles_de(jefe, await gente_de(departamento_de(jefe), solo_aprobados), await por_perfil())
 
 
 async def ids_subordinados(jefe) -> list:
     return [p['id'] for p in await subordinados(jefe)]
 
 
+async def ve_a(jefe, persona) -> bool:
+    """¿Puede ver el calendario de `persona`?"""
+    if not jefe or not persona or not mismo_depto(jefe, persona):
+        return False
+    return persona.get('id') in await ids_subordinados(jefe)
+
+
 async def responsables_cercanos(persona) -> list:
-    """Quién aprueba lo de `persona`: los cargos de mando del área más cercana
-    hacia arriba que mandan sobre ella; si no hay ninguno, el jefe del
-    departamento. Devuelve ids (sin la persona)."""
-    depto = departamento_de(persona)
-    camino = persona.get('area_path') or ([persona['area_id']] if persona.get('area_id') else [])
-    base = {**filtro_departamento(depto), 'status': 'approved', 'id': {'$ne': persona.get('id')}}
-    for area_id in reversed(camino):
-        candidatos = await db.users.find({**base, 'area_id': area_id}, PROY).to_list(200)
-        cerca = [c['id'] for c in candidatos if not es_jefe_depto(c) and manda_sobre(c, persona)]
-        if cerca:
-            return cerca
-    jefes = await db.users.find({**base, '$or': [{'nivel': 'jefe_depto'}, {'nivel': {'$exists': False},
-                                                  'position': {'$in': ['Director comercial', 'Gerente de Logística']}}]},
-                                PROY).to_list(50)
-    return [j['id'] for j in jefes if es_jefe_depto(j)]
+    """Quién aprueba lo de `persona` (ids, sin la persona)."""
+    return aprobadores_de(persona, await gente_de(departamento_de(persona)), await por_perfil())
+
+
+async def resumen(u) -> dict:
+    """Para la pantalla: ¿aprueba a alguien? ¿ve a su equipo?"""
+    perfil = await por_perfil()
+    jefe = es_jefe_depto(u)
+    return {'aprueba': jefe or aprueba(u, perfil), 've_equipo': jefe or aprueba(u, perfil) or ve_todo(u, perfil)}
+
+
+async def tiene_equipo(u) -> bool:
+    return (await resumen(u))['ve_equipo']

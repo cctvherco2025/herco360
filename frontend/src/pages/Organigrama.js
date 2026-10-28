@@ -1,15 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import {
-  Crown, ClipboardCheck, Headphones, Globe, Map, CreditCard, Store, Coins,
-  Check, X, Printer, Info, Plus, Pencil, Trash2,
-} from 'lucide-react';
+import { Check, X, Printer, Info, Plus, Pencil, Trash2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { canAccessOrgChart, RETAIL, departamentoDe, esSuperAdmin } from '@/lib/constants';
 import { useEstructura } from '@/lib/organizacion';
 import { CargosDepto, NuevoDepartamento, AccionesDepartamento, destinosPosibles } from '@/components/OrgAdmin';
 import { PerfilesAcceso, PerfilPorCargo, PersonasAcceso } from '@/components/AccesoAdmin';
+import OrganigramaVivo from '@/components/OrganigramaVivo';
 import { NativeSelect } from '@/components/recorridos/RecorridoWizard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,64 +23,6 @@ const C = {
   purple: '#712146',
   red: '#dc2626',
 };
-
-// ---- Org-chart departments (dependen del Director Comercial) ----
-// Cada rol es un texto o { label, level }: level indica cuántos niveles cuelga
-// del primero (ej. Gerente H1 → Jefes de tienda → Coordinadores).
-const DEPARTMENTS = [
-  { name: 'ECCP', color: C.navy, icon: ClipboardCheck, roles: ['Jefe de ECCP', { label: 'Coordinadores de ECCP', level: 1 }] },
-  { name: 'Centro de Servicio', color: C.cyan, icon: Headphones, roles: ['Jefe de Centro de Servicio'] },
-  { name: 'Negocios Remotos', color: C.purple, icon: Globe, roles: ['Jefe de Negocios Remotos'] },
-  { name: 'Negocios País', color: C.green, icon: Map, roles: ['Gerente de Negocios País'] },
-  { name: 'Cajas', color: C.orange, icon: CreditCard, roles: ['Jefe de Cajas', { label: 'Coordinador de Cajas', level: 1 }] },
-  {
-    name: 'Operación Tienda', color: C.sky, icon: Store,
-    roles: [
-      'Gerente de Operación Tienda',
-      { label: 'Gerente H1', level: 1 }, { label: 'Jefes de tienda H1', level: 2 }, { label: 'Coordinadores H1', level: 3 },
-      { label: 'Gerente H2', level: 1 }, { label: 'Jefe de tienda H2', level: 2 }, { label: 'Coordinadores H2', level: 3 },
-      { label: 'Gerente H4', level: 1 }, { label: 'Gerente H5', level: 1 }, { label: 'Gerente H6', level: 1 },
-    ],
-  },
-  { name: 'Ferrecrédito', color: C.red, icon: Coins, roles: ['Jefe de Ferrecrédito'] },
-];
-
-function DeptCard({ dept }) {
-  const Icon = dept.icon;
-  return (
-    <div className="flex flex-col items-center" data-testid={`org-dept-${dept.name}`}>
-      {/* connector down from top rail */}
-      <span className="h-5 w-px" style={{ background: '#cbd5e1' }} />
-      <div
-        className="w-full rounded-2xl border bg-card px-3 py-3 text-center shadow-sm"
-        style={{ borderTopColor: dept.color, borderTopWidth: 3 }}
-      >
-        <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: `${dept.color}1a` }}>
-          <Icon className="h-5 w-5" style={{ color: dept.color }} />
-        </div>
-        <p className="text-[13px] font-semibold leading-tight text-foreground">{dept.name}</p>
-      </div>
-      {/* sub-roles */}
-      <span className="h-4 w-px" style={{ background: '#e2e8f0' }} />
-      <div className="w-full space-y-1.5">
-        {dept.roles.map((r) => {
-          const { label, level = 0 } = typeof r === 'string' ? { label: r } : r;
-          return (
-            <div key={label} className="flex items-center" style={{ paddingLeft: Math.max(0, level - 1) * 8 }}>
-              {level > 0 && <span className="mr-1 text-[11px] leading-none text-muted-foreground/60">└</span>}
-              <div
-                className={`flex-1 min-w-0 rounded-lg border px-2 py-1.5 text-center text-[11.5px] font-medium leading-tight ${level === 0 ? 'bg-muted/60 text-foreground' : 'bg-muted/40 text-muted-foreground'}`}
-                style={{ borderLeftColor: dept.color, borderLeftWidth: 3 }}
-              >
-                {label}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 // Árbol de áreas de un departamento (sin límite de niveles) con su gente.
 // Quien puede editar (super admin; admins y jefe del departamento) agrega
@@ -162,7 +102,7 @@ function AreaNodo({ area, hijas, gente, editable, acciones, todas, nivel = 0 }) 
   );
 }
 
-function OrganigramaDepto({ depto, recargar, titulo }) {
+function OrganigramaDepto({ depto, recargar }) {
   const [gente, setGente] = useState([]);
   const [nueva, setNueva] = useState(null);
   useEffect(() => {
@@ -180,16 +120,14 @@ function OrganigramaDepto({ depto, recargar, titulo }) {
     quitar: (a) => llamar(() => api.delete(`/org/areas/${a.id}`), 'Área quitada'),
   };
   const hijas = (pid) => depto.areas.filter((a) => (a.padre_id || null) === pid);
-  const jefes = gente.filter((u) => u.nivel === 'jefe_depto');
   const sinArea = gente.filter((u) => u.nivel !== 'jefe_depto' && !u.area_id);
-  const cargoJefe = depto.cargos.find((c) => c.nivel === 'jefe_depto');
 
   return (
     <section className="mb-8 rounded-[22px] border bg-card p-5 sm:p-7 shadow-card" data-testid="org-depto">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="h-6 w-1.5 rounded-full" style={{ background: C.green }} />
-          <h2 className="font-heading text-lg font-semibold text-foreground">{titulo || `Jerarquía de ${depto.nombre}`}</h2>
+          <h2 className="font-heading text-lg font-semibold text-foreground">Áreas y subáreas de {depto.nombre}</h2>
         </div>
         {depto.puede_editar && (
           <Button variant="outline" size="sm" className="rounded-xl no-print" onClick={() => setNueva('')} data-testid="org-area-nueva">
@@ -197,21 +135,6 @@ function OrganigramaDepto({ depto, recargar, titulo }) {
           </Button>
         )}
       </div>
-
-      {!titulo && (
-        <div className="mb-4 flex flex-col items-center">
-          <div className="w-full max-w-md rounded-2xl px-6 py-4 text-center shadow-md"
-            style={{ background: `linear-gradient(135deg, ${C.green}, #0f6b33)` }} data-testid="org-jefe-depto">
-            <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-white/15">
-              <Crown className="h-6 w-6 text-white" />
-            </div>
-            <p className="text-base font-semibold text-white">{cargoJefe?.nombre || 'Jefe del departamento'}</p>
-            <p className="text-[12px] text-white/80">
-              {jefes.length ? jefes.map((g) => g.name).join(', ') : 'Sin asignar'} · manda en todo {depto.nombre}
-            </p>
-          </div>
-        </div>
-      )}
 
       {nueva !== null && (
         <form className="mb-3 flex gap-1.5" onSubmit={async (e) => { e.preventDefault(); if (await acciones.crear(nueva)) setNueva(null); }}>
@@ -239,7 +162,7 @@ function OrganigramaDepto({ depto, recargar, titulo }) {
       )}
       <p className="mt-4 flex items-start gap-1.5 text-[12px] text-muted-foreground">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: C.orange }} />
-        Las áreas pueden tener subáreas sin límite (agrégalas con +; con el lápiz se renombran o se mueven). El jefe de un área manda sobre ella y todo lo que cuelga.
+        Las áreas pueden tener subáreas sin límite (agrégalas con +; con el lápiz se renombran o se mueven). El equipo de cada cargo es su área y lo que cuelga de ella; quién aprueba y a quién ve se define en Perfiles › Gente a cargo.
       </p>
     </section>
   );
@@ -254,7 +177,7 @@ export default function Organigrama() {
   // el super admin elige el departamento; los demás ven el suyo
   const [vista, setVista] = useState(departamentoDe(user));
   const [seccion, setSeccion] = useState('estructura');
-  if (!canAccessOrgChart(user)) return <Navigate to="/" replace />;
+  if (!canAccessOrgChart(user)) return <SoloOrganigrama />;
   const deptos = estructura?.departamentos || [];
   const depto = deptos.find((d) => d.id === (superAdmin ? vista : departamentoDe(user)));
   if (!estructura) return <p className="py-16 text-center text-sm text-muted-foreground">Cargando…</p>;
@@ -277,36 +200,14 @@ export default function Organigrama() {
 
       {seccion === 'estructura' && (
         <>
-          {/* Organigrama de Retail */}
-          {depto.id === RETAIL && (
-            <section className="mb-8 rounded-[22px] border bg-card p-5 sm:p-7 shadow-card" data-testid="org-section">
-              <div className="mb-5 flex items-center gap-2">
-                <span className="h-6 w-1.5 rounded-full" style={{ background: C.navy }} />
-                <h2 className="font-heading text-lg font-semibold text-foreground">Jerarquía organizacional</h2>
-              </div>
-      
-              {/* Director card */}
-              <div className="flex flex-col items-center">
-                <div className="w-full max-w-md rounded-2xl px-6 py-4 text-center shadow-md"
-                  style={{ background: `linear-gradient(135deg, ${C.navy}, #16294a)` }} data-testid="org-director">
-                  <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-white/15">
-                    <Crown className="h-6 w-6 text-white" />
-                  </div>
-                  <p className="text-base font-semibold text-white">Director Comercial</p>
-                  <p className="text-[12px] text-white/70">Máxima autoridad · acceso total al sistema</p>
-                </div>
-                {/* vertical + horizontal rail */}
-                <span className="h-6 w-px" style={{ background: '#cbd5e1' }} />
-                <span className="h-px w-[92%]" style={{ background: '#cbd5e1' }} />
-              </div>
-      
-              {/* Departments row */}
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7 lg:gap-3 mt-0">
-                {DEPARTMENTS.map((d) => <DeptCard key={d.name} dept={d} />)}
-              </div>
-            </section>
-          )}
-          <OrganigramaDepto depto={depto} recargar={recargar} titulo={depto.id === RETAIL ? 'Áreas y subáreas de Ventas Retail' : undefined} />
+          <section className="mb-8 rounded-[22px] border bg-card p-5 sm:p-7 shadow-card" data-testid="org-section">
+            <div className="mb-4 flex items-center gap-2">
+              <span className="h-6 w-1.5 rounded-full" style={{ background: C.navy }} />
+              <h2 className="font-heading text-lg font-semibold text-foreground">Organigrama de {depto.nombre}</h2>
+            </div>
+            <OrganigramaVivo key={depto.id} departamento={depto.id} />
+          </section>
+          <OrganigramaDepto depto={depto} recargar={recargar} />
           <CargosDepto depto={depto} recargar={recargar} />
         </>
       )}
@@ -323,6 +224,25 @@ export default function Organigrama() {
           body { background: #fff !important; }
         }
       `}</style>
+    </div>
+  );
+}
+
+// Para quien no edita la estructura: el organigrama de su departamento, solo para ver.
+function SoloOrganigrama() {
+  return (
+    <div className="mx-auto max-w-[1400px] pb-10 print-area" data-testid="organigrama-solo">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-heading text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">Organigrama</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Cómo está organizado tu departamento: quién aprueba a cada cargo y a quién ve.</p>
+        </div>
+        <Button onClick={() => window.print()} className="no-print shrink-0 gap-2" style={{ background: C.navy }}>
+          <Printer className="h-4 w-4" /> Imprimir / PDF
+        </Button>
+      </div>
+      <OrganigramaVivo />
+      <style>{`@media print { .no-print { display: none !important; } aside, header { display: none !important; } body { background: #fff !important; } }`}</style>
     </div>
   );
 }

@@ -1,8 +1,8 @@
 """Vacaciones y permisos.
 
-Las aprueba el responsable más cercano (mando.responsables_cercanos): los
-cargos de mando del área más cercana hacia arriba en el árbol que mandan
-sobre la persona; si no hay, el jefe del departamento. Se calculan al pedirla
+Las aprueba el responsable más cercano (mando.responsables_cercanos): quienes
+aprueban (por su perfil) en el área más cercana hacia arriba y tienen a la
+persona en su equipo; si no hay, el jefe del departamento. Se calculan al pedirla
 (y al editarla) y se guardan en la solicitud (`aprobadores`). El jefe del
 departamento y sus admins también pueden aprobar cualquiera del departamento.
 Las solicitudes de antes (sin `aprobadores`) siguen con la regla del área."""
@@ -183,8 +183,8 @@ async def reject_request(request_id: str, data: VacationReview, user=Depends(req
 @router.get('/calendar')
 async def calendar(start: str, end: str, user=Depends(require_vacaciones_access)):
     """Vacaciones/permisos visibles en el calendario, según jerarquía: el
-    jefe del departamento y sus admins ven todo el departamento; un cargo de
-    mando, las de la gente sobre la que manda (su área y subáreas); los demás,
+    jefe del departamento y sus admins ven todo el departamento; quien tiene
+    gente a cargo, las de su equipo según su perfil (mando.py); los demás,
     las suyas."""
     q = {
         'status': {'$in': ['approved', 'pending']},
@@ -194,7 +194,7 @@ async def calendar(start: str, end: str, user=Depends(require_vacaciones_access)
     }
     if _sees_all_areas(user):
         pass
-    elif mando.es_mando(user):
+    elif await mando.tiene_equipo(user):
         q['user_id'] = {'$in': [user['id']] + await mando.ids_subordinados(user)}
     else:
         q['user_id'] = user['id']

@@ -43,6 +43,9 @@ GRUPOS = {'ver': 'Ver', 'hacer': 'Hacer', 'admin': 'Administrar'}
 MODULOS = [
     ('general', 'agenda', 'Agenda', False, []),
     ('general', 'vacaciones', 'Vacaciones', False, []),
+    ('general', 'equipo', 'Gente a cargo', False, [
+        ('equipo.ver_todo', 'Ve calendarios y vacaciones de todo su equipo', 'ver'),
+        ('equipo.aprobar', 'Aprueba las vacaciones de quienes le reportan (y los ve)', 'hacer')]),
     ('general', 'sala', 'Sala de Juntas', True, []),
     ('general', 'tareas', 'Tareas', False, [
         ('tareas.ver_equipo', 'Ver las tareas de su gente', 'ver'),
@@ -82,8 +85,10 @@ MODULO_DE = {p: m for _, m, _, _, ps in MODULOS for p, _, _ in ps}  # permiso de
 NOMBRE_MODULO = {m: n for _, m, n, _, _ in MODULOS}
 TODOS = [k for _, m, _, _, ps in MODULOS for k in [m] + [p for p, _, _ in ps]]
 SOLO_RETAIL = {k for _, m, _, sr, ps in MODULOS if sr for k in [m] + [p for p, _, _ in ps]}
-# A los de acceso total fijo estos les salen de su cargo (perfil y excepciones)
-DESDE_CARGO = {'guardias.registrar', 'recorridos.registrar', 'etiquetas.registrar'}
+# A los de acceso total fijo estos les salen de su cargo (perfil y excepciones).
+# Gente a cargo: un admin aprueba y ve a su equipo solo si su cargo lo da.
+DESDE_CARGO = {'guardias.registrar', 'recorridos.registrar', 'etiquetas.registrar',
+               'equipo', 'equipo.aprobar', 'equipo.ver_todo'}
 DESDE_CARGO_JEFE = DESDE_CARGO | {'tareas.eliminar'}
 
 
@@ -143,16 +148,18 @@ FORMS_GERENTE = ['flos', 'rutina', 'rutina.llenar', 'promos.publicar', 'formular
 ECCP = ['reportes', 'guardias', 'guardias.registrar', 'recorridos', 'recorridos.registrar',
         'etiquetas', 'etiquetas.registrar', 'etiquetas.todas', 'formularios']
 INV = ['inventario']
+APRUEBA = ['equipo', 'equipo.aprobar']   # aprueba y ve a quienes le reportan
+VE_EQUIPO = ['equipo', 'equipo.ver_todo']  # ve a todo su equipo sin aprobar
 
 PERFILES_RETAIL = [
-    ('gerente_tienda', 'Gerente de tienda', 'Gerente en Tienda', BASE + GESTOR + FORMS_GERENTE + INV + ['reportes', 'etiquetas']),
-    ('gerente_op', 'Gerente de operación', 'Gerente en Operación Tienda', BASE + GESTOR + FORMS_GERENTE + INV),
-    ('gerente', 'Gerente', 'Gerente en otras áreas', BASE + GESTOR + FORMS_GERENTE),
-    ('jefe_eccp', 'Jefe ECCP', 'Jefe en ECCP', BASE + GESTOR + ECCP + INV),
+    ('gerente_tienda', 'Gerente de tienda', 'Gerente en Tienda', BASE + GESTOR + FORMS_GERENTE + INV + APRUEBA + ['reportes', 'etiquetas']),
+    ('gerente_op', 'Gerente de operación', 'Gerente en Operación Tienda', BASE + GESTOR + FORMS_GERENTE + INV + APRUEBA),
+    ('gerente', 'Gerente', 'Gerente en otras áreas', BASE + GESTOR + FORMS_GERENTE + APRUEBA),
+    ('jefe_eccp', 'Jefe ECCP', 'Jefe en ECCP', BASE + GESTOR + ECCP + INV + APRUEBA),
     ('coord_eccp', 'Coordinador ECCP', 'Coordinador en ECCP', BASE + ECCP),
-    ('jefe_tienda', 'Jefe de tienda', 'Jefe de tienda', BASE + GESTOR + INV + ['reportes']),
+    ('jefe_tienda', 'Jefe de tienda', 'Jefe de tienda', BASE + GESTOR + INV + VE_EQUIPO + ['reportes']),
     ('coord_tienda', 'Coordinador de tienda', 'Coordinador en Tienda', BASE + INV + ['reportes']),
-    ('jefe', 'Jefe', 'Jefe en otras áreas', BASE + GESTOR),
+    ('jefe', 'Jefe', 'Jefe en otras áreas', BASE + GESTOR + APRUEBA),
     ('basico', 'Básico', 'Quien no tenga otro perfil', BASE),
 ]
 # (cargo, área o None para todo el cargo, perfil)
@@ -164,7 +171,7 @@ ASIGNACIONES_RETAIL = [
 ]
 # Otros departamentos (sus módulos de tienda no aplican)
 PERFILES_OTROS = [
-    ('jefe', 'Jefe', 'Cargos de mando', BASE + GESTOR + ['formularios']),
+    ('jefe', 'Jefe', 'Cargos de mando', BASE + GESTOR + APRUEBA + VE_EQUIPO + ['formularios']),
     ('colaborador', 'Colaborador', 'Los demás cargos', BASE + ['formularios']),
 ]
 NIVELES_DE_MANDO = ('jefe_depto', 'gerente', 'jefe')

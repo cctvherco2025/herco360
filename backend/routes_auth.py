@@ -76,7 +76,8 @@ async def login(data: LoginInput):
     user.pop('password_hash', None)
     user.pop('_id', None)
     import acceso
-    return {'token': token, 'user': {**user, 'acceso': acceso.lista(user)}}
+    import mando
+    return {'token': token, 'user': {**user, 'acceso': acceso.lista(user), 'mando': await mando.resumen(user)}}
 
 
 # Antes cambiaba la contraseña de cualquiera con solo su correo. Ahora la
@@ -100,4 +101,6 @@ async def change_password(data: ChangePasswordInput, user=Depends(get_current_us
 @router.get('/me')
 async def me(user=Depends(get_current_user)):
     import acceso
-    return {**user, 'acceso': acceso.lista(user)}  # lo que puede (perfiles o reglas de antes)
+    import mando
+    # lo que puede (perfiles o reglas de antes) y si aprueba o ve a gente a cargo
+    return {**user, 'acceso': acceso.lista(user), 'mando': await mando.resumen(user)}

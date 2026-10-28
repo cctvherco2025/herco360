@@ -21,7 +21,9 @@ export default function Register() {
   const depto = (deptos || []).find((d) => d.id === form.departamento);
   const cargos = depto?.cargos || [];
   const areas = depto?.areas || [];
-  const enTienda = areas.find((a) => a.id === form.area_id)?.clave === 'Tienda';
+  // "Tienda" sin subárea pide la sucursal; una subárea de tienda ya la trae
+  const areaElegida = areas.find((a) => a.id === form.area_id);
+  const enTienda = areaElegida?.clave === 'Tienda' && !areaElegida?.sucursal;
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
 

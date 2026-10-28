@@ -102,7 +102,9 @@ export default function Usuarios() {
   const areasForm = deptoForm?.areas || [];
   const cargoSel = cargosForm.find((c) => c.id === form.cargo_id);
   const areaOpcional = cargoSel?.nivel === 'jefe_depto';
-  const enTienda = areasForm.find((a) => a.id === form.area_id)?.clave === 'Tienda';
+  // "Tienda" sin subárea pide la sucursal; una subárea de tienda ya la trae
+  const areaElegida = areasForm.find((a) => a.id === form.area_id);
+  const enTienda = areaElegida?.clave === 'Tienda' && !areaElegida?.sucursal;
 
   const openCreate = () => {
     setEditing(null);

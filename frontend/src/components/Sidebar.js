@@ -243,9 +243,12 @@ function SidebarContent({ onNavigate }) {
     navItems.splice(idx >= 0 ? idx + 1 : navItems.length - 1, 0,
       activosChildren.length === 1 ? activosChildren[0] : { label: 'Activos', icon: Package, testid: 'sidebar-nav-grupo-activos', tour: 'menu-grupo-activos', children: activosChildren });
   }
-  if (canAccessOrgChart(user)) {
+  // quien edita la estructura entra a Jerarquía y permisos; los demás, solo al organigrama
+  {
     const idx = navItems.findIndex((n) => n.to === '/usuarios');
-    navItems.splice(idx >= 0 ? idx + 1 : navItems.length - 1, 0, { to: '/organigrama', label: 'Jerarquía y permisos', icon: Network, testid: 'sidebar-nav-organigrama' });
+    navItems.splice(idx >= 0 ? idx + 1 : navItems.length - 1, 0, canAccessOrgChart(user)
+      ? { to: '/organigrama', label: 'Jerarquía y permisos', icon: Network, testid: 'sidebar-nav-organigrama' }
+      : { to: '/organigrama', label: 'Organigrama', icon: Network, testid: 'sidebar-nav-organigrama' });
   }
   // Vacaciones se quita al final (no antes) para no mover los índices en los
   // que se insertan Inventario/Reportes arriba.

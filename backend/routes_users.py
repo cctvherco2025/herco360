@@ -51,7 +51,7 @@ async def normalizar_depto(depto: str, datos: dict) -> dict:
     """Cargo, área y tienda dentro del departamento, según su estructura
     (organizacion). `datos` trae ids (cargo_id/area_id) o nombres
     (position/area). Retail: el Director comercial va en Casa Matriz y solo el
-    área Tienda tiene sucursal."""
+    área Tienda tiene sucursal (la de su subárea de tienda, si está en una)."""
     if not await organizacion.existe_departamento(depto):
         raise HTTPException(status_code=400, detail='Elige un departamento válido')
     area_nombre = (datos.get('area') or '').strip() or None
@@ -59,8 +59,9 @@ async def normalizar_depto(depto: str, datos: dict) -> dict:
     if depto == RETAIL and cargo_nombre == 'Director comercial' and not datos.get('area_id'):
         area_nombre = 'Casa Matriz'
     out = await organizacion.resolver(depto, cargo_id=datos.get('cargo_id'), area_id=datos.get('area_id'),
-                                      cargo_nombre=cargo_nombre, area_nombre=area_nombre)
-    out['sucursal'] = (datos.get('sucursal') or '') if (depto == RETAIL and out['area'] == 'Tienda') else 'Casa Matriz'
+                                      cargo_nombre=cargo_nombre, area_nombre=area_nombre, sucursal=datos.get('sucursal'))
+    de_la_tienda = out.pop('sucursal_area', None)  # la subárea de su tienda manda
+    out['sucursal'] = (de_la_tienda or datos.get('sucursal') or '') if (depto == RETAIL and out['area'] == 'Tienda') else 'Casa Matriz'
     return out
 
 
@@ -86,8 +87,8 @@ MANAGER_POSITIONS = {'Jefe', 'Gerente', 'Director comercial', 'Gerente de Logís
 @router.get('/team')
 async def team_calendars(user=Depends(get_current_user)):
     """Calendarios que la persona puede superponer: su departamento entero
-    (admins y jefe del departamento) o la gente sobre la que manda (su área y
-    subáreas, ver mando.py)."""
+    (admins y jefe del departamento) o su gente a cargo según su perfil (su
+    área y subáreas, ver mando.py)."""
     sees_all = user.get('role') == 'admin' or es_jefe_depto(user)
     if sees_all:
         q = {'status': 'approved', 'id': {'$ne': user['id']}, **filtro_depto(user)}
