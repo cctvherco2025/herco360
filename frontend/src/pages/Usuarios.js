@@ -9,7 +9,7 @@ import {
   SUCURSALES, RETAIL, departamentoDe, puedeGestionarUsuarios, esSuperAdmin, esJefeDepto,
 } from '@/lib/constants';
 import { useEstructura, nombreDepto, tonoDepto } from '@/lib/organizacion';
-import { ExcepcionesAcceso } from '@/components/AccesoAdmin';
+import { ExcepcionesAcceso, confirmarQuitarAcceso } from '@/components/AccesoAdmin';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -130,6 +130,8 @@ export default function Usuarios() {
     if (!form.cargo_id) { toast.error('Selecciona el cargo'); return; }
     if (!areaOpcional && !form.area_id) { toast.error('Selecciona el área'); return; }
     if (enTienda && !form.sucursal) { toast.error('Selecciona la tienda/sucursal'); return; }
+    if (editing && Object.keys(excepciones).length
+      && !(await confirmarQuitarAcceso([{ usuario_id: editing.id, excepciones }]))) return;
     setSaving(true);
     try {
       if (editing) {

@@ -7,6 +7,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { lazyWithRetry } from '@/lib/lazyWithRetry';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import ConModulo from '@/components/ConModulo';
 import AppLayout from '@/components/AppLayout';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
@@ -70,37 +71,37 @@ function App() {
             <Route path="/sala" element={<SalaPublica />} />
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/" element={<Dashboard />} />
-              <Route path="/agenda" element={<Agenda />} />
-              <Route path="/vacaciones" element={<Vacaciones />} />
-              <Route path="/sala-de-juntas" element={<SalaDeJuntas />} />
-              <Route path="/inventario" element={<Inventario />} />
-              <Route path="/reportes" element={<Reportes />} />
-              <Route path="/reportes-cams" element={<Suspense fallback={<PageFallback />}><ReportesCams /></Suspense>} />
-              <Route path="/formularios" element={<FormulariosHub />} />
-              <Route path="/formularios/promociones" element={<PromocionesHome />} />
-              <Route path="/formularios/promociones/nuevo" element={<Suspense fallback={<PageFallback />}><PromoPublishWizardPage /></Suspense>} />
-              <Route path="/formulario" element={<Suspense fallback={<PageFallback />}><Formulario /></Suspense>} />
-              <Route path="/rutina-operativa" element={<Suspense fallback={<PageFallback />}><RutinaOperativa /></Suspense>} />
-              <Route path="/revision-guardias" element={<Suspense fallback={<PageFallback />}><RevisionGuardias /></Suspense>} />
-              <Route path="/recorridos-preventivos" element={<Suspense fallback={<PageFallback />}><RecorridosPreventivos /></Suspense>} />
-              <Route path="/auditoria-etiquetas" element={<Suspense fallback={<PageFallback />}><AuditoriaEtiquetas /></Suspense>} />
-              <Route path="/activos" element={<Suspense fallback={<PageFallback />}><Activos /></Suspense>} />
-              <Route path="/activos/categorias" element={<Suspense fallback={<PageFallback />}><ActivosCategorias /></Suspense>} />
-              <Route path="/activos/:id" element={<Suspense fallback={<PageFallback />}><ActivoDetalle /></Suspense>} />
-              <Route path="/mantenimiento" element={<Suspense fallback={<PageFallback />}><MisMantenimientos /></Suspense>} />
-              <Route path="/mantenimiento/tareas/:id" element={<Suspense fallback={<PageFallback />}><MantTarea /></Suspense>} />
-              <Route path="/mantenimiento/planificaciones" element={<Suspense fallback={<PageFallback />}><MantPlanes /></Suspense>} />
-              <Route path="/mantenimiento/planificaciones/nueva" element={<Suspense fallback={<PageFallback />}><MantPlanForm /></Suspense>} />
-              <Route path="/mantenimiento/planificaciones/:id/editar" element={<Suspense fallback={<PageFallback />}><MantPlanForm /></Suspense>} />
-              <Route path="/mantenimiento/planificaciones/:id" element={<Suspense fallback={<PageFallback />}><MantPlanDetalle /></Suspense>} />
-              <Route path="/mantenimiento/checklists" element={<Suspense fallback={<PageFallback />}><MantChecklists /></Suspense>} />
-              <Route path="/formularios/nuevo" element={<Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense>} />
-              <Route path="/formularios/custom/:id/editar" element={<Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense>} />
+              <Route path="/agenda" element={<ConModulo modulo={'agenda'} nombre="Agenda"><Agenda /></ConModulo>} />
+              <Route path="/vacaciones" element={<ConModulo modulo={'vacaciones'} nombre="Vacaciones"><Vacaciones /></ConModulo>} />
+              <Route path="/sala-de-juntas" element={<ConModulo modulo={'sala'} nombre="Sala de Juntas"><SalaDeJuntas /></ConModulo>} />
+              <Route path="/inventario" element={<ConModulo modulo={'inventario'} nombre="Inventarios Autoservicio"><Inventario /></ConModulo>} />
+              <Route path="/reportes" element={<ConModulo modulo={'reportes'} nombre="Reportes"><Reportes /></ConModulo>} />
+              <Route path="/reportes-cams" element={<ConModulo modulo={'cams'} nombre="Reportes CAMS"><Suspense fallback={<PageFallback />}><ReportesCams /></Suspense></ConModulo>} />
+              <Route path="/formularios" element={<ConModulo modulo={'formularios'} nombre="Formularios"><FormulariosHub /></ConModulo>} />
+              <Route path="/formularios/promociones" element={<ConModulo modulo={'promos'} nombre="Promociones del mes"><PromocionesHome /></ConModulo>} />
+              <Route path="/formularios/promociones/nuevo" element={<ConModulo modulo={'promos'} nombre="Promociones del mes"><Suspense fallback={<PageFallback />}><PromoPublishWizardPage /></Suspense></ConModulo>} />
+              <Route path="/formulario" element={<ConModulo modulo={'flos'} nombre="Evaluación FLOS"><Suspense fallback={<PageFallback />}><Formulario /></Suspense></ConModulo>} />
+              <Route path="/rutina-operativa" element={<ConModulo modulo={'rutina'} nombre="Rutina Operativa"><Suspense fallback={<PageFallback />}><RutinaOperativa /></Suspense></ConModulo>} />
+              <Route path="/revision-guardias" element={<ConModulo modulo={'guardias'} nombre="Revisión de Guardias"><Suspense fallback={<PageFallback />}><RevisionGuardias /></Suspense></ConModulo>} />
+              <Route path="/recorridos-preventivos" element={<ConModulo modulo={'recorridos'} nombre="Recorridos Preventivos"><Suspense fallback={<PageFallback />}><RecorridosPreventivos /></Suspense></ConModulo>} />
+              <Route path="/auditoria-etiquetas" element={<ConModulo modulo={'etiquetas'} nombre="Auditoría de Etiquetas"><Suspense fallback={<PageFallback />}><AuditoriaEtiquetas /></Suspense></ConModulo>} />
+              <Route path="/activos" element={<ConModulo modulo={'activos'} nombre="Activos"><Suspense fallback={<PageFallback />}><Activos /></Suspense></ConModulo>} />
+              <Route path="/activos/categorias" element={<ConModulo modulo={'activos'} nombre="Activos"><Suspense fallback={<PageFallback />}><ActivosCategorias /></Suspense></ConModulo>} />
+              <Route path="/activos/:id" element={<ConModulo modulo={'activos'} nombre="Activos"><Suspense fallback={<PageFallback />}><ActivoDetalle /></Suspense></ConModulo>} />
+              <Route path="/mantenimiento" element={<ConModulo modulo={'mis_mant'} nombre="Mis mantenimientos"><Suspense fallback={<PageFallback />}><MisMantenimientos /></Suspense></ConModulo>} />
+              <Route path="/mantenimiento/tareas/:id" element={<ConModulo modulo={['mis_mant', 'planes']} nombre="Mis mantenimientos"><Suspense fallback={<PageFallback />}><MantTarea /></Suspense></ConModulo>} />
+              <Route path="/mantenimiento/planificaciones" element={<ConModulo modulo={'planes'} nombre="Planificaciones"><Suspense fallback={<PageFallback />}><MantPlanes /></Suspense></ConModulo>} />
+              <Route path="/mantenimiento/planificaciones/nueva" element={<ConModulo modulo={'planes'} nombre="Planificaciones"><Suspense fallback={<PageFallback />}><MantPlanForm /></Suspense></ConModulo>} />
+              <Route path="/mantenimiento/planificaciones/:id/editar" element={<ConModulo modulo={'planes'} nombre="Planificaciones"><Suspense fallback={<PageFallback />}><MantPlanForm /></Suspense></ConModulo>} />
+              <Route path="/mantenimiento/planificaciones/:id" element={<ConModulo modulo={'planes'} nombre="Planificaciones"><Suspense fallback={<PageFallback />}><MantPlanDetalle /></Suspense></ConModulo>} />
+              <Route path="/mantenimiento/checklists" element={<ConModulo modulo={'checklists'} nombre="Checklists"><Suspense fallback={<PageFallback />}><MantChecklists /></Suspense></ConModulo>} />
+              <Route path="/formularios/nuevo" element={<ConModulo modulo={'formularios'} nombre="Formularios"><Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense></ConModulo>} />
+              <Route path="/formularios/custom/:id/editar" element={<ConModulo modulo={'formularios'} nombre="Formularios"><Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense></ConModulo>} />
               <Route path="/formularios/custom/:id" element={<Suspense fallback={<PageFallback />}><CustomFormPage /></Suspense>} />
-              <Route path="/formularios/tickets" element={<Suspense fallback={<PageFallback />}><Tickets /></Suspense>} />
-              <Route path="/formularios/tickets/:id" element={<Suspense fallback={<PageFallback />}><TicketDetalle /></Suspense>} />
-              <Route path="/tareas" element={<Suspense fallback={<PageFallback />}><Tareas /></Suspense>} />
-              <Route path="/tareas/:id" element={<Suspense fallback={<PageFallback />}><TareaDetalle /></Suspense>} />
+              <Route path="/formularios/tickets" element={<ConModulo modulo={'seguimientos'} nombre="Seguimientos"><Suspense fallback={<PageFallback />}><Tickets /></Suspense></ConModulo>} />
+              <Route path="/formularios/tickets/:id" element={<ConModulo modulo={'seguimientos'} nombre="Seguimientos"><Suspense fallback={<PageFallback />}><TicketDetalle /></Suspense></ConModulo>} />
+              <Route path="/tareas" element={<ConModulo modulo={'tareas'} nombre="Tareas"><Suspense fallback={<PageFallback />}><Tareas /></Suspense></ConModulo>} />
+              <Route path="/tareas/:id" element={<ConModulo modulo={'tareas'} nombre="Tareas"><Suspense fallback={<PageFallback />}><TareaDetalle /></Suspense></ConModulo>} />
               <Route path="/usuarios" element={<Usuarios />} />
               <Route path="/organigrama" element={<Organigrama />} />
               <Route path="/configuracion" element={<Configuracion />} />

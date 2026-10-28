@@ -136,7 +136,7 @@ export function esCoordinadorTienda(user) {
   return !!tiendaPromos(user) && (user?.position || '').trim() === 'Coordinador' && (user?.area || '').trim() === 'Tienda';
 }
 // Formulario → Tickets: quien contesta, quien revisa o quien administra Promociones.
-export const puedeVerTickets = (user) => esCoordinadorTienda(user) || esRevisorTienda(user) || canAdminPromos(user);
+export const puedeVerTickets = (user) => puede(user, 'seguimientos') && (esCoordinadorTienda(user) || esRevisorTienda(user) || canAdminPromos(user));
 
 // ---- Tareas de tienda (módulo aparte de Tickets) ----
 // Supervisor = admin o Director comercial (ven y validan todas las tiendas);
@@ -146,8 +146,8 @@ export const esSupervisorTareas = (user) => user?.role === 'admin' || (user?.pos
 const deLogistica = fueraDeRetail;
 // Permisos por acción ('tareas.crear'…), del perfil de la persona.
 export const tienePermiso = (user, accion) => puede(user, accion);
-export const puedeVerTareas = (user) => esRevisorTienda(user) || esCoordinadorTienda(user) || esSupervisorTareas(user) || deLogistica(user)
-  || tienePermiso(user, 'tareas.ver_equipo') || tienePermiso(user, 'tareas.crear');
+export const puedeVerTareas = (user) => puede(user, 'tareas') && (esRevisorTienda(user) || esCoordinadorTienda(user) || esSupervisorTareas(user) || deLogistica(user)
+  || tienePermiso(user, 'tareas.ver_equipo') || tienePermiso(user, 'tareas.crear'));
 // Crea quien tiene el permiso y gente a cargo: gerente y jefe de tienda (a
 // su tienda); el jefe del departamento y los admins (a todo el
 // departamento); un jefe o gerente de área (a su área y subáreas).

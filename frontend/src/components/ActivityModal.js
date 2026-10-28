@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { ACTIVITY_COLORS, DEFAULT_ACTIVITY_COLOR, esRetail, esSuperAdmin } from '@/lib/constants';
+import { ACTIVITY_COLORS, DEFAULT_ACTIVITY_COLOR, puede } from '@/lib/constants';
 import { ymd, fmtHora } from '@/lib/time';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -164,7 +164,7 @@ function DetalleActividad({ activity }) {
 export default function ActivityModal({ open, onOpenChange, activity, defaultDate, defaultTime, onSaved }) {
   const { user } = useAuth();
   // la Sala de Juntas es de Ventas Retail
-  const conSala = esSuperAdmin(user) || esRetail(user);
+  const conSala = puede(user, 'sala'); // apartar la Sala de Juntas: con su módulo encendido
   const [form, setForm] = useState(empty(defaultDate, defaultTime));
   // Una actividad existente se abre primero en modo "ver"; el creador (o un
   // admin) pasa a "editar" con el botón Editar.
@@ -180,7 +180,7 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
 
   useEffect(() => {
     if (open) {
-      api.get('/users?status=approved').then(({ data }) => setUsers(data.filter((u) => u.id !== user?.id))).catch(() => {});
+      api.get('/users?status=approved').then(({ data }) => setUsers(data.filter((u) => u.id !== user?.id && puede(u, 'agenda')))).catch(() => {}); // sin Agenda no se le invita
       api.get('/groups').then(({ data }) => setGroups(data)).catch(() => setGroups([]));
       setAbrirRango(false);
       setRecOpen(false);

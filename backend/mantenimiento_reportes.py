@@ -22,7 +22,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 
-from core import db, serialize_doc, get_current_user, departamento_de, es_super_admin
+from core import require_modulo, db, serialize_doc, get_current_user, departamento_de, es_super_admin
 import organizacion
 import mantenimiento as mant
 import routes_activos
@@ -157,12 +157,12 @@ async def _datos(user, desde, hasta, sucursal, categoria, plan_id):
 
 @router.get('/reportes')
 async def reportes(desde: str, hasta: str, sucursal: Optional[str] = None, categoria: Optional[str] = None,
-                   plan_id: Optional[str] = None, user=Depends(get_current_user)):
+                   plan_id: Optional[str] = None, user=Depends(require_modulo('planes'))):
     return serialize_doc(await _datos(user, desde, hasta, sucursal, categoria, plan_id))
 
 
 @router.get('/reportes/filtros')
-async def filtros(user=Depends(get_current_user)):
+async def filtros(user=Depends(require_modulo('planes'))):
     """Opciones de los filtros: sucursales, categorías y planificaciones que la persona ve."""
     await mant._requiere_planificador(user)
     admin, editables = await mant._contexto(user)
@@ -180,7 +180,7 @@ async def filtros(user=Depends(get_current_user)):
 # ── Indicadores ──────────────────────────────────────────────────
 @router.get('/indicadores')
 async def indicadores(desde: str, hasta: str, sucursal: Optional[str] = None, categoria: Optional[str] = None,
-                      plan_id: Optional[str] = None, user=Depends(get_current_user)):
+                      plan_id: Optional[str] = None, user=Depends(require_modulo('planes'))):
     d0, d1 = _rango(desde, hasta)
     tareas = await _tareas(user, desde, hasta, sucursal, categoria, plan_id, con_respuestas=True)
     ahora = mant._ahora()
@@ -244,7 +244,7 @@ def _dmy(f):
 
 @router.get('/reportes/excel')
 async def reportes_excel(desde: str, hasta: str, sucursal: Optional[str] = None, categoria: Optional[str] = None,
-                         plan_id: Optional[str] = None, user=Depends(get_current_user)):
+                         plan_id: Optional[str] = None, user=Depends(require_modulo('planes'))):
     from openpyxl import Workbook
     from openpyxl.drawing.image import Image as XLImage
     from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker

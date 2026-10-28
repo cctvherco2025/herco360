@@ -3,7 +3,7 @@ import calendar
 from collections import defaultdict
 from datetime import datetime, timedelta, date as date_cls
 from fastapi import APIRouter, HTTPException, Depends
-from core import (db, get_current_user, serialize_doc, new_id, now_iso, now_local, GERENTE_LOGISTICA,
+from core import (require_modulo, puede_modulo, db, get_current_user, serialize_doc, new_id, now_iso, now_local, GERENTE_LOGISTICA,
                   es_jefe_depto, es_retail, es_super_admin, filtro_depto, mismo_depto)
 import recurrence as rec
 from models import ActivityInput, RespondInput
@@ -213,11 +213,13 @@ async def _check_conflicts(tramos: list, uses_meeting_room: bool, exclude_activi
 
 
 async def _build_participants(participant_ids, user):
-    """Invitados: solo gente del departamento de quien invita (admins, cualquiera)."""
+    """Invitados: solo gente del departamento de quien invita (admins, cualquiera)
+    que tenga Agenda en su perfil (sin ella no se le puede invitar)."""
+    import acceso
     participants = []
     if participant_ids:
         users = await db.users.find({'id': {'$in': participant_ids}, **filtro_depto(user)}, {'_id': 0}).to_list(200)
-        for u in users:
+        for u in [u for u in users if acceso.tiene(u, 'agenda')]:
             participants.append({
                 'user_id': u['id'], 'name': u['name'],
                 'avatar_url': u.get('avatar_url'), 'status': 'invited',
@@ -275,7 +277,7 @@ def _serie(rule: str, date0: str, end0: str, start_time: str, end_time: str) -> 
 
 @router.get('')
 async def list_activities(start: str = None, end: str = None, category: str = None,
-                          mine: bool = False, user_id: str = None, user=Depends(get_current_user)):
+                          mine: bool = False, user_id: str = None, user=Depends(require_modulo('agenda'))):
     query = {}
     conds = []
     if start and end:
@@ -314,7 +316,7 @@ async def list_activities(start: str = None, end: str = None, category: str = No
 
 
 @router.get('/{activity_id}')
-async def get_activity(activity_id: str, user=Depends(get_current_user)):
+async def get_activity(activity_id: str, user=Depends(require_modulo('agenda'))):
     a = await db.activities.find_one({'id': activity_id}, {'_id': 0})
     if not a:
         raise HTTPException(status_code=404, detail='Actividad no encontrada')
@@ -323,12 +325,12 @@ async def get_activity(activity_id: str, user=Depends(get_current_user)):
 
 def _sin_sala(data, user):
     """La Sala de Juntas es de Ventas Retail."""
-    if data.uses_meeting_room and not es_super_admin(user) and not es_retail(user):
+    if data.uses_meeting_room and not puede_modulo(user, 'sala'):
         raise HTTPException(status_code=403, detail='La Sala de Juntas es de Ventas Retail')
 
 
 @router.post('')
-async def create_activity(data: ActivityInput, user=Depends(get_current_user)):
+async def create_activity(data: ActivityInput, user=Depends(require_modulo('agenda'))):
     _sin_sala(data, user)
     date0, end0 = _rango(data)
     span = timedelta(days=(_parse_date(end0) - _parse_date(date0)).days)
@@ -669,7 +671,7 @@ async def _actualizar(a: dict, data, user):
 
 
 @router.put('/{activity_id}')
-async def update_activity(activity_id: str, data: ActivityInput, user=Depends(get_current_user),
+async def update_activity(activity_id: str, data: ActivityInput, user=Depends(require_modulo('agenda')),
                           alcance: str = 'todas', ocurrencia: str = None):
     _sin_sala(data, user)
     a = await db.activities.find_one({'id': activity_id}, {'_id': 0})
@@ -690,7 +692,7 @@ async def update_activity(activity_id: str, data: ActivityInput, user=Depends(ge
 
 
 @router.delete('/{activity_id}')
-async def delete_activity(activity_id: str, user=Depends(get_current_user),
+async def delete_activity(activity_id: str, user=Depends(require_modulo('agenda')),
                           alcance: str = 'todas', ocurrencia: str = None):
     a = await db.activities.find_one({'id': activity_id}, {'_id': 0})
     if not a:
@@ -720,7 +722,7 @@ async def delete_activity(activity_id: str, user=Depends(get_current_user),
 
 
 @router.post('/{activity_id}/respond')
-async def respond_participation(activity_id: str, data: RespondInput, user=Depends(get_current_user)):
+async def respond_participation(activity_id: str, data: RespondInput, user=Depends(require_modulo('agenda'))):
     a = await db.activities.find_one({'id': activity_id}, {'_id': 0})
     if not a:
         raise HTTPException(status_code=404, detail='Actividad no encontrada')

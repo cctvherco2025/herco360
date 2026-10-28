@@ -37,7 +37,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 
-from core import (db, get_current_user, serialize_doc, new_id, now_iso, now_local,
+from core import (require_modulo, db, get_current_user, serialize_doc, new_id, now_iso, now_local,
                   es_revisor_tienda, es_coordinador_tienda, tienda_promos, PROMO_TIENDAS, JEFE_TIENDA,
                   RETAIL, departamento_de, es_retail, es_super_admin, es_jefe_depto, filtro_departamento)
 from notifications import create_notification
@@ -179,6 +179,10 @@ def puede_ver(user: dict, t: dict) -> bool:
 
 
 def puede_ver_modulo(user: dict) -> bool:
+    """Ve Tareas: con el módulo encendido en su perfil (manda el interruptor)
+    y si le toca por su puesto o sus permisos."""
+    if not acceso.tiene(user, 'tareas'):
+        return False
     return (es_revisor_tienda(user) or es_coordinador_tienda(user) or _es_supervisor(user) or _de_logistica(user)
             or any(acceso.tiene(user, a) for a in ('tareas.ver_equipo', 'tareas.crear')))
 
@@ -232,6 +236,8 @@ async def _asignables(user: dict) -> list:
             # un jefe o gerente de área: a quien manda (su área y subáreas)
             users = [{k: p.get(k) for k in ('id', 'name', 'position', 'area', 'nivel')}
                      for p in await mando.subordinados(user)]
+        con = await acceso.con_modulo([u['id'] for u in users], 'tareas')
+        users = [u for u in users if u['id'] in con]
         users.sort(key=lambda u: (u.get('area') or '', NIVELES_ASIGNABLES.index(u['nivel']) if u.get('nivel') in NIVELES_ASIGNABLES else 9, u['name']))
         return users
     tienda = tienda_promos(user)
@@ -241,6 +247,8 @@ async def _asignables(user: dict) -> list:
         {'status': 'approved', 'sucursal': {'$in': _sucursales_de(tienda)}, 'area': 'Tienda',
          'position': {'$in': cargos}, 'id': {'$ne': user['id']}},
         {'_id': 0, 'id': 1, 'name': 1, 'position': 1}).to_list(100)
+    con = await acceso.con_modulo([u['id'] for u in users], 'tareas')
+    users = [u for u in users if u['id'] in con]
     users.sort(key=lambda u: (u['position'] != JEFE_TIENDA, u['name']))
     return users
 
@@ -364,7 +372,7 @@ def _filtro(user: dict) -> dict:
 
 
 @router.get('/asignables')
-async def asignables(user=Depends(get_current_user)):
+async def asignables(user=Depends(require_modulo('tareas'))):
     # la usan quien crea y quien edita (para cambiar a las personas asignadas)
     if not (puede_crear(user) or (acceso.tiene(user, 'tareas.editar') and _gestor_estructural(user))):
         raise HTTPException(status_code=403, detail='No tienes permiso para crear tareas')
@@ -387,7 +395,7 @@ async def contador(user=Depends(get_current_user)):
 
 
 @router.get('')
-async def listar(estado: str = None, user=Depends(get_current_user)):
+async def listar(estado: str = None, user=Depends(require_modulo('tareas'))):
     if not puede_ver_modulo(user):
         raise HTTPException(status_code=403, detail='No tienes acceso a las tareas')
     q = _filtro(user)
@@ -401,6 +409,8 @@ async def listar(estado: str = None, user=Depends(get_current_user)):
 async def inicio(user=Depends(get_current_user)):
     """Bloque del Inicio. Coordinador: lo suyo por hacer. Gerente/jefe: lo que
     espera su validación."""
+    if not acceso.tiene(user, 'tareas'):
+        return {'rol': 'coordinador', 'tareas': []}
     if not (_valida(user) and acceso.tiene(user, 'tareas.validar')):
         # Sus tareas sin cerrar (pendiente/devuelta/hecha) y las validadas hace
         # poco (últimos 7 días), para que vea que tiene tareas aunque ya las cerró.
@@ -447,7 +457,7 @@ async def agenda(start: str, end: str, user=Depends(get_current_user)):
 
 
 @router.get('/{tarea_id}')
-async def detalle(tarea_id: str, user=Depends(get_current_user)):
+async def detalle(tarea_id: str, user=Depends(require_modulo('tareas'))):
     t = await _tarea_o_404(tarea_id)
     if not puede_ver(user, t):
         raise HTTPException(status_code=403, detail='No puedes ver esta tarea')
@@ -455,7 +465,7 @@ async def detalle(tarea_id: str, user=Depends(get_current_user)):
 
 
 @router.get('/{tarea_id}/foto/{foto_id}')
-async def foto(tarea_id: str, foto_id: str, user=Depends(get_current_user)):
+async def foto(tarea_id: str, foto_id: str, user=Depends(require_modulo('tareas'))):
     t = await _tarea_o_404(tarea_id)
     if not puede_ver(user, t):
         raise HTTPException(status_code=403, detail='No puedes ver esta tarea')
@@ -477,7 +487,7 @@ async def foto(tarea_id: str, foto_id: str, user=Depends(get_current_user)):
 #  Crear / editar / cancelar
 # --------------------------------------------------------------------------- #
 @router.post('')
-async def crear(data: TareaCreate, user=Depends(get_current_user)):
+async def crear(data: TareaCreate, user=Depends(require_modulo('tareas'))):
     if not puede_crear(user):
         raise HTTPException(status_code=403, detail='No tienes permiso para crear tareas')
     # por tienda (gerente/jefe de tienda) o por mando (los demás)
@@ -523,7 +533,7 @@ async def crear(data: TareaCreate, user=Depends(get_current_user)):
 
 
 @router.patch('/{tarea_id}')
-async def editar(tarea_id: str, data: TareaUpdate, user=Depends(get_current_user)):
+async def editar(tarea_id: str, data: TareaUpdate, user=Depends(require_modulo('tareas'))):
     t = await _tarea_o_404(tarea_id)
     if not puede(user, t, 'editar'):
         raise HTTPException(status_code=403, detail='No tienes permiso para editar esta tarea')
@@ -584,7 +594,7 @@ async def editar(tarea_id: str, data: TareaUpdate, user=Depends(get_current_user
 
 
 @router.post('/{tarea_id}/cancelar')
-async def cancelar(tarea_id: str, texto: str = Form(''), user=Depends(get_current_user)):
+async def cancelar(tarea_id: str, texto: str = Form(''), user=Depends(require_modulo('tareas'))):
     t = await _tarea_o_404(tarea_id)
     if not puede(user, t, 'cancelar'):
         raise HTTPException(status_code=403, detail='No tienes permiso para cancelar esta tarea')
@@ -603,7 +613,7 @@ async def cancelar(tarea_id: str, texto: str = Form(''), user=Depends(get_curren
 
 
 @router.delete('/{tarea_id}')
-async def eliminar(tarea_id: str, user=Depends(get_current_user)):
+async def eliminar(tarea_id: str, user=Depends(require_modulo('tareas'))):
     """Borra la tarea por completo. Solo mientras nadie la haya marcado hecha
     (sin fotos ni validaciones); después solo se cancela, para no perder la
     evidencia."""
@@ -624,7 +634,7 @@ async def eliminar(tarea_id: str, user=Depends(get_current_user)):
 # --------------------------------------------------------------------------- #
 @router.post('/{tarea_id}/hecho')
 async def marcar_hecho(tarea_id: str, texto: str = Form(''), fotos: List[UploadFile] = File(default=[]),
-                       user=Depends(get_current_user)):
+                       user=Depends(require_modulo('tareas'))):
     """El responsable marca su parte como hecha. Foto de evidencia obligatoria."""
     t = await _tarea_o_404(tarea_id)
     mia = mi_asignacion(user, t)
@@ -667,7 +677,7 @@ async def _parte(t: dict, asignado_id: str) -> int:
 
 
 @router.post('/{tarea_id}/validar')
-async def validar(tarea_id: str, asignado_id: str = Form(...), user=Depends(get_current_user)):
+async def validar(tarea_id: str, asignado_id: str = Form(...), user=Depends(require_modulo('tareas'))):
     t = await _tarea_o_404(tarea_id)
     if not puede(user, t, 'validar'):
         raise HTTPException(status_code=403, detail='No tienes permiso para validar esta tarea')
@@ -692,7 +702,7 @@ async def validar(tarea_id: str, asignado_id: str = Form(...), user=Depends(get_
 
 
 @router.post('/{tarea_id}/devolver')
-async def devolver(tarea_id: str, asignado_id: str = Form(...), texto: str = Form(''), user=Depends(get_current_user)):
+async def devolver(tarea_id: str, asignado_id: str = Form(...), texto: str = Form(''), user=Depends(require_modulo('tareas'))):
     t = await _tarea_o_404(tarea_id)
     if not puede(user, t, 'validar'):
         raise HTTPException(status_code=403, detail='No tienes permiso para devolver esta tarea')
@@ -717,7 +727,7 @@ async def devolver(tarea_id: str, asignado_id: str = Form(...), texto: str = For
 
 @router.post('/{tarea_id}/mensajes')
 async def mensaje(tarea_id: str, texto: str = Form(''), fotos: List[UploadFile] = File(default=[]),
-                  user=Depends(get_current_user)):
+                  user=Depends(require_modulo('tareas'))):
     t = await _tarea_o_404(tarea_id)
     if not puede_ver(user, t):
         raise HTTPException(status_code=403, detail='No puedes escribir en esta tarea')

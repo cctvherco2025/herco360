@@ -11,7 +11,7 @@ import { useTheme } from '@/context/ThemeContext';
 import {
   canAccessInventory, canAccessReports, canAccessOrgChart, canAccessCams, canAccessFlos, canAccessRutina,
   canAccessFormulariosPrincipal, canAccessPromocionesMes, canAccessVacaciones, puedeVerTickets, puedeVerTareas, canAccessGuardias, canAccessRecorridos, canAccessEtiquetas,
-  esRetail, esSuperAdmin,
+  esSuperAdmin, puede,
 } from '@/lib/constants';
 import { Logo, AppWordmark } from '@/components/Logo';
 import { NovedadPunto } from '@/components/Novedad';
@@ -231,7 +231,7 @@ function SidebarContent({ onNavigate }) {
   // Mis mantenimientos e Inventarios Autoservicio.
   const activosChildren = [];
   if (verActivos) activosChildren.push({ to: '/activos', label: 'Activos', icon: Package, testid: 'sidebar-nav-activos', nuevo: 'activos', tour: 'menu-activos' });
-  if (mant.planificar) activosChildren.push({ to: '/mantenimiento/checklists', label: 'Checklists', icon: ListChecks, testid: 'sidebar-nav-checklists', nuevo: 'checklists', tour: 'menu-checklists' });
+  if (mant.checklists) activosChildren.push({ to: '/mantenimiento/checklists', label: 'Checklists', icon: ListChecks, testid: 'sidebar-nav-checklists', nuevo: 'checklists', tour: 'menu-checklists' });
   if (mant.ver_planes) activosChildren.push({ to: '/mantenimiento/planificaciones', label: 'Planificaciones', icon: CalendarRange, testid: 'sidebar-nav-planificaciones', nuevo: 'planificaciones', tour: 'menu-planificaciones' });
   if (mant.mis_tareas) {
     activosChildren.push({ to: '/mantenimiento', end: true, label: 'Mis mantenimientos', icon: Wrench, testid: 'sidebar-nav-mis-mantenimientos', count: mant.pendientes, nuevo: 'mis-mantenimientos', tour: 'menu-mis-mantenimientos' });
@@ -253,10 +253,10 @@ function SidebarContent({ onNavigate }) {
     const idx = navItems.findIndex((n) => n.to === '/vacaciones');
     if (idx >= 0) navItems.splice(idx, 1);
   }
-  // Sala de Juntas es de Ventas Retail (los demás departamentos no la usan)
-  if (!esSuperAdmin(user) && !esRetail(user)) {
-    const idx = navItems.findIndex((n) => n.to === '/sala-de-juntas');
-    if (idx >= 0) navItems.splice(idx, 1);
+  // Agenda y Sala de Juntas, con su módulo encendido en el perfil (la Sala es de Ventas Retail)
+  for (const [ruta, modulo] of [['/agenda', 'agenda'], ['/sala-de-juntas', 'sala']]) {
+    const idx = navItems.findIndex((n) => n.to === ruta);
+    if (idx >= 0 && !puede(user, modulo)) navItems.splice(idx, 1);
   }
 
   return (

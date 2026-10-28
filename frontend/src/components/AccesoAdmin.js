@@ -91,6 +91,44 @@ function Segmentado({ opciones, valor, onCambio, etiqueta }) {
 
 const iguales = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
 
+// Antes de guardar un cambio de permisos: si a alguien se le quita algún
+// módulo, se pide confirmar diciendo a cuántas personas afecta y quién tiene
+// pendientes ahí (esos pendientes se quedan donde están). Si no se pudo
+// calcular, no frena el cambio.
+const listaY = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} y ${xs[xs.length - 1]}` : xs[0] || '');
+
+export async function confirmarQuitarAcceso(cambios) {
+  let personas = [];
+  try {
+    const r = await Promise.all(cambios.map((c) => api.post('/acceso/impacto', c)));
+    const vistas = new Map();
+    r.flatMap(({ data }) => data.personas || []).forEach((p) => { if (!vistas.has(p.id)) vistas.set(p.id, p); });
+    personas = [...vistas.values()];
+  } catch (e) { return true; }
+  if (!personas.length) return true;
+  const modulos = [...new Set(personas.flatMap((p) => p.modulos || []))];
+  const conPendientes = personas.filter((p) => p.pendientes);
+  return confirmar({
+    tipo: 'danger',
+    titulo: `Vas a quitar ${listaY(modulos)} a ${personas.length === 1 ? '1 persona' : `${personas.length} personas`}`,
+    mensaje: (
+      <>
+        <p className="mb-2">Dejarán de verlo en cuanto guardes: {personas.slice(0, 6).map((p) => p.nombre.trim()).join(', ')}{personas.length > 6 ? ` y ${personas.length - 6} más` : ''}.</p>
+        {conPendientes.length > 0 ? (
+          <>
+            <p className="mb-1">Tienen pendientes ahí (se quedan donde están, pero no los van a ver):</p>
+            <ul className="mb-1 list-disc space-y-0.5 pl-5">
+              {conPendientes.slice(0, 8).map((p) => <li key={p.id}><b>{p.nombre}</b>: {p.pendientes}</li>)}
+            </ul>
+            {conPendientes.length > 8 && <p>…y {conPendientes.length - 8} más.</p>}
+          </>
+        ) : <p>Nadie tiene pendientes en lo que se quita.</p>}
+      </>
+    ),
+    textoConfirmar: 'Quitar y guardar',
+  });
+}
+
 // ── Perfiles ─────────────────────────────────────────────────────
 export function PerfilesAcceso({ depto }) {
   const catalogo = useCatalogo(depto);
@@ -122,6 +160,7 @@ export function PerfilesAcceso({ depto }) {
     setBorradores((b) => ({ ...b, [p.id]: s }));
   };
   const guardar = async () => {
+    if (!(await confirmarQuitarAcceso(pendientes.map((p) => ({ perfil_id: p.id, permisos: [...borradores[p.id]] }))))) return;
     setGuardando(true);
     try {
       for (const p of pendientes) {
@@ -368,6 +407,7 @@ export function PerfilPorCargo({ depto }) {
   if (!migrado) return <Tarjeta titulo="Perfil por cargo"><SinMigrar /></Tarjeta>;
 
   const guardar = async (cargo_id, area_id, perfil_id, ok = 'Perfil actualizado') => {
+    if (!(await confirmarQuitarAcceso([{ cargo_id, area_id: area_id || null, perfil_id }]))) return;
     try {
       await api.put('/acceso/asignaciones', { cargo_id, area_id: area_id || null, perfil_id });
       toast.success(ok);
@@ -376,6 +416,7 @@ export function PerfilPorCargo({ depto }) {
     } catch (e) { avisarError(e); }
   };
   const quitarAjuste = async (c, a) => {
+    if (!(await confirmarQuitarAcceso([{ cargo_id: c.cargo_id, area_id: a.area_id, quitar: true }]))) return;
     const ok = await confirmar({
       tipo: 'danger', titulo: `¿Quitar el ajuste de ${c.cargo} en ${a.area}?`,
       mensaje: `Esas personas pasan a usar el perfil del cargo (${datos.perfiles.find((p) => p.id === c.perfil_id)?.nombre || '—'}).`,
@@ -478,6 +519,7 @@ export function ExcepcionesAcceso({ userId, onCambio, conGuardar, onGuardado }) 
     onCambio?.((prev) => ({ ...prev, [id]: v }));
   };
   const guardar = async () => {
+    if (!(await confirmarQuitarAcceso([{ usuario_id: userId, excepciones: cambios }]))) return;
     setGuardando(true);
     try {
       const { data } = await api.put(`/acceso/usuario/${userId}`, { excepciones: cambios });

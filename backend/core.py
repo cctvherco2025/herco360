@@ -229,6 +229,23 @@ def _puede(user, permiso: str) -> bool:
     return bool(user) and acceso.tiene(user, permiso)
 
 
+def puede_modulo(user, *modulos) -> bool:
+    """¿Tiene alguno de estos módulos? (manda el interruptor de su perfil)"""
+    return any(_puede(user, m) for m in modulos)
+
+
+def require_modulo(*modulos):
+    """Dependencia de las rutas de un módulo: sin el módulo encendido no entra,
+    aunque sea responsable de algo o tenga cosas asignadas en él."""
+    async def dependencia(user=Depends(get_current_user)):
+        if not puede_modulo(user, *modulos):
+            import acceso
+            nombre = next((n for _, m, n, _, _ in acceso.MODULOS if m == modulos[0]), modulos[0])
+            raise HTTPException(status_code=403, detail=f'No tienes acceso a {nombre}')
+        return user
+    return dependencia
+
+
 def can_access_inventory(user) -> bool:
     return _puede(user, 'inventario')
 

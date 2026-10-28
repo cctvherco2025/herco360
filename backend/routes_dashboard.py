@@ -1,7 +1,7 @@
 """Dashboard summary + global search routes."""
 from datetime import timedelta
 from fastapi import APIRouter, Depends
-from core import db, get_current_user, serialize_doc, now_local, filtro_depto, es_retail, es_super_admin
+from core import db, get_current_user, serialize_doc, now_local, filtro_depto, es_retail, es_super_admin, puede_modulo
 from routes_rooms import _derive_room_status
 import recurrence as rec
 
@@ -18,7 +18,9 @@ async def dashboard(user=Depends(get_current_user)):
     # Today's activities involving the user (created or participant) OR all if admin
     # "hoy" incluye actividades de varios días que ya empezaron y no han
     # terminado, y la repetición de hoy de las series con RRULE
-    today_docs = await db.activities.find(rec.filtro_rango(today, today), {'_id': 0}).to_list(500)
+    # sin Agenda en su perfil no ve actividades (manda el interruptor)
+    con_agenda = puede_modulo(user, 'agenda')
+    today_docs = await db.activities.find(rec.filtro_rango(today, today), {'_id': 0}).to_list(500) if con_agenda else []
     today_acts = sorted(rec.expandir(today_docs, today, today), key=lambda a: a.get('start_time') or '')
     my_today = [a for a in today_acts
                 if a['created_by'] == user['id']
@@ -35,15 +37,15 @@ async def dashboard(user=Depends(get_current_user)):
             {'created_by': user['id']},
             {'participants.user_id': user['id']},
         ]}]}
-    up_docs = await db.activities.find(up_query, {'_id': 0}).to_list(2000)
+    up_docs = await db.activities.find(up_query, {'_id': 0}).to_list(2000) if con_agenda else []
     upcoming = sum(1 for a in rec.expandir(up_docs, tomorrow, end) if a['date'] > today)
 
     # Room status
     room = await db.rooms.find_one({}, {'_id': 0})
     room_status = 'Disponible'
     room_name = 'Sala de Juntas'
-    # la Sala de Juntas es de Ventas Retail
-    if room and not es_super_admin(user) and not es_retail(user):
+    # la Sala de Juntas es de Ventas Retail y se ve con su módulo encendido
+    if room and not puede_modulo(user, 'sala'):
         room = None
         room_status = None
     if room:
@@ -83,7 +85,7 @@ async def search(q: str = '', user=Depends(get_current_user)):
     if not es_super_admin(user):
         mios = [u['id'] for u in await db.users.find(filtro_depto(user), {'_id': 0, 'id': 1}).to_list(5000)]
         q_act['created_by'] = {'$in': mios}
-    activities = await db.activities.find(q_act, {'_id': 0}).limit(8).to_list(8)
+    activities = await db.activities.find(q_act, {'_id': 0}).limit(8).to_list(8) if puede_modulo(user, 'agenda') else []
     users = await db.users.find(
         {'$or': [{'name': rx}, {'email': rx}], 'status': 'approved', **filtro_depto(user)},
         {'_id': 0, 'password_hash': 0}).limit(8).to_list(8)

@@ -41,7 +41,8 @@ from pydantic import BaseModel
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from core import (db, serialize_doc, new_id, now_iso, now_local, get_current_user, can_admin_activos,
+import acceso
+from core import (require_modulo, puede_modulo, db, serialize_doc, new_id, now_iso, now_local, get_current_user, can_admin_activos,
                   RETAIL, departamento_de, es_super_admin, filtro_depto, filtro_usuarios_depto)
 from notifications import create_notification
 import mantenimiento_motor as motor
@@ -181,9 +182,14 @@ async def acceso(user=Depends(get_current_user)):
         {'$or': [{'supervisor_id': user['id']}, {'responsables.usuario_id': user['id']}], 'estado': {'$ne': 'borrador'}}, {'_id': 1})
     tiene_tareas = await db.mant_tareas.find_one({'responsable_id': user['id']}, {'_id': 1})
     pendientes = await db.mant_tareas.count_documents({'responsable_id': user['id'], 'estado': 'pendiente'})
-    # quien planifica siempre ve "Mis mantenimientos" (aunque todavía no tenga tareas)
-    return {'planificar': planificar, 'ver_planes': planificar or bool(es_parte), 'ver_todas': user.get('role') == 'admin',
-            'mis_tareas': bool(planificar or es_parte or tiene_tareas), 'pendientes': pendientes}
+    # quien planifica siempre ve "Mis mantenimientos" (aunque todavía no tenga tareas);
+    # cada parte, solo con su módulo encendido en el perfil (manda el interruptor)
+    mis = puede_modulo(user, 'mis_mant')
+    return {'planificar': planificar and puede_modulo(user, 'planes'),
+            'checklists': planificar and puede_modulo(user, 'checklists'),
+            'ver_planes': (planificar or bool(es_parte)) and puede_modulo(user, 'planes'),
+            'ver_todas': user.get('role') == 'admin',
+            'mis_tareas': bool(planificar or es_parte or tiene_tareas) and mis, 'pendientes': pendientes if mis else 0}
 
 
 # ── Checklists ───────────────────────────────────────────────────
@@ -230,7 +236,7 @@ def _limpiar_items(items):
 
 
 @router.get('/checklists')
-async def list_checklists(user=Depends(get_current_user)):
+async def list_checklists(user=Depends(require_modulo('checklists', 'planes'))):
     await _requiere_planificador(user)
     rows = await db.mant_checklists.find({'eliminado': {'$ne': True}, **filtro_depto(user)}, {'_id': 0}).sort('nombre', 1).to_list(500)
     usos = {r['_id']: r['n'] for r in await db.mant_planes.aggregate([
@@ -243,7 +249,7 @@ async def list_checklists(user=Depends(get_current_user)):
 
 
 @router.post('/checklists')
-async def create_checklist(data: ChecklistInput, user=Depends(get_current_user)):
+async def create_checklist(data: ChecklistInput, user=Depends(require_modulo('checklists'))):
     await _requiere_planificador(user)
     nombre = _txt(data.nombre, 100)
     if not nombre:
@@ -256,7 +262,7 @@ async def create_checklist(data: ChecklistInput, user=Depends(get_current_user))
 
 
 @router.put('/checklists/{cid}')
-async def update_checklist(cid: str, data: ChecklistInput, user=Depends(get_current_user)):
+async def update_checklist(cid: str, data: ChecklistInput, user=Depends(require_modulo('checklists'))):
     await _requiere_planificador(user)
     actual = await db.mant_checklists.find_one({'id': cid, 'eliminado': {'$ne': True}, **filtro_depto(user)}, {'_id': 0})
     if not actual:
@@ -273,7 +279,7 @@ async def update_checklist(cid: str, data: ChecklistInput, user=Depends(get_curr
 
 
 @router.delete('/checklists/{cid}')
-async def delete_checklist(cid: str, user=Depends(get_current_user)):
+async def delete_checklist(cid: str, user=Depends(require_modulo('checklists'))):
     await _requiere_planificador(user)
     if not await db.mant_checklists.find_one({'id': cid, **filtro_depto(user)}, {'_id': 1}):
         raise HTTPException(status_code=404, detail='Checklist no encontrado')
@@ -403,9 +409,13 @@ async def _validar_personas(supervisor_id, responsable_id, depto):
     sup = await _usuario(_txt(supervisor_id, 60), depto)
     if not sup:
         raise HTTPException(status_code=400, detail='Elige el supervisor')
+    if not await acceso.con_modulo([sup['id']], 'planes'):
+        raise HTTPException(status_code=400, detail=f'{sup["name"]} no tiene Planificaciones en su perfil: no puede supervisar')
     resp = await _usuario(_txt(responsable_id, 60), depto)
     if not resp:
         raise HTTPException(status_code=400, detail='Elige el responsable')
+    if not await acceso.con_modulo([resp['id']], 'mis_mant'):
+        raise HTTPException(status_code=400, detail=f'{resp["name"]} no tiene Mis mantenimientos en su perfil: no se le puede asignar')
     return sup, resp
 
 
@@ -415,7 +425,7 @@ async def _cambio(plan, user, resumen, **extra):
 
 
 @router.get('/opciones')
-async def opciones(user=Depends(get_current_user)):
+async def opciones(user=Depends(require_modulo('planes'))):
     """Lo necesario para armar una planificación: personas, checklists y los
     activos en uso de las categorías que maneja la persona."""
     await _requiere_planificador(user)
@@ -425,6 +435,10 @@ async def opciones(user=Depends(get_current_user)):
                                     {'_id': 0, 'id': 1, 'codigo': 1, 'nombre': 1, 'sucursal': 1, 'categoria_id': 1, 'padre_id': 1, 'ubicacion': 1}
                                     ).sort('codigo', 1).to_list(5000)
     usuarios = await db.users.find({'status': 'approved', **filtro_depto(user)}, {'_id': 0, 'id': 1, 'name': 1, 'position': 1, 'area': 1, 'avatar_url': 1, 'departamento': 1}).sort('name', 1).to_list(1000)
+    # supervisa quien tiene Planificaciones; hace los mantenimientos quien tiene Mis mantenimientos
+    ids = [u['id'] for u in usuarios]
+    supervisan, responden = await acceso.con_modulo(ids, 'planes'), await acceso.con_modulo(ids, 'mis_mant')
+    usuarios = [{**u, 'supervisa': u['id'] in supervisan, 'responde': u['id'] in responden} for u in usuarios]
     checklists = await db.mant_checklists.find({'eliminado': {'$ne': True}, **filtro_depto(user)}, {'_id': 0, 'id': 1, 'nombre': 1, 'items': 1}).sort('nombre', 1).to_list(500)
     return serialize_doc({
         'usuarios': usuarios, 'checklists': [{'id': c['id'], 'nombre': c['nombre'], 'preguntas': len(c['items'])} for c in checklists],
@@ -434,7 +448,7 @@ async def opciones(user=Depends(get_current_user)):
 
 
 @router.post('/vista-previa')
-async def preview(data: PlanInput, user=Depends(get_current_user)):
+async def preview(data: PlanInput, user=Depends(require_modulo('planes'))):
     await _requiere_planificador(user)
     plan = _limpiar_frecuencia(data)
     defs = [{'id': str(i), 'dia_ciclo': int(d.get('dia_ciclo') or 1), 'dia_mes': int(d['dia_mes']) if d.get('dia_mes') else None,
@@ -445,7 +459,7 @@ async def preview(data: PlanInput, user=Depends(get_current_user)):
 
 
 @router.post('/planes')
-async def create_plan(data: PlanInput, activar: bool = False, user=Depends(get_current_user)):
+async def create_plan(data: PlanInput, activar: bool = False, user=Depends(require_modulo('planes'))):
     await _requiere_planificador(user)
     nombre = _txt(data.nombre, 120)
     if not nombre:
@@ -480,7 +494,7 @@ async def _al_activar(plan, user):
 
 
 @router.put('/planes/{plan_id}')
-async def update_plan(plan_id: str, data: PlanInput, user=Depends(get_current_user)):
+async def update_plan(plan_id: str, data: PlanInput, user=Depends(require_modulo('planes'))):
     """Editar. Nunca toca el ciclo en curso ni tareas ya generadas: los cambios
     de tareas, horarios y checklist aplican desde el próximo ciclo; el cambio
     de responsable también (sus tareas pendientes se pueden reasignar aparte).
@@ -536,7 +550,7 @@ async def update_plan(plan_id: str, data: PlanInput, user=Depends(get_current_us
 
 
 @router.post('/planes/{plan_id}/accion/{accion}')
-async def accion_plan(plan_id: str, accion: str, user=Depends(get_current_user)):
+async def accion_plan(plan_id: str, accion: str, user=Depends(require_modulo('planes'))):
     plan = await _plan_o_404(plan_id)
     if not await _puede_gestionar_plan(user, plan):
         raise HTTPException(status_code=403, detail='No puedes cambiar esta planificación')
@@ -581,7 +595,7 @@ async def accion_plan(plan_id: str, accion: str, user=Depends(get_current_user))
 
 
 @router.delete('/planes/{plan_id}')
-async def delete_plan(plan_id: str, user=Depends(get_current_user)):
+async def delete_plan(plan_id: str, user=Depends(require_modulo('planes'))):
     plan = await _plan_o_404(plan_id)
     if not await _puede_gestionar_plan(user, plan):
         raise HTTPException(status_code=403, detail='No puedes eliminar esta planificación')
@@ -603,7 +617,7 @@ async def _visible(user, plan):
 
 
 @router.get('/planes')
-async def list_planes(user=Depends(get_current_user)):
+async def list_planes(user=Depends(require_modulo('planes'))):
     admin, editables = await _contexto(user)
     admin = es_super_admin(user)
     q = {} if admin else {'$or': [
@@ -635,7 +649,7 @@ async def list_planes(user=Depends(get_current_user)):
 
 
 @router.get('/planes/{plan_id}')
-async def get_plan(plan_id: str, ciclo: Optional[int] = None, user=Depends(get_current_user)):
+async def get_plan(plan_id: str, ciclo: Optional[int] = None, user=Depends(require_modulo('planes'))):
     plan = await _plan_o_404(plan_id)
     if not await _visible(user, plan):
         raise HTTPException(status_code=403, detail='No tienes acceso a esta planificación')
@@ -822,7 +836,7 @@ def _resumen_tarea(t):
 
 
 @router.get('/mis-tareas')
-async def mis_tareas(user=Depends(get_current_user)):
+async def mis_tareas(user=Depends(require_modulo('mis_mant'))):
     ahora = _ahora()
     en_7 = (now_local() + timedelta(days=7)).strftime(motor.FMT)
     abiertas = await db.mant_tareas.find({'responsable_id': user['id'], 'estado': {'$in': list(ABIERTAS)}}, {'_id': 0, 'respuestas': 0}).sort('vence_en', 1).to_list(1000)
@@ -839,7 +853,7 @@ async def mis_tareas(user=Depends(get_current_user)):
 
 
 @router.get('/todas-tareas')
-async def todas_tareas(responsable_id: Optional[str] = None, sucursal: Optional[str] = None, user=Depends(get_current_user)):
+async def todas_tareas(responsable_id: Optional[str] = None, sucursal: Optional[str] = None, user=Depends(require_modulo('mis_mant'))):
     """Para los admins: TODAS las tareas de mantenimiento generadas en su
     departamento (el super admin, de todos), en cualquier estado y sin límite
     de fechas: vencidas, por hacer, programadas, hechas, incompletas y
@@ -888,7 +902,7 @@ async def _tarea_visible(user, t):
 
 
 @router.get('/tareas/{tid}')
-async def get_tarea(tid: str, user=Depends(get_current_user)):
+async def get_tarea(tid: str, user=Depends(require_modulo('mis_mant', 'planes'))):
     t = await db.mant_tareas.find_one({'id': tid}, {'_id': 0})
     if not t:
         raise HTTPException(status_code=404, detail='Tarea no encontrada')
@@ -926,7 +940,7 @@ async def _subir(tid, f: UploadFile):
 
 @router.post('/tareas/{tid}/completar')
 async def completar(tid: str, data: str = Form(...), photos: List[UploadFile] = File(default=[]),
-                    photo_owner: List[str] = Form(default=[]), user=Depends(get_current_user)):
+                    photo_owner: List[str] = Form(default=[]), user=Depends(require_modulo('mis_mant', 'planes'))):
     t = await db.mant_tareas.find_one({'id': tid}, {'_id': 0})
     if not t:
         raise HTTPException(status_code=404, detail='Tarea no encontrada')
@@ -1086,7 +1100,7 @@ async def _reprogramar_tarea(t, plan, data: ReprogramarInput, user):
 
 
 @router.post('/tareas/{tid}/reprogramar')
-async def reprogramar_tarea(tid: str, data: ReprogramarInput, user=Depends(get_current_user)):
+async def reprogramar_tarea(tid: str, data: ReprogramarInput, user=Depends(require_modulo('mis_mant', 'planes'))):
     t = await db.mant_tareas.find_one({'id': tid}, {'_id': 0})
     if not t:
         raise HTTPException(status_code=404, detail='Tarea no encontrada')
@@ -1097,7 +1111,7 @@ async def reprogramar_tarea(tid: str, data: ReprogramarInput, user=Depends(get_c
 
 
 @router.get('/planes/{plan_id}/proximos')
-async def proximos(plan_id: str, ciclos: int = 3, user=Depends(get_current_user)):
+async def proximos(plan_id: str, ciclos: int = 3, user=Depends(require_modulo('planes'))):
     """Los mantenimientos que vienen: las tareas abiertas ya creadas y las de
     los próximos `ciclos` ciclos (calculadas, con sus reprogramaciones)."""
     plan = await _plan_o_404(plan_id)
@@ -1145,7 +1159,7 @@ class ReprogramarPlanInput(ReprogramarInput):
 
 
 @router.post('/planes/{plan_id}/reprogramar')
-async def reprogramar_plan(plan_id: str, data: ReprogramarPlanInput, user=Depends(get_current_user)):
+async def reprogramar_plan(plan_id: str, data: ReprogramarPlanInput, user=Depends(require_modulo('planes'))):
     """Cambia la fecha de un mantenimiento de un ciclo. Si su tarea ya existe,
     se mueve la tarea; si es de un ciclo futuro, queda guardado y la tarea se
     crea con esa fecha. Sin `fecha` vuelve a la fecha que toca en el ciclo."""
@@ -1189,7 +1203,7 @@ class ReasignarInput(BaseModel):
 
 
 @router.post('/tareas/{tid}/reasignar')
-async def reasignar(tid: str, data: ReasignarInput, user=Depends(get_current_user)):
+async def reasignar(tid: str, data: ReasignarInput, user=Depends(require_modulo('mis_mant', 'planes'))):
     t = await db.mant_tareas.find_one({'id': tid}, {'_id': 0})
     if not t:
         raise HTTPException(status_code=404, detail='Tarea no encontrada')
@@ -1201,6 +1215,8 @@ async def reasignar(tid: str, data: ReasignarInput, user=Depends(get_current_use
     nuevo = await _usuario(_txt(data.usuario_id, 60), depto_plan(plan))
     if not nuevo:
         raise HTTPException(status_code=400, detail='Elige a quién reasignar (alguien del mismo departamento)')
+    if not await acceso.con_modulo([nuevo['id']], 'mis_mant'):
+        raise HTTPException(status_code=400, detail=f'{nuevo["name"]} no tiene Mis mantenimientos en su perfil: no se le puede asignar')
     if nuevo['id'] == t['responsable_id']:
         return serialize_doc(t)
     await db.mant_tareas.update_one({'id': tid}, {'$set': {'responsable_id': nuevo['id']},
@@ -1217,7 +1233,7 @@ class CancelarInput(BaseModel):
 
 
 @router.post('/tareas/{tid}/cancelar')
-async def cancelar(tid: str, data: CancelarInput, user=Depends(get_current_user)):
+async def cancelar(tid: str, data: CancelarInput, user=Depends(require_modulo('mis_mant', 'planes'))):
     t = await db.mant_tareas.find_one({'id': tid}, {'_id': 0})
     if not t:
         raise HTTPException(status_code=404, detail='Tarea no encontrada')
@@ -1239,7 +1255,7 @@ async def cancelar(tid: str, data: CancelarInput, user=Depends(get_current_user)
 
 
 @router.get('/tareas/{tid}/foto/{pid}')
-async def foto(tid: str, pid: str, user=Depends(get_current_user)):
+async def foto(tid: str, pid: str, user=Depends(require_modulo('mis_mant', 'planes'))):
     t = await db.mant_tareas.find_one({'id': tid}, {'_id': 0})
     if not t:
         raise HTTPException(status_code=404, detail='Tarea no encontrada')
@@ -1262,7 +1278,7 @@ async def foto(tid: str, pid: str, user=Depends(get_current_user)):
 
 
 @router.get('/tareas/{tid}/foto-activo')
-async def foto_activo(tid: str, user=Depends(get_current_user)):
+async def foto_activo(tid: str, user=Depends(require_modulo('mis_mant', 'planes'))):
     """Foto de referencia del activo, para quien hace la tarea (aunque no sea
     responsable de la categoría): sirve para comparar el encuadre."""
     t = await db.mant_tareas.find_one({'id': tid}, {'_id': 0})
@@ -1287,6 +1303,8 @@ async def agenda(start: str, end: str, user=Depends(get_current_user)):
     Agenda: los que le toca hacer y los de las planificaciones que supervisa.
     Incluye las tareas ya creadas y las de los próximos ciclos, calculadas
     ('proyectada': todavía no existen; se crean al empezar su ciclo)."""
+    if not puede_modulo(user, 'mis_mant', 'planes'):
+        return []
     try:
         d0, d1 = date.fromisoformat(start), date.fromisoformat(end)
     except ValueError:
@@ -1343,7 +1361,7 @@ async def agenda(start: str, end: str, user=Depends(get_current_user)):
 
 # ── Mantenimiento de un activo (para su ficha) ───────────────────
 @router.get('/activo/{activo_id}')
-async def de_activo(activo_id: str, user=Depends(get_current_user)):
+async def de_activo(activo_id: str, user=Depends(require_modulo('activos'))):
     await routes_activos._get(activo_id, user)  # valida que lo pueda ver
     planes = await db.mant_planes.find({'definiciones.activo_id': activo_id, 'estado': {'$in': ['activa', 'pausada']}},
                                        {'_id': 0, 'id': 1, 'numero': 1, 'nombre': 1, 'estado': 1, 'frecuencia': 1, 'intervalo_dias': 1}).to_list(100)
@@ -1357,7 +1375,7 @@ async def de_activo(activo_id: str, user=Depends(get_current_user)):
 
 # ── Cumplimiento ─────────────────────────────────────────────────
 @router.get('/cumplimiento')
-async def cumplimiento(desde: str, hasta: str, user=Depends(get_current_user)):
+async def cumplimiento(desde: str, hasta: str, user=Depends(require_modulo('planes'))):
     """% a tiempo, tardías e incompletas por planificación y por responsable
     (tareas con fecha entre desde y hasta que ya se cerraron)."""
     await _requiere_planificador(user)

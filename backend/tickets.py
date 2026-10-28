@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pymongo import ReturnDocument
 
-from core import (db, get_current_user, serialize_doc, new_id, now_iso, es_revisor_tienda,
+from core import (require_modulo, puede_modulo, db, get_current_user, serialize_doc, new_id, now_iso, es_revisor_tienda,
                   tienda_promos, can_admin_promos)
 from notifications import create_notification
 import promo_plazos
@@ -172,7 +172,7 @@ def _filtro(user: dict) -> dict:
 
 
 @router.get('')
-async def listar(estado: str = None, user=Depends(get_current_user)):
+async def listar(estado: str = None, user=Depends(require_modulo('seguimientos'))):
     q = _filtro(user)
     if estado in ESTADOS:
         q['estado'] = estado
@@ -186,6 +186,8 @@ async def listar(estado: str = None, user=Depends(get_current_user)):
 async def contador(user=Depends(get_current_user)):
     """Los que esperan algo de la persona: abiertos asignados a ella, y
     corregidos de su tienda por validar si revisa."""
+    if not puede_modulo(user, 'seguimientos'):
+        return {'pendientes': 0}
     n = await db.tickets.count_documents({'asignado_a.id': user['id'], 'estado': 'abierto'})
     if can_admin_promos(user) or es_revisor_tienda(user):
         q = {'estado': 'corregido', 'asignado_a.id': {'$ne': user['id']}}
@@ -196,7 +198,7 @@ async def contador(user=Depends(get_current_user)):
 
 
 @router.get('/{ticket_id}')
-async def detalle(ticket_id: str, user=Depends(get_current_user)):
+async def detalle(ticket_id: str, user=Depends(require_modulo('seguimientos'))):
     t = await _ticket_o_404(ticket_id)
     if not puede_ver(user, t):
         raise HTTPException(status_code=403, detail='No puedes ver este seguimiento')
@@ -206,7 +208,7 @@ async def detalle(ticket_id: str, user=Depends(get_current_user)):
 
 
 @router.get('/{ticket_id}/foto/{foto_id}')
-async def foto(ticket_id: str, foto_id: str, user=Depends(get_current_user)):
+async def foto(ticket_id: str, foto_id: str, user=Depends(require_modulo('seguimientos'))):
     t = await _ticket_o_404(ticket_id)
     if not puede_ver(user, t):
         raise HTTPException(status_code=403, detail='No puedes ver este seguimiento')
@@ -228,7 +230,7 @@ async def foto(ticket_id: str, foto_id: str, user=Depends(get_current_user)):
 # --------------------------------------------------------------------------- #
 @router.post('/{ticket_id}/mensajes')
 async def mensaje(ticket_id: str, texto: str = Form(''), fotos: List[UploadFile] = File(default=[]),
-                  user=Depends(get_current_user)):
+                  user=Depends(require_modulo('seguimientos'))):
     t = await _ticket_o_404(ticket_id)
     if not puede_ver(user, t):
         raise HTTPException(status_code=403, detail='No puedes escribir en este seguimiento')
@@ -248,7 +250,7 @@ async def mensaje(ticket_id: str, texto: str = Form(''), fotos: List[UploadFile]
 
 @router.post('/{ticket_id}/lineas/{item_id}')
 async def corregir_linea(ticket_id: str, item_id: str, corregida: bool = Form(True),
-                         fotos: List[UploadFile] = File(default=[]), user=Depends(get_current_user)):
+                         fotos: List[UploadFile] = File(default=[]), user=Depends(require_modulo('seguimientos'))):
     """El coordinador marca una línea como corregida y sube su foto."""
     t = await _ticket_o_404(ticket_id)
     if not es_asignado(user, t):
@@ -268,7 +270,7 @@ async def corregir_linea(ticket_id: str, item_id: str, corregida: bool = Form(Tr
 
 
 @router.post('/{ticket_id}/corregido')
-async def enviar_correccion(ticket_id: str, texto: str = Form(''), user=Depends(get_current_user)):
+async def enviar_correccion(ticket_id: str, texto: str = Form(''), user=Depends(require_modulo('seguimientos'))):
     """El coordinador avisa que corrigió todo: cada línea corregida con foto."""
     t = await _ticket_o_404(ticket_id)
     if not es_asignado(user, t):
@@ -293,7 +295,7 @@ async def enviar_correccion(ticket_id: str, texto: str = Form(''), user=Depends(
 
 
 @router.post('/{ticket_id}/cerrar')
-async def cerrar(ticket_id: str, texto: str = Form(''), user=Depends(get_current_user)):
+async def cerrar(ticket_id: str, texto: str = Form(''), user=Depends(require_modulo('seguimientos'))):
     """Quien revisa valida en piso y cierra: la categoría queda validada."""
     t = await _ticket_o_404(ticket_id)
     if not es_revisor(user, t):
@@ -319,7 +321,7 @@ async def cerrar(ticket_id: str, texto: str = Form(''), user=Depends(get_current
 
 
 @router.post('/{ticket_id}/reabrir')
-async def reabrir(ticket_id: str, texto: str = Form(''), user=Depends(get_current_user)):
+async def reabrir(ticket_id: str, texto: str = Form(''), user=Depends(require_modulo('seguimientos'))):
     """Quien revisa no quedó conforme: vuelve al coordinador con un comentario."""
     t = await _ticket_o_404(ticket_id)
     if not es_revisor(user, t):

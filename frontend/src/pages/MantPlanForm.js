@@ -188,7 +188,10 @@ export default function MantPlanForm() {
   }
   if (!opciones || (editando && !plan)) return <p className="text-sm text-muted-foreground text-center py-16">Cargando…</p>;
 
-  const personas = opciones.usuarios.map((u) => ({ id: u.id, label: u.name, sub: [u.position, u.area].filter(Boolean).join(' · ') }));
+  // solo quien tiene el módulo en su perfil: hace los mantenimientos (Mis mantenimientos) o supervisa (Planificaciones)
+  const persona = (u) => ({ id: u.id, label: u.name, sub: [u.position, u.area].filter(Boolean).join(' · ') });
+  const responden = opciones.usuarios.filter((u) => u.responde !== false).map(persona);
+  const supervisan = opciones.usuarios.filter((u) => u.supervisa !== false).map(persona);
 
   const validarPaso1 = () => {
     if (!g.nombre.trim()) return 'Escribe el nombre';
@@ -256,10 +259,10 @@ export default function MantPlanForm() {
               <Input id="plan-desc" value={g.descripcion} onChange={(e) => set('descripcion', e.target.value)} placeholder="Opcional" className="h-11" />
             </Campo>
             <Campo label="Responsable * (quien hace las tareas)" ayuda={bloqueada ? 'Si cambia, aplica desde el próximo ciclo; las tareas pendientes se reasignan aparte.' : null}>
-              <Buscador value={g.responsable_id} onChange={(v) => set('responsable_id', v)} opciones={personas} placeholder="Elegir persona…" testid="plan-responsable" />
+              <Buscador value={g.responsable_id} onChange={(v) => set('responsable_id', v)} opciones={responden} placeholder="Elegir persona…" testid="plan-responsable" />
             </Campo>
             <Campo label="Supervisor * (recibe avisos de fallas e incumplimientos)">
-              <Buscador value={g.supervisor_id} onChange={(v) => set('supervisor_id', v)} opciones={personas} placeholder="Elegir persona…" testid="plan-supervisor" />
+              <Buscador value={g.supervisor_id} onChange={(v) => set('supervisor_id', v)} opciones={supervisan} placeholder="Elegir persona…" testid="plan-supervisor" />
             </Campo>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t" data-tour="plan-frecuencia">

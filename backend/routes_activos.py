@@ -40,7 +40,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from pymongo import ReturnDocument
 
-from core import (db, serialize_doc, new_id, now_iso, get_current_user, require_activos_admin, can_admin_activos,
+import acceso
+from core import (require_modulo, puede_modulo, db, serialize_doc, new_id, now_iso, get_current_user, require_activos_admin, can_admin_activos,
                   RETAIL, LOGISTICA, departamento_de, es_retail, es_super_admin, filtro_depto, filtro_usuarios_depto)
 import organizacion
 from notifications import log_activity
@@ -161,7 +162,10 @@ async def _categorias(user=None):
 
 async def _acceso(user):
     """(administra, categorías visibles, ids de categorías que puede editar).
-    Quien administra lo hace sobre las categorías de su departamento."""
+    Quien administra lo hace sobre las categorías de su departamento. Sin el
+    módulo encendido en su perfil, nada (aunque sea responsable)."""
+    if not puede_modulo(user, 'activos'):
+        return False, [], set()
     cats = await _categorias(user)
     if can_admin_activos(user):
         return True, cats, {c['id'] for c in cats}
@@ -318,7 +322,7 @@ async def acceso(user=Depends(get_current_user)):
 
 
 @router.get('/meta')
-async def meta(user=Depends(get_current_user)):
+async def meta(user=Depends(require_modulo('activos'))):
     admin, visibles, editables = await _acceso(user)
     if not admin and not visibles:
         raise HTTPException(status_code=403, detail='No tienes acceso a Activos')
@@ -398,7 +402,8 @@ async def list_usuarios(departamento: Optional[str] = None, user=Depends(require
     depto = departamento if (es_super_admin(user) and departamento) else departamento_de(user)
     rows = await db.users.find({'status': 'approved', **filtro_usuarios_depto(depto)},
                                {'_id': 0, 'id': 1, 'name': 1, 'avatar_url': 1, 'position': 1, 'area': 1}).sort('name', 1).to_list(1000)
-    return serialize_doc(rows)
+    con = await acceso.con_modulo([r['id'] for r in rows], 'activos')  # sin Activos no se le nombra responsable
+    return serialize_doc([r for r in rows if r['id'] in con])
 
 
 class CategoriaInput(BaseModel):
@@ -503,6 +508,7 @@ async def _limpiar_categoria(data: CategoriaInput, user, actual=None):
     ids = [u for u in dict.fromkeys(_txt(u) for u in data.responsables) if u]
     # responsables: solo gente del departamento de la categoría
     validos = {u['id'] for u in await db.users.find({'id': {'$in': ids}, **filtro_usuarios_depto(depto)}, {'_id': 0, 'id': 1}).to_list(500)}
+    validos &= await acceso.con_modulo(ids, 'activos')
     return {
         'departamento': depto,
         'nombre': nombre, 'plural': _txt(data.plural, 60) or nombre, 'prefijo': prefijo, 'icono': icono,
@@ -568,7 +574,7 @@ async def delete_categoria(cat_id: str, user=Depends(require_activos_admin)):
 # ── Lista ────────────────────────────────────────────────────────
 @router.get('')
 async def list_activos(categoria: Optional[str] = None, sucursal: Optional[str] = None, estado: Optional[str] = None,
-                       padre_id: Optional[str] = None, user=Depends(get_current_user)):
+                       padre_id: Optional[str] = None, user=Depends(require_modulo('activos'))):
     admin, visibles, _ = await _acceso(user)
     ver = {c['id'] for c in visibles}
     query = {'categoria_id': {'$in': list(ver)}}
@@ -598,7 +604,7 @@ async def list_activos(categoria: Optional[str] = None, sucursal: Optional[str] 
 
 
 @router.get('/resumen')
-async def resumen(user=Depends(get_current_user)):
+async def resumen(user=Depends(require_modulo('activos'))):
     """Activos en uso por categoría y sucursal (tarjetas de arriba)."""
     _, visibles, _ = await _acceso(user)
     ver = [c['id'] for c in visibles]
@@ -616,7 +622,7 @@ async def resumen(user=Depends(get_current_user)):
 
 
 @router.get('/padres/{cat_id}')
-async def list_padres(cat_id: str, user=Depends(get_current_user)):
+async def list_padres(cat_id: str, user=Depends(require_modulo('activos'))):
     """Activos en uso de la categoría madre, para elegir a cuál pertenece uno
     nuevo (aunque la persona no sea responsable de la categoría madre)."""
     _, _, editables = await _acceso(user)
@@ -640,7 +646,7 @@ async def list_padres(cat_id: str, user=Depends(get_current_user)):
 # ── Registrar ────────────────────────────────────────────────────
 @router.post('')
 async def create_activo(data: str = Form(...), foto: Optional[UploadFile] = File(default=None),
-                        user=Depends(get_current_user)):
+                        user=Depends(require_modulo('activos'))):
     try:
         payload = json.loads(data)
     except Exception:
@@ -675,7 +681,7 @@ class LoteInput(BaseModel):
 
 
 @router.post('/lote')
-async def create_lote(data: LoteInput, user=Depends(get_current_user)):
+async def create_lote(data: LoteInput, user=Depends(require_modulo('activos'))):
     """Registra varios activos que pertenecen a un mismo activo, uno por
     posición (p. ej. las cámaras de un NVR, una por canal)."""
     _, _, editables = await _acceso(user)
@@ -729,7 +735,7 @@ async def _get(activo_id, user, editar=False):
 
 
 @router.get('/{activo_id}')
-async def get_activo(activo_id: str, user=Depends(get_current_user)):
+async def get_activo(activo_id: str, user=Depends(require_modulo('activos'))):
     row = await _get(activo_id, user)
     padre = None
     if row.get('padre_id'):
@@ -756,7 +762,7 @@ def _fmt(v):
 
 
 @router.put('/{activo_id}')
-async def update_activo(activo_id: str, data: ActivoUpdate, user=Depends(get_current_user)):
+async def update_activo(activo_id: str, data: ActivoUpdate, user=Depends(require_modulo('activos'))):
     row = await _get(activo_id, user, editar=True)
     if row['estado'] != 'activo':
         raise HTTPException(status_code=400, detail='Reactiva el activo antes de editarlo')
@@ -802,7 +808,7 @@ async def update_activo(activo_id: str, data: ActivoUpdate, user=Depends(get_cur
 
 
 @router.put('/{activo_id}/foto')
-async def put_foto(activo_id: str, foto: UploadFile = File(...), user=Depends(get_current_user)):
+async def put_foto(activo_id: str, foto: UploadFile = File(...), user=Depends(require_modulo('activos'))):
     row = await _get(activo_id, user, editar=True)
     ph = await _subir_foto(activo_id, foto)
     if not ph:
@@ -817,7 +823,7 @@ async def put_foto(activo_id: str, foto: UploadFile = File(...), user=Depends(ge
 
 
 @router.get('/{activo_id}/foto/{photo_id}')
-async def get_foto(activo_id: str, photo_id: str, user=Depends(get_current_user)):
+async def get_foto(activo_id: str, photo_id: str, user=Depends(require_modulo('activos'))):
     row = await _get(activo_id, user)
     fotos = [row.get('foto')] + (row.get('fotos_anteriores') or [])
     photo = next((p for p in fotos if p and p['id'] == photo_id), None)
@@ -837,7 +843,7 @@ class BajaInput(BaseModel):
 
 
 @router.post('/{activo_id}/baja')
-async def dar_baja(activo_id: str, data: BajaInput, user=Depends(get_current_user)):
+async def dar_baja(activo_id: str, data: BajaInput, user=Depends(require_modulo('activos'))):
     row = await _get(activo_id, user, editar=True)
     motivo = _txt(data.motivo, 500)
     if not motivo:
@@ -854,7 +860,7 @@ async def dar_baja(activo_id: str, data: BajaInput, user=Depends(get_current_use
 
 
 @router.post('/{activo_id}/reactivar')
-async def reactivar(activo_id: str, user=Depends(get_current_user)):
+async def reactivar(activo_id: str, user=Depends(require_modulo('activos'))):
     row = await _get(activo_id, user, editar=True)
     if row['estado'] == 'activo':
         raise HTTPException(status_code=400, detail='El activo ya está en uso')
@@ -868,7 +874,7 @@ async def reactivar(activo_id: str, user=Depends(get_current_user)):
 
 
 @router.delete('/{activo_id}')
-async def delete_activo(activo_id: str, user=Depends(get_current_user)):
+async def delete_activo(activo_id: str, user=Depends(require_modulo('activos'))):
     row = await _get(activo_id, user, editar=True)
     if await db.activos.count_documents({'padre_id': activo_id}):
         raise HTTPException(status_code=400, detail='No se puede eliminar: tiene activos que le pertenecen')

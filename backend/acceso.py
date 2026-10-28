@@ -79,6 +79,7 @@ MODULOS = [
     ('activos', 'inventario', 'Inventarios Autoservicio', True, []),
 ]
 MODULO_DE = {p: m for _, m, _, _, ps in MODULOS for p, _, _ in ps}  # permiso de adentro -> su módulo
+NOMBRE_MODULO = {m: n for _, m, n, _, _ in MODULOS}
 TODOS = [k for _, m, _, _, ps in MODULOS for k in [m] + [p for p, _, _ in ps]]
 SOLO_RETAIL = {k for _, m, _, sr, ps in MODULOS if sr for k in [m] + [p for p, _, _ in ps]}
 # A los de acceso total fijo estos les salen de su cargo (perfil y excepciones)
@@ -248,6 +249,15 @@ async def recalcular(filtro: dict):
         nuevo = efectivo(u, base, u.get('acceso_excepciones'))
         if nuevo != u.get('acceso'):
             await db.users.update_one({'id': u['id']}, {'$set': {'acceso': nuevo}})
+
+
+async def con_modulo(ids, modulo: str) -> set:
+    """De estas personas, las que tienen el módulo encendido (para buscadores
+    de personas y para validar a quién se invita, asigna o nombra responsable)."""
+    ids = [i for i in dict.fromkeys(ids or []) if i]
+    if not ids:
+        return set()
+    return {u['id'] async for u in db.users.find({'id': {'$in': ids}}, {'_id': 0, 'password_hash': 0}) if tiene(u, modulo)}
 
 
 async def preparar_usuario(uid: str):
@@ -550,3 +560,90 @@ async def guardar_excepciones(uid: str, data: ExcepcionesInput, user=Depends(get
     await log_activity(user['id'], user['name'], user.get('avatar_url'), 'cambió los permisos de', target['name'], 'user',
                        departamento_de(target))
     return await acceso_de_usuario(uid, user)
+
+
+# ---- Aviso al apagar un módulo ----
+# Lo que una persona tiene pendiente en cada módulo (si lo pierde, se queda ahí
+# sin que lo vea): (módulo, texto en singular, texto en plural, consulta).
+async def _pendientes(uid: str) -> dict:
+    import recurrence
+    from core import today_local_str
+    hoy = today_local_str()
+    fin = f'{int(hoy[:4]) + 1}{hoy[4:]}'
+    cuentas = {
+        'agenda': ('reunión próxima', 'reuniones próximas', db.activities.count_documents(
+            {'$and': [recurrence.filtro_rango(hoy, fin), {'$or': [{'created_by': uid}, {'participants.user_id': uid}]}]})),
+        'tareas': ('tarea pendiente', 'tareas pendientes', db.tareas.count_documents(
+            {'estado': 'abierta', 'asignados': {'$elemMatch': {'id': uid, 'estado': {'$in': ['pendiente', 'devuelta']}}}})),
+        'mis_mant': ('mantenimiento pendiente', 'mantenimientos pendientes', db.mant_tareas.count_documents(
+            {'responsable_id': uid, 'estado': {'$in': ['programada', 'pendiente']}})),
+        'planes': ('planificación que supervisa', 'planificaciones que supervisa', db.mant_planes.count_documents(
+            {'supervisor_id': uid, 'estado': 'activa'})),
+        'activos': ('categoría de activos a su cargo', 'categorías de activos a su cargo', db.activo_categorias.count_documents(
+            {'responsables': uid})),
+        'seguimientos': ('seguimiento abierto', 'seguimientos abiertos', db.tickets.count_documents(
+            {'asignado_a.id': uid, 'estado': 'abierto'})),
+    }
+    out = {}
+    for modulo, (uno, varios, consulta) in cuentas.items():
+        n = await consulta
+        if n:
+            out[modulo] = f'{n} {uno if n == 1 else varios}'
+    return out
+
+
+class ImpactoInput(BaseModel):
+    perfil_id: Optional[str] = None       # editar un perfil: con `permisos`
+    permisos: Optional[List[str]] = None
+    cargo_id: Optional[str] = None        # perfil por cargo: con `area_id` y `perfil_id` (o `quitar`)
+    area_id: Optional[str] = None
+    quitar: bool = False
+    usuario_id: Optional[str] = None      # excepciones de una persona: con `excepciones`
+    excepciones: Optional[Dict[str, Optional[bool]]] = None
+
+
+@router.post('/impacto')
+async def impacto(data: ImpactoInput, user=Depends(get_current_user)):
+    """Antes de guardar: a quién se le quita algún módulo con este cambio
+    (`personas`, con lo que pierde y lo que tiene pendiente en ello). Solo
+    calcula; no guarda nada."""
+    perfiles, asignaciones, niveles = await _contexto()
+    base_de = {pid: set(p.get('permisos') or []) for pid, p in perfiles.items()}
+    q = {'status': 'approved', 'acceso_migrado_at': {'$exists': True}}
+    if data.usuario_id:
+        q['id'] = data.usuario_id
+    elif data.cargo_id:
+        q['cargo_id'] = data.cargo_id
+    elif data.perfil_id:
+        p = perfiles.get(data.perfil_id)
+        if not p:
+            raise HTTPException(status_code=404, detail='Perfil no encontrado')
+        q.update(filtro_departamento(p['departamento']))
+        base_de[data.perfil_id] = set(data.permisos or [])
+    else:
+        return {'personas': []}
+    if data.cargo_id:
+        aid = f'{data.cargo_id}@{data.area_id or "*"}'
+        asignaciones = [a for a in asignaciones if a['id'] != aid]
+        if not data.quitar and data.perfil_id:
+            asignaciones.append({'id': aid, 'cargo_id': data.cargo_id, 'area_id': data.area_id or None, 'perfil_id': data.perfil_id})
+    out = []
+    async for u in db.users.find(q, {'_id': 0, 'password_hash': 0}):
+        if not _puede_editar(user, departamento_de(u)):
+            raise HTTPException(status_code=403, detail='Solo un admin o el jefe del departamento maneja sus permisos')
+        exc = dict(u.get('acceso_excepciones') or {})
+        if data.usuario_id:
+            for k, v in (data.excepciones or {}).items():
+                if v is None:
+                    exc.pop(k, None)
+                else:
+                    exc[k] = bool(v)
+        nuevo = set(efectivo(u, base_de.get(_perfil_de(u, asignaciones, niveles), set()), exc))
+        pierde = [m for m in set(u.get('acceso') or []) - nuevo if m not in MODULO_DE]
+        if not pierde:
+            continue
+        pend = await _pendientes(u['id'])
+        out.append({'id': u['id'], 'nombre': u['name'],
+                    'modulos': [NOMBRE_MODULO[m] for m in sorted(pierde, key=TODOS.index)],
+                    'pendientes': ', '.join(pend[m] for m in pierde if m in pend)})
+    return {'personas': sorted(out, key=lambda p: (not p['pendientes'], p['nombre']))}

@@ -5,7 +5,7 @@ import { CalendarDays, Users, Clock, Activity, ArrowRight, Plus, ChevronLeft, Ch
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { greetingEs, fullDateEs, timeAgoEs, capitalize, ymd, MESES_CORTO, fmtHora } from '@/lib/time';
-import { catStyle, ROOM_STATES, puedeVerTickets, puedeGestionarUsuarios } from '@/lib/constants';
+import { catStyle, ROOM_STATES, puedeVerTickets, puedeGestionarUsuarios, puede } from '@/lib/constants';
 import ActivityModal from '@/components/ActivityModal';
 import { WeekView, DayView, MonthView, startOfWeek, addDays } from '@/components/CalendarViews';
 import { useTheme } from '@/context/ThemeContext';
@@ -198,6 +198,7 @@ export default function Dashboard() {
   const roomState = ROOM_STATES[stats.room_status] || ROOM_STATES['Disponible'];
   // el servidor no manda la sala a Logística (es de Ventas Retail)
   const conSala = stats.room_status !== null;
+  const conAgenda = puede(user, 'agenda'); // sin Agenda en su perfil no ve actividades
   const gestor = puedeGestionarUsuarios(user);
 
   const rangeLabel = () => {
@@ -224,9 +225,9 @@ export default function Dashboard() {
 
       {/* KPI cards */}
       {/* Sin Sala de Juntas (Logística) quedan 3 tarjetas. Quien aprueba usuarios ve las pendientes. */}
-      <div className={`grid grid-cols-1 sm:grid-cols-2 ${conSala ? 'xl:grid-cols-4' : 'xl:grid-cols-3'} gap-4 mb-6`}>
-        <KpiCard icon={CalendarDays} label="Actividades de hoy" value={stats.today_count ?? 0} sub="actividades programadas" color="#00a5df" tint="rgba(0,165,223,0.14)" onClick={() => navigate('/agenda')} testid="dashboard-card-today" delay={0.02} />
-        <KpiCard icon={Clock} label="Próximas actividades" value={stats.upcoming_count ?? 0} sub="en los próximos 7 días" color="#ec9032" tint="rgba(236,144,50,0.14)" onClick={() => navigate('/agenda')} testid="dashboard-card-upcoming" delay={0.06} />
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${['xl:grid-cols-1', 'xl:grid-cols-2', 'xl:grid-cols-3', 'xl:grid-cols-4'][(conAgenda ? 2 : 0) + (conSala ? 1 : 0)]} gap-4 mb-6`}>
+        {conAgenda && <KpiCard icon={CalendarDays} label="Actividades de hoy" value={stats.today_count ?? 0} sub="actividades programadas" color="#00a5df" tint="rgba(0,165,223,0.14)" onClick={() => navigate('/agenda')} testid="dashboard-card-today" delay={0.02} />}
+        {conAgenda && <KpiCard icon={Clock} label="Próximas actividades" value={stats.upcoming_count ?? 0} sub="en los próximos 7 días" color="#ec9032" tint="rgba(236,144,50,0.14)" onClick={() => navigate('/agenda')} testid="dashboard-card-upcoming" delay={0.06} />}
         {conSala && <KpiCard icon={Activity} label="Estado Sala de Juntas" value={stats.room_status || 'Disponible'} sub={stats.room_name} color={roomState.solid} tint={roomState.bg} onClick={() => navigate('/sala-de-juntas')} testid="dashboard-card-room" delay={0.1} />}
         <KpiCard icon={gestor ? Users : Bell} label={gestor ? 'Usuarios pendientes' : 'Notificaciones'} value={gestor ? (stats.pending_users ?? 0) : (stats.unread_notifications ?? 0)} sub={gestor ? 'por aprobar' : 'sin leer'} color="#712146" tint="rgba(113,33,70,0.12)" onClick={() => navigate(gestor ? '/usuarios' : '/notificaciones')} testid="dashboard-card-pending" delay={0.14} />
       </div>
@@ -235,6 +236,7 @@ export default function Dashboard() {
       <TareasInicio />
 
       {/* Today + Recent */}
+      {conAgenda && (
       <div className="lg:col-span-3 rounded-[18px] bg-card border shadow-card p-5">
         <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}
           className="lg:col-span-2 rounded-[18px] bg-card border shadow-card p-5" data-testid="dashboard-today-activities-card">
@@ -304,6 +306,7 @@ export default function Dashboard() {
           </div>
         </motion.div>*/}
       </div>
+      )}
 
       {/* Mini calendar */}
       {/*
