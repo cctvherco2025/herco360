@@ -12,7 +12,7 @@ import { confirmar } from '@/components/ConfirmDialog';
 /* Permisos por perfiles en Jerarquía y permisos (backend/acceso.py):
    - Perfiles: qué incluye cada paquete, por módulo (pestañas General,
      Formularios y Activos) y lo de adentro de cada módulo (Ver, Hacer,
-     Administrar). Los arma el super admin; "Comparar perfiles" los pone lado
+     Administrar). Los arman el super admin y los admins del departamento; "Comparar perfiles" los pone lado
      a lado.
    - Perfil por cargo: qué perfil usa cada cargo, con ajustes por área que
      valen también para sus subáreas.
@@ -236,7 +236,7 @@ export function PerfilesAcceso({ depto }) {
                 <Button type="button" variant="ghost" className="h-10 rounded-lg" onClick={() => setNuevo(null)} aria-label="Cancelar"><X className="h-4 w-4" /></Button>
               </form>
             ))}
-            {!editable && <p className="mt-2 text-[11px] text-muted-foreground">Solo el super admin crea y edita perfiles. Qué perfil usa cada cargo se elige en Perfil por cargo.</p>}
+            {!editable && <p className="mt-2 text-[11px] text-muted-foreground">Solo un admin del departamento crea y edita perfiles. Qué perfil usa cada cargo se elige en Perfil por cargo.</p>}
           </div>
         )}
 

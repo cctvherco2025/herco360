@@ -4,7 +4,7 @@
   (General, Formularios, Activos) y los permisos de adentro de cada uno.
   Apagar un módulo apaga todo lo de adentro.
 - Perfiles (db.acceso_perfiles): paquetes de permisos con nombre, de cada
-  departamento. Los arma el super admin.
+  departamento. Los arman el super admin y los admins de ese departamento.
 - Perfil por cargo (db.acceso_asignaciones): qué perfil usa cada cargo, con
   ajustes por área que valen también para sus subáreas (manda el ajuste del
   área más cercana). Sin asignación: Básico en Retail; en los demás
@@ -303,9 +303,14 @@ def _exigir(user, depto):
         raise HTTPException(status_code=403, detail='Solo un admin o el jefe del departamento maneja sus permisos')
 
 
-def _solo_super(user):
-    if not es_super_admin(user):
-        raise HTTPException(status_code=403, detail='Los perfiles los arma el super admin')
+def _arma_perfiles(user, depto) -> bool:
+    """Arman los perfiles el super admin y los admins de ese departamento."""
+    return es_super_admin(user) or (user.get('role') == 'admin' and departamento_de(user) == depto)
+
+
+def _exigir_perfiles(user, depto):
+    if not _arma_perfiles(user, depto):
+        raise HTTPException(status_code=403, detail='Los perfiles los arma un admin del departamento')
 
 
 async def _exigir_migrado():
@@ -333,7 +338,7 @@ async def catalogo(departamento: Optional[str] = None, user=Depends(get_current_
                      'permisos': [{'id': p, 'nombre': pn, 'grupo': g} for p, pn, g in ps]}
                     for t, m, n, sr, ps in MODULOS],
         'migrado': await migrado(),
-        'puede_editar_perfiles': es_super_admin(user),
+        'puede_editar_perfiles': _arma_perfiles(user, d),
     }
 
 
@@ -377,9 +382,9 @@ async def _nombre_libre(depto, nombre, excluir=None):
 
 @router.post('/perfiles')
 async def crear_perfil(data: PerfilInput, user=Depends(get_current_user)):
-    _solo_super(user)
     await _exigir_migrado()
-    d = data.departamento or departamento_de(user)
+    d = _depto(user, data.departamento)
+    _exigir_perfiles(user, d)
     if not await db.org_departamentos.find_one({'id': d}):
         raise HTTPException(status_code=400, detail='Elige un departamento válido')
     campos = _limpiar(data, d)
@@ -395,10 +400,10 @@ async def crear_perfil(data: PerfilInput, user=Depends(get_current_user)):
 
 @router.put('/perfiles/{pid}')
 async def editar_perfil(pid: str, data: PerfilInput, user=Depends(get_current_user)):
-    _solo_super(user)
     p = await db.acceso_perfiles.find_one({'id': pid}, {'_id': 0})
     if not p:
         raise HTTPException(status_code=404, detail='Perfil no encontrado')
+    _exigir_perfiles(user, p['departamento'])
     campos = _limpiar(data, p['departamento'])
     await _nombre_libre(p['departamento'], campos['nombre'], excluir=pid)
     await db.acceso_perfiles.update_one({'id': pid}, {'$set': {**campos, 'updated_at': now_iso(), 'updated_by': user['name']}})
@@ -409,10 +414,10 @@ async def editar_perfil(pid: str, data: PerfilInput, user=Depends(get_current_us
 
 @router.delete('/perfiles/{pid}')
 async def borrar_perfil(pid: str, user=Depends(get_current_user)):
-    _solo_super(user)
     p = await db.acceso_perfiles.find_one({'id': pid}, {'_id': 0})
     if not p:
         raise HTTPException(status_code=404, detail='Perfil no encontrado')
+    _exigir_perfiles(user, p['departamento'])
     if pid in _por_defecto(p['departamento']):
         raise HTTPException(status_code=400, detail=f'{p["nombre"]} es el perfil de quien no tiene otro: se edita, no se borra')
     n = await db.acceso_asignaciones.count_documents({'perfil_id': pid})
