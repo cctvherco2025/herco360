@@ -161,12 +161,12 @@ export default function MantPlanDetalle() {
               </Button>
             )}
             {p.estado === 'archivada' ? (
-              <Button variant="outline" className="rounded-xl flex-1 sm:flex-none" onClick={() => accion('desarchivar', `¿Desarchivar ${p.numero}?`, 'Vuelve como estaba (si estaba activa, queda pausada para que la reanudes).', 'Desarchivar')}>
+              <Button variant="outline" className="rounded-xl flex-1 sm:flex-none" onClick={() => accion('desarchivar', `¿Desarchivar ${p.numero}?`, 'Vuelve como estaba (si estaba activa, queda pausada para que la reanudes). Las tareas que se cancelaron al archivar no vuelven; los ciclos siguientes se generan normal.', 'Desarchivar')}>
                 <ArchiveRestore className="h-4 w-4 mr-1.5" /> Desarchivar
               </Button>
             ) : p.estado !== 'borrador' && (
               <Button variant="outline" className="rounded-xl" title="Archivar" aria-label="Archivar"
-                onClick={() => accion('archivar', `¿Archivar ${p.numero}?`, 'Deja de generar ciclos y sale de la lista principal. Sus datos se conservan.', 'Archivar')}>
+                onClick={() => accion('archivar', `¿Archivar ${p.numero}?`, 'Deja de generar ciclos y sale de la lista principal. Sus tareas por hacer se cancelan (salen de la Agenda y ya no avisan); lo ya hecho se conserva.', 'Archivar')}>
                 <Archive className="h-4 w-4" />
               </Button>
             )}

@@ -581,7 +581,22 @@ async def accion_plan(plan_id: str, accion: str, user=Depends(require_modulo('pl
         if estado == 'archivada':
             raise HTTPException(status_code=400, detail='Ya está archivada')
         await db.mant_planes.update_one({'id': plan_id}, {'$set': {'estado': 'archivada', 'estado_previo': estado, 'archivada_at': now_iso()}})
-        await _cambio(plan, user, 'Archivada')
+        # sus tareas por hacer se cancelan: salen de la Agenda y de Mis mantenimientos y ya no avisan (lo hecho se conserva)
+        abiertas = await db.mant_tareas.find({'plan_id': plan_id, 'estado': {'$in': list(ABIERTAS)}},
+                                             {'_id': 0, 'id': 1, 'numero': 1, 'estado': 1, 'responsable_id': 1, 'ciclo_id': 1}).to_list(5000)
+        motivo = 'Se archivó la planificación'
+        canceladas = []
+        for t in abiertas:
+            r = await db.mant_tareas.update_one({'id': t['id'], 'estado': {'$in': list(ABIERTAS)}}, {'$set': {
+                'estado': 'cancelada', 'cancelada_motivo': motivo, 'cancelada_por': user['name'], 'cancelada_at': now_iso()}})
+            if r.modified_count:
+                canceladas.append(t)
+        for ciclo_id in {t['ciclo_id'] for t in canceladas}:
+            await _recontar(ciclo_id)
+        for t in canceladas:
+            if t['estado'] == 'pendiente':  # las programadas todavía no le habían avisado
+                await _avisar([t['responsable_id']], 'mant_tarea_cancelada', f'{t["numero"]}: se canceló ({motivo}).', t['id'], actor=user)
+        await _cambio(plan, user, 'Archivada' + (f': se cancelaron sus {len(canceladas)} tareas por hacer' if canceladas else ''))
     elif accion == 'desarchivar':
         if estado != 'archivada':
             raise HTTPException(status_code=400, detail='No está archivada')
