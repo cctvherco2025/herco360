@@ -52,7 +52,7 @@ export default function Tickets() {
         <h1 className="font-heading text-2xl sm:text-3xl font-semibold flex items-center gap-2">
           <Ticket className="h-7 w-7 text-[#00a5df]" /> Seguimientos
         </h1>
-        <p className="text-muted-foreground text-sm mt-0.5">Inconsistencias de Promociones del mes: se corrigen y las valida el jefe o el gerente de tienda.</p>
+        <p className="text-muted-foreground text-sm mt-0.5">Lo que hay que corregir de Promociones del mes y de los formularios: quien lo tiene asignado lo corrige y quien revisa lo valida.</p>
       </div>
 
       <div className="flex flex-wrap gap-1.5 mb-4" role="tablist">
@@ -88,6 +88,7 @@ export default function Tickets() {
                 <span className="block text-sm font-medium">{t.titulo}</span>
                 <span className="block text-xs text-muted-foreground">
                   {t.origen?.periodo_label ? `Promociones de ${t.origen.periodo_label} · ` : ''}
+                  {t.origen?.tipo === 'formulario' ? 'Formulario · ' : ''}
                   {t.soy_asignado ? 'Asignado a ti' : `Asignado a ${t.asignado_a?.name || '—'}`}
                   {t.reaperturas ? ` · reabierto ${t.reaperturas} vez${t.reaperturas === 1 ? '' : 'es'}` : ''}
                 </span>

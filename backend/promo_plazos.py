@@ -210,13 +210,19 @@ async def revisar_vencimientos() -> None:
         if not await _reclamar('tickets', k, 'aviso', etapa, k['estado'], {'vencido': True} if etapa == 'vencido' else {}):
             continue
         cuando = fecha_corta(k['vence'])
+        # los de formularios llevan sus revisores; los de Promociones, los de la tienda
+        de_form = (k.get('origen') or {}).get('tipo') == 'formulario'
+        asignado = (k.get('asignado_a') or {}).get('id')
+        revisores = [r['id'] for r in k.get('revisores') or []] if de_form else await _revisores(k['tienda'])
         if k['estado'] == 'abierto':
-            actor, que = [(k.get('asignado_a') or {}).get('id')], 'corregir'
+            actor, que = [asignado], 'corregir'
         else:
-            actor = [u for u in await _revisores(k['tienda']) if u != (k.get('asignado_a') or {}).get('id')]
+            actor = [u for u in revisores if u != asignado]
             que = 'validar'
         if etapa == 'recordar':
             await _avisar(actor, 'promo_recordatorio', f"{k['numero']}: falta {que}. Vence {cuando}.", k['id'], 'ticket')
         else:
-            await _avisar(actor + await los_admins(), 'promo_vencida',
-                          f"{k['numero']} venció sin {que} ({k['categoria']} · {k['tienda']}, plazo {cuando}).", k['id'], 'ticket')
+            extra = [u for u in revisores if u != asignado] if de_form else await los_admins()
+            lugar = f"{k['categoria']} · {k['tienda']}" if k.get('tienda') else k['categoria']
+            await _avisar(actor + extra, 'promo_vencida',
+                          f"{k['numero']} venció sin {que} ({lugar}, plazo {cuando}).", k['id'], 'ticket')

@@ -82,6 +82,7 @@ export default function TicketDetalle() {
   const abierto = t.estado === 'abierto';
   const activo = abierto || t.estado === 'corregido';
   const listas = t.lineas.every((l) => l.corregida && (l.fotos || []).length);
+  const deForm = t.origen?.tipo === 'formulario';
 
   return (
     <div className="max-w-[1000px] mx-auto pt-2 space-y-4" data-testid="ticket-detalle">
@@ -102,10 +103,11 @@ export default function TicketDetalle() {
         <p className="text-sm text-muted-foreground">
           {t.origen?.periodo_label ? `Promociones de ${t.origen.periodo_label} · ` : ''}
           Abierto por {t.abierto_por?.name} · asignado a {t.soy_asignado ? 'ti' : t.asignado_a?.name}
-          {t.origen?.form_id && <> · <Link to={`/formularios/custom/${t.origen.form_id}`} className="text-[#00a5df] hover:underline">ver la publicación</Link></>}
+          {deForm && t.revisores?.length > 0 && <> · lo revisa {t.revisores.map((r) => r.name).join(', ')}</>}
+          {t.origen?.form_id && <> · <Link to={`/formularios/custom/${t.origen.form_id}${deForm ? '?tab=historial' : ''}`} className="text-[#00a5df] hover:underline">{deForm ? 'ver el formulario' : 'ver la publicación'}</Link></>}
         </p>
-        {t.estado === 'cerrado' && <p className="text-xs rounded-xl bg-[rgba(22,163,74,0.12)] text-[#16a34a] px-3 py-2">Cerrado por {t.cerrado_por?.name} {timeAgoEs(t.cerrado_at)}: la categoría quedó validada.</p>}
-        {t.estado === 'cancelado' && <p className="text-xs rounded-xl bg-muted px-3 py-2">Cancelado: la respuesta de esta categoría se eliminó.</p>}
+        {t.estado === 'cerrado' && <p className="text-xs rounded-xl bg-[rgba(22,163,74,0.12)] text-[#16a34a] px-3 py-2">Cerrado por {t.cerrado_por?.name} {timeAgoEs(t.cerrado_at)}{deForm ? '.' : ': la categoría quedó validada.'}</p>}
+        {t.estado === 'cancelado' && <p className="text-xs rounded-xl bg-muted px-3 py-2">Cancelado: {deForm ? 'la respuesta del formulario se eliminó' : 'la respuesta de esta categoría se eliminó'}.</p>}
       </div>
 
       <div className="grid lg:grid-cols-[1.1fr_1fr] gap-4 items-start">
@@ -115,6 +117,15 @@ export default function TicketDetalle() {
             <div key={ln.item_id} className={`rounded-[16px] bg-card border p-4 space-y-2 ${ln.corregida ? 'border-[#16a34a]/60' : 'border-[#ec9032]'}`} data-testid="ticket-linea">
               <p className="text-sm font-semibold">{ln.titulo}</p>
               <p className="text-sm"><span className="font-semibold text-[#b45309] dark:text-[#fbbf24]">{ln.tipo}</span>{ln.comentario ? ` · ${ln.comentario}` : ''}</p>
+              {(ln.evidencia || []).length > 0 && (
+                <div>
+                  <p className="text-[11px] text-muted-foreground mb-1">Al contestar</p>
+                  <div className="flex flex-wrap gap-2">
+                    {ln.evidencia.map((f) => <AuthedImg key={f.id} url={fotoUrl(f)} className="h-16 w-16 rounded-lg object-cover border cursor-zoom-in" onClick={() => setZoom(fotoUrl(f))} />)}
+                  </div>
+                </div>
+              )}
+              {deForm && (ln.fotos || []).length > 0 && <p className="text-[11px] text-muted-foreground">Corrección</p>}
               {(ln.fotos || []).length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {ln.fotos.map((f) => <AuthedImg key={f.id} url={fotoUrl(f)} className="h-20 w-20 rounded-lg object-cover border cursor-zoom-in" onClick={() => setZoom(fotoUrl(f))} />)}
@@ -135,7 +146,7 @@ export default function TicketDetalle() {
                   </Button>
                 </div>
               ) : (
-                <p className={`text-xs font-medium ${ln.corregida ? 'text-[#16a34a]' : 'text-muted-foreground'}`}>{ln.corregida ? 'Corregida por el coordinador' : 'Sin corregir'}</p>
+                <p className={`text-xs font-medium ${ln.corregida ? 'text-[#16a34a]' : 'text-muted-foreground'}`}>{ln.corregida ? (deForm ? 'Corregida' : 'Corregida por el coordinador') : 'Sin corregir'}</p>
               )}
             </div>
           ))}
@@ -186,7 +197,7 @@ export default function TicketDetalle() {
               {t.soy_revisor && (
                 <div className="rounded-xl bg-muted/50 p-3 space-y-2">
                   <p className="text-xs text-muted-foreground">
-                    {t.estado === 'corregido' ? 'Verifica la corrección. Para reabrir, escribe arriba qué sigue mal.' : 'Esperando la corrección del coordinador. Si ya lo verificaste, puedes cerrarlo.'}
+                    {t.estado === 'corregido' ? 'Verifica la corrección. Para reabrir, escribe arriba qué sigue mal.' : `Esperando la corrección de ${deForm ? (t.asignado_a?.name || 'quien lo tiene asignado') : 'el coordinador'}. Si ya lo verificaste, puedes cerrarlo.`}
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {t.estado === 'corregido' && (
@@ -196,7 +207,7 @@ export default function TicketDetalle() {
                       </Button>
                     )}
                     <Button className="flex-1 rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-white" disabled={!!ocupado}
-                      onClick={conTexto('cerrar', 'cerrar', 'Ticket cerrado: categoría validada')} data-testid="ticket-cerrar">
+                      onClick={conTexto('cerrar', 'cerrar', deForm ? 'Seguimiento validado y cerrado' : 'Ticket cerrado: categoría validada')} data-testid="ticket-cerrar">
                       {ocupado === 'cerrar' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Validar y cerrar'}
                     </Button>
                   </div>
