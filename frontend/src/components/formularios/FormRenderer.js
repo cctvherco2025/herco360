@@ -365,10 +365,9 @@ export default function FormRenderer({ form, modo = 'llenar', servidor, onEnviad
   if (pantalla.tipo === 'pagina') {
     pct = quedan.length ? Math.round((quedan.filter(contestada).length / quedan.length) * 100) : 0;
   } else pct = Math.round((posicion / Math.max(1, total)) * 100);
-  const etiqueta = pantalla.tipo === 'resumen' ? 'Revisa antes de enviar'
-    : pantalla.tipo === 'pagina' ? 'Avance'
-      : pantalla.tipo === 'una' ? `${pantalla.paso.nombre} · ${numeros[pantalla.pregunta?.id] ? `pregunta ${numeros[pantalla.pregunta.id]} de ${totalPreguntas}` : ''}`
-        : `Paso ${pasosVisibles.findIndex((p) => p.id === pantalla.paso.id) + 1} de ${pasosVisibles.length} · ${pantalla.paso.nombre}`;
+  const etiqueta = !pantalla.paso ? (pantalla.tipo === 'resumen' ? 'Revisa antes de enviar' : pantalla.tipo === 'pagina' ? 'Avance' : '')
+    : pantalla.tipo === 'una' ? `${pantalla.paso.nombre} · ${numeros[pantalla.pregunta?.id] ? `pregunta ${numeros[pantalla.pregunta.id]} de ${totalPreguntas}` : ''}`
+      : `Paso ${pasosVisibles.findIndex((p) => p.id === pantalla.paso.id) + 1} de ${pasosVisibles.length} · ${pantalla.paso.nombre}`;
 
   const props = (it) => ({
     it, n: numeros[it.id], form, listas, valor: it.tipo === 'calculado' ? vis.calculados[it.id] : valores[it.id], error: errores[it.id],

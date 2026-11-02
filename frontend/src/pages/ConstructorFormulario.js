@@ -378,6 +378,24 @@ export default function ConstructorFormulario() {
     } catch (e) { toast.error(e?.response?.data?.detail || 'No se pudo duplicar'); }
   };
 
+  const eliminarFormulario = async () => {
+    const ok = await confirmar({
+      tipo: 'danger',
+      titulo: '¿Eliminar formulario?',
+      mensaje: <>Se eliminará <b>{titulo || 'este formulario'}</b> con todas sus versiones, respuestas y asignaciones. Esta acción no se puede deshacer.</>,
+      textoConfirmar: 'Eliminar',
+      textoCargando: 'Eliminando…',
+      textoExito: 'Formulario eliminado',
+      accion: async () => {
+        // nada pendiente que guardar: el formulario ya no existe
+        clearTimeout(timer.current);
+        firma.current = null;
+        await api.delete(`/formularios-custom/${id}`);
+      },
+    });
+    if (ok) navigate('/formularios');
+  };
+
   if (error) {
     return (
       <div className="max-w-[560px] mx-auto pt-16 text-center">
@@ -451,8 +469,9 @@ export default function ConstructorFormulario() {
             {mis.editar && <Button variant="outline" className="h-10 rounded-[10px]" onClick={() => setVerConfig(true)}><Settings className="h-4 w-4 mr-1.5" /> Configuración</Button>}
             {mis.editar && <Button variant="outline" className="h-10 rounded-[10px]" onClick={duplicarFormulario}><Copy className="h-4 w-4 mr-1.5" /> Duplicar</Button>}
             {(mis.editar || mis.publicar) && <Button variant="outline" className="h-10 rounded-[10px]" onClick={() => setVerVersiones(true)}><History className="h-4 w-4 mr-1.5" /> Versiones</Button>}
+            {mis.eliminar && <BotonIcono rojo label="Eliminar formulario" onClick={eliminarFormulario}><Trash2 className="h-[18px] w-[18px]" /></BotonIcono>}
           </div>
-          {(mis.editar || mis.publicar) && (
+          {(mis.editar || mis.publicar || mis.eliminar) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="md:hidden h-10 w-10 p-0 rounded-[10px]" aria-label="Más opciones"><MoreHorizontal className="h-4 w-4" /></Button>
@@ -460,7 +479,12 @@ export default function ConstructorFormulario() {
               <DropdownMenuContent align="end" className="rounded-xl">
                 {mis.editar && <DropdownMenuItem onSelect={() => setVerConfig(true)}><Settings className="h-4 w-4 mr-2" /> Configuración</DropdownMenuItem>}
                 {mis.editar && <DropdownMenuItem onSelect={duplicarFormulario}><Copy className="h-4 w-4 mr-2" /> Duplicar</DropdownMenuItem>}
-                <DropdownMenuItem onSelect={() => setVerVersiones(true)}><History className="h-4 w-4 mr-2" /> Versiones</DropdownMenuItem>
+                {(mis.editar || mis.publicar) && <DropdownMenuItem onSelect={() => setVerVersiones(true)}><History className="h-4 w-4 mr-2" /> Versiones</DropdownMenuItem>}
+                {mis.eliminar && (
+                  <DropdownMenuItem onSelect={eliminarFormulario} className="text-[#dc2626] focus:text-[#dc2626] focus:bg-[rgba(220,38,38,0.08)]">
+                    <Trash2 className="h-4 w-4 mr-2" /> Eliminar
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           )}
