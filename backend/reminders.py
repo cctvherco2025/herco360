@@ -24,6 +24,7 @@ import recurrence as rec
 import promo_plazos
 import tareas
 import mantenimiento
+import formularios_asignaciones
 
 logger = logging.getLogger("reminders")
 
@@ -195,6 +196,13 @@ async def _loop() -> None:
             raise
         except Exception as e:  # pragma: no cover
             logger.warning(f"mantenimiento error: {e}")
+        # Formularios: recordatorios, vencidos y a quién le toca
+        try:
+            await formularios_asignaciones.revisar()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # pragma: no cover
+            logger.warning(f"formularios error: {e}")
         await asyncio.sleep(POLL_SECONDS)
 
 

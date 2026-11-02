@@ -1,15 +1,29 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Eye, Calendar, User as UserIcon, ClipboardList, Download, Loader2, Info, Trash2, Store, Tag } from 'lucide-react';
+import { Eye, Calendar, User as UserIcon, ClipboardList, Download, Loader2, Info, Trash2, Store, Tag, Paperclip, Pencil } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { generateCustomFormPdf } from '@/lib/customFormPdf';
+import { urlMapa } from '@/lib/formularios';
 import { ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import PhotoZoomDialog, { ZOOM_IMG_CLASS } from '@/components/PhotoZoomDialog';
 import { confirmar } from '@/components/ConfirmDialog';
+
+// Adjuntos que no son imagen (formularios del constructor nuevo).
+export async function descargarArchivo(formId, respId, a) {
+  try {
+    const res = await api.get(`/formularios-v2/${formId}/respuestas/${respId}/archivo/${a.id}`, { responseType: 'blob' });
+    const url = URL.createObjectURL(res.data);
+    const link = document.createElement('a');
+    link.href = url; link.download = a.nombre || 'archivo';
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) { toast.error('No se pudo descargar el archivo'); }
+}
 
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
@@ -76,7 +90,7 @@ async function exportResponsePdf(formId, formTitulo, hasScoring, respId, cached)
   });
 }
 
-function DetailDialog({ formId, formTitulo, hasScoring, id, onClose }) {
+function DetailDialog({ formId, formTitulo, hasScoring, id, onClose, puedeExportar }) {
   const [resp, setResp] = useState(null);
   const [zoom, setZoom] = useState(null);
   const [exporting, setExporting] = useState(false);
@@ -99,7 +113,7 @@ function DetailDialog({ formId, formTitulo, hasScoring, id, onClose }) {
       <DialogContent className="sm:max-w-[600px] rounded-[22px] max-h-[88vh] flex flex-col p-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-2 flex-row items-center justify-between gap-3 pr-10">
           <DialogTitle className="font-heading">Respuesta</DialogTitle>
-          {resp && (
+          {resp && puedeExportar && (
             <button onClick={download} disabled={exporting}
               className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50 shrink-0">
               {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
@@ -164,8 +178,11 @@ function DetailDialog({ formId, formTitulo, hasScoring, id, onClose }) {
                       })}
                     </ul>
                   ) : Array.isArray(e.respuesta) ? (
-                    e.respuesta.length > 0 && <p className="text-sm mt-1">{e.respuesta.join(', ')}</p>
-                  ) : (e.respuesta && <p className="text-sm mt-1">{e.respuesta}</p>)}
+                    e.respuesta.length > 0 && <p className="text-sm mt-1 whitespace-pre-line">{e.respuesta.join(e.tipo === 'matriz' ? '\n' : ', ')}</p>
+                  ) : (e.respuesta && <p className="text-sm mt-1 whitespace-pre-line">{e.respuesta}</p>)}
+                  {e.tipo === 'ubicacion' && e.valor && (
+                    <a href={urlMapa(e.valor)} target="_blank" rel="noreferrer" className="text-xs underline text-[#1e395e] dark:text-[#3cbef6]">Ver en el mapa</a>
+                  )}
                   {e.note && <p className="text-xs text-muted-foreground italic mt-1">"{e.note}"</p>}
                   {e.photos?.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-2">
@@ -173,6 +190,16 @@ function DetailDialog({ formId, formTitulo, hasScoring, id, onClose }) {
                         <AuthedImg key={p.id} url={`/formularios-custom/${formId}/respuestas/${resp.id}/foto/${p.id}`}
                           className="h-16 w-16 rounded-lg object-cover border cursor-pointer"
                           onClick={() => setZoom(`/formularios-custom/${formId}/respuestas/${resp.id}/foto/${p.id}`)} />
+                      ))}
+                    </div>
+                  )}
+                  {e.archivos?.length > 0 && (
+                    <div className="flex flex-col gap-1.5 mt-2">
+                      {e.archivos.map((a) => (
+                        <button key={a.id} type="button" onClick={() => descargarArchivo(formId, resp.id, a)}
+                          className="self-start inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs hover:bg-muted">
+                          <Paperclip className="h-3.5 w-3.5" /> {a.nombre || 'Archivo'}
+                        </button>
                       ))}
                     </div>
                   )}
@@ -198,6 +225,10 @@ export default function CustomFormHistorial({ schema, canSeeAll, canManage }) {
   const [deletingId, setDeletingId] = useState(null);
   const [clearing, setClearing] = useState(false);
   const busy = clearing || deletingId != null;
+  // Constructor nuevo: cada acción sale de la pestaña Permisos del formulario
+  const nuevo = schema.esquema === 2;
+  const puedeExportar = !nuevo || !!schema.mis_permisos?.exportar;
+  const puedeModificar = nuevo && !!schema.mis_permisos?.modificar;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -297,11 +328,17 @@ export default function CustomFormHistorial({ schema, canSeeAll, canManage }) {
             {schema.has_scoring && r.total_max > 0 && (
               <span className="text-sm font-semibold shrink-0">{r.percent}%</span>
             )}
-            <button onClick={(e) => quickDownload(e, r.id)} disabled={exportingId === r.id} title="Descargar PDF"
-              className="p-2 rounded-lg hover:bg-muted text-muted-foreground shrink-0 disabled:opacity-50">
-              {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            </button>
-            {(canManage || r.respondent_id === user?.id) && (
+            {puedeModificar && r.esquema === 2 && (
+              <Link to={`/formularios/v2/${schema.id}/respuestas/${r.id}/modificar`} onClick={(e) => e.stopPropagation()} title="Modificar respuesta"
+                className="p-2 rounded-lg hover:bg-muted text-muted-foreground shrink-0"><Pencil className="h-4 w-4" /></Link>
+            )}
+            {puedeExportar && (
+              <button onClick={(e) => quickDownload(e, r.id)} disabled={exportingId === r.id} title="Descargar PDF"
+                className="p-2 rounded-lg hover:bg-muted text-muted-foreground shrink-0 disabled:opacity-50">
+                {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              </button>
+            )}
+            {(canManage || (!nuevo && r.respondent_id === user?.id)) && (
               <button
                 onClick={(e) => { e.stopPropagation(); removeOne(r); }}
                 disabled={deletingId === r.id} title="Eliminar respuesta"
@@ -315,7 +352,7 @@ export default function CustomFormHistorial({ schema, canSeeAll, canManage }) {
         ))}
       </div>
 
-      <DetailDialog formId={schema.id} formTitulo={schema.titulo} hasScoring={schema.has_scoring} id={openId} onClose={() => setOpenId(null)} />
+      <DetailDialog formId={schema.id} formTitulo={schema.titulo} hasScoring={schema.has_scoring} id={openId} onClose={() => setOpenId(null)} puedeExportar={puedeExportar} />
 
     </div>
   );

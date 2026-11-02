@@ -18,6 +18,9 @@ import tickets
 import storage
 import reminders
 import tareas
+import formularios_asignaciones
+import formularios_resultados
+import formularios_v2
 import push
 
 ROOT_DIR = Path(__file__).parent
@@ -85,6 +88,9 @@ api_router.include_router(organizacion.router)
 api_router.include_router(permisos.router)
 api_router.include_router(acceso.router)
 api_router.include_router(routes_formularios_custom.router)
+api_router.include_router(formularios_asignaciones.router)  # antes de formularios_v2: /mis no es un /{fid}
+api_router.include_router(formularios_resultados.router)  # lo mismo con /supervision
+api_router.include_router(formularios_v2.router)
 api_router.include_router(routes_diagnostico.router)
 api_router.include_router(routes_groups.router)
 api_router.include_router(promo_tareas.router)
@@ -130,6 +136,8 @@ async def startup():
         # estructura de la organización (departamentos, áreas, cargos) y
         # ubicación de cada usuario en ella; idempotente
         await organizacion.ensure_indexes()
+        await formularios_v2.ensure_indexes()
+        await formularios_asignaciones.ensure_indexes()
         await organizacion.asegurar()
         await permisos.asegurar()  # perfiles iniciales y permisos de cada usuario
     except Exception as e:

@@ -40,7 +40,10 @@ import promo_analisis
 from notifications import create_notification
 import promo_tareas
 import promo_plazos
+import tickets
 import storage
+import formularios_acceso as fa
+import formularios_asignaciones as fasig
 
 router = APIRouter(prefix='/formularios-custom', tags=['formularios-custom'])
 logger = logging.getLogger('formularios_custom')
@@ -139,6 +142,8 @@ def _can_manage_form(user, form: dict) -> bool:
 
 
 def _can_fill(user, form: dict) -> bool:
+    if form.get('esquema') == 2:
+        return fa.puede_llenar(user, form)  # lo da la pestaña Asignaciones
     if form.get('status') == 'borrador' and form.get('creator_id') != user.get('id'):
         return False
     if es_super_admin(user):
@@ -161,6 +166,8 @@ def _can_fill(user, form: dict) -> bool:
 
 
 def _sees_all_responses(user, form: dict) -> bool:
+    if form.get('esquema') == 2:
+        return fa.puede(user, form, 'resultados')
     if es_super_admin(user):
         return True
     if (user.get('role') == 'admin' or es_jefe_depto(user)) and _mismo_depto(user, form):
@@ -175,6 +182,17 @@ def _revisa_tienda(user, form: dict, row: dict) -> bool:
     en publicaciones con tareas, para revisarlas."""
     return (bool(form.get('flujo_tareas')) and es_revisor_tienda(user)
             and (row or {}).get('sucursal') == tienda_promos(user))
+
+
+def _ve_respuesta(user, form: dict, row: dict) -> bool:
+    """Una respuesta puntual: quien ve todas, quien la dio y quien la revisa."""
+    return (_sees_all_responses(user, form) or row['respondent_id'] == user['id'] or _revisa_tienda(user, form, row)
+            or user['id'] in (row.get('supervisores_ids') or [])
+            or (form.get('esquema') == 2 and fa.puede(user, form, 'modificar')))
+
+
+def _puede_eliminar(user, form: dict) -> bool:
+    return fa.puede(user, form, 'eliminar') if form.get('esquema') == 2 else _can_manage_form(user, form)
 
 
 async def _get_form_or_404(form_id: str) -> dict:
@@ -614,9 +632,13 @@ async def list_available(kind: Optional[str] = None, user=Depends(get_current_us
         elif f_kind != 'generic':
             continue
         is_creator = f.get('creator_id') == user['id']
-        if f.get('status') == 'borrador' and not is_creator:
+        nuevo = f.get('esquema') == 2
+        puede_editar = fa.entra_al_constructor(user, f) if nuevo else _can_manage_form(user, f)
+        # los del constructor nuevo (esquema 2): sus borradores también los ve quien puede editarlos
+        nuevo_editable = nuevo and puede_editar
+        if f.get('status') == 'borrador' and not (is_creator or nuevo_editable):
             continue
-        if not (is_creator or _can_fill(user, f)):
+        if not (is_creator or nuevo_editable or _can_fill(user, f) or (nuevo and fa.ve_formulario(user, f))):
             continue
         out.append({
             'id': f['id'], 'titulo': f['titulo'], 'descripcion': f.get('descripcion', ''),
@@ -625,6 +647,11 @@ async def list_available(kind: Optional[str] = None, user=Depends(get_current_us
             'has_scoring': f.get('has_scoring', False), 'is_creator': is_creator,
             'creator_name': f.get('creator_name'), 'audiencia': f.get('audiencia'),
             'created_at': f.get('created_at'),
+            'esquema': f.get('esquema') or 1, 'estado': f.get('estado') or f.get('status') or 'publicado',
+            'version': f.get('version'), 'puede_editar': puede_editar,
+            'mis_permisos': fa.mis_permisos(user, f) if nuevo else None,
+            'respuestas': await db.custom_form_responses.count_documents({'form_id': f['id']}) if nuevo and _sees_all_responses(user, f) else None,
+            'preguntas': len(f.get('items') or []), 'guardado_at': f.get('guardado_at') or f.get('updated_at'),
         })
     return serialize_doc(out)
 
@@ -632,8 +659,14 @@ async def list_available(kind: Optional[str] = None, user=Depends(get_current_us
 @router.get('/{form_id}')
 async def get_form(form_id: str, user=Depends(get_current_user)):
     form = await _get_form_or_404(form_id)
-    if not _can_fill(user, form):
+    nuevo = form.get('esquema') == 2
+    if not (fa.ve_formulario(user, form) if nuevo else _can_fill(user, form)):
         raise HTTPException(status_code=403, detail='No tienes acceso a este formulario')
+    if nuevo:
+        if not fa.entra_al_constructor(user, form):
+            form.pop('borrador', None)  # lo que se está editando no lo ve quien solo llena
+        form.update({'mis_permisos': fa.mis_permisos(user, form), 'puede_llenar': _can_fill(user, form),
+                     'puede_editar': fa.entra_al_constructor(user, form)})
     return serialize_doc(form)
 
 
@@ -650,6 +683,8 @@ async def update_form(form_id: str, data: CustomFormInput, user=Depends(get_curr
     form = await _get_form_or_404(form_id)
     if not _can_manage_form(user, form):
         raise HTTPException(status_code=403, detail='Solo quien lo creó (o un admin) puede editarlo')
+    if form.get('esquema') == 2:
+        raise HTTPException(status_code=400, detail='Este formulario se edita en el constructor nuevo')
 
     titulo = data.titulo.strip()
     if not titulo:
@@ -700,11 +735,14 @@ async def update_form(form_id: str, data: CustomFormInput, user=Depends(get_curr
 @router.delete('/{form_id}')
 async def delete_form(form_id: str, user=Depends(get_current_user)):
     form = await _get_form_or_404(form_id)
-    if not _can_manage_form(user, form):
+    if not _puede_eliminar(user, form):
         raise HTTPException(status_code=403, detail='Solo quien lo creó (o un admin) puede eliminarlo')
     await db.custom_form_responses.delete_many({'form_id': form_id})
     await db.promo_tareas.delete_many({'form_id': form_id})
     await db.tickets.delete_many({'origen.form_id': form_id})
+    await db.custom_form_versiones.delete_many({'form_id': form_id})
+    await db.form_asignaciones.delete_many({'form_id': form_id})
+    await db.form_reglas_log.delete_many({'form_id': form_id})
     await db.custom_forms.delete_one({'id': form_id})
     return {'message': 'Formulario eliminado'}
 
@@ -723,6 +761,8 @@ async def submit_response(
     form = await _get_form_or_404(form_id)
     if not _can_fill(user, form):
         raise HTTPException(status_code=403, detail='No tienes acceso a este formulario')
+    if form.get('esquema') == 2:
+        raise HTTPException(status_code=400, detail='Este formulario se responde con la versión nueva: recarga la página')
 
     try:
         payload = json.loads(data)
@@ -898,11 +938,13 @@ async def clear_responses(form_id: str, user=Depends(get_current_user)):
     al eliminar el formulario completo—, pero ya no son accesibles porque el
     endpoint de descarga exige que la respuesta exista."""
     form = await _get_form_or_404(form_id)
-    if not _can_manage_form(user, form):
+    if not _puede_eliminar(user, form):
         raise HTTPException(status_code=403, detail='Solo quien creó el formulario (o un admin) puede vaciar su historial')
     ids = [r['id'] for r in await db.custom_form_responses.find({'form_id': form_id}, {'_id': 0, 'id': 1}).to_list(5000)]
     res = await db.custom_form_responses.delete_many({'form_id': form_id})
     await promo_tareas.liberar_por_respuesta(ids)
+    await tickets.cancelar_de_respuestas(ids)
+    await fasig.al_borrar_respuestas(ids)
     return {'message': 'Historial vaciado', 'deleted': res.deleted_count}
 
 
@@ -1011,7 +1053,7 @@ async def get_response(form_id: str, resp_id: str, user=Depends(get_current_user
     row = await db.custom_form_responses.find_one({'id': resp_id, 'form_id': form_id}, {'_id': 0})
     if not row:
         raise HTTPException(status_code=404, detail='Respuesta no encontrada')
-    if not (_sees_all_responses(user, form) or row['respondent_id'] == user['id'] or _revisa_tienda(user, form, row)):
+    if not _ve_respuesta(user, form, row):
         raise HTTPException(status_code=403, detail='No tienes acceso a esta respuesta')
     return serialize_doc(row)
 
@@ -1019,17 +1061,20 @@ async def get_response(form_id: str, resp_id: str, user=Depends(get_current_user
 @router.delete('/{form_id}/respuestas/{resp_id}')
 async def delete_response(form_id: str, resp_id: str, user=Depends(get_current_user)):
     """Eliminar una respuesta puntual del historial. Puede el admin, quien creó
-    el formulario, o el propio autor de esa respuesta."""
+    el formulario, o el propio autor de esa respuesta. En el constructor nuevo
+    lo da el permiso Eliminar: la entrega ya cuenta en su asignación y revisión."""
     form = await _get_form_or_404(form_id)
     row = await db.custom_form_responses.find_one(
         {'id': resp_id, 'form_id': form_id}, {'_id': 0, 'respondent_id': 1})
     if not row:
         raise HTTPException(status_code=404, detail='Respuesta no encontrada')
-    if not (_can_manage_form(user, form)
-            or row.get('respondent_id') == user['id']):
+    if not (_puede_eliminar(user, form)
+            or (form.get('esquema') != 2 and row.get('respondent_id') == user['id'])):
         raise HTTPException(status_code=403, detail='No puedes eliminar esta respuesta')
     await db.custom_form_responses.delete_one({'id': resp_id, 'form_id': form_id})
     await promo_tareas.liberar_por_respuesta([resp_id])
+    await tickets.cancelar_de_respuestas([resp_id])
+    await fasig.al_borrar_respuestas([resp_id])
     return {'message': 'Respuesta eliminada'}
 
 
@@ -1039,7 +1084,7 @@ async def get_response_photo(form_id: str, resp_id: str, photo_id: str, user=Dep
     row = await db.custom_form_responses.find_one({'id': resp_id, 'form_id': form_id}, {'_id': 0})
     if not row:
         raise HTTPException(status_code=404, detail='Respuesta no encontrada')
-    if not (_sees_all_responses(user, form) or row['respondent_id'] == user['id'] or _revisa_tienda(user, form, row)):
+    if not _ve_respuesta(user, form, row):
         raise HTTPException(status_code=403, detail='No tienes acceso a esta respuesta')
     photo = None
     for p in row.get('general_photos', []):

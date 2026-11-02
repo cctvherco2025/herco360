@@ -73,7 +73,8 @@ MODULOS = [
         ('promos.admin', 'Administrar todas las publicaciones', 'admin')]),
     ('formularios', 'formularios', 'Formularios personalizados', False, [
         ('formularios.crear', 'Crear formularios', 'admin')]),
-    ('formularios', 'seguimientos', 'Seguimientos', True, []),
+    ('formularios', 'mis_formularios', 'Mis formularios', False, []),
+    ('formularios', 'seguimientos', 'Seguimientos', False, []),
     ('activos', 'activos', 'Activos', False, [
         ('activos.administrar', 'Administrar todos los activos y categorías', 'admin')]),
     ('activos', 'checklists', 'Checklists', False, []),
@@ -142,7 +143,7 @@ def lista(user) -> list:
 # --------------------------------------------------------------------------- #
 # Lo que hoy no tiene candado (todos lo ven) y lo de siempre para todos
 SIN_CANDADO = ['agenda', 'sala', 'tareas', 'seguimientos', 'activos', 'checklists', 'planes', 'mis_mant']
-BASE = SIN_CANDADO + ['vacaciones', 'promos']
+BASE = SIN_CANDADO + ['vacaciones', 'promos', 'mis_formularios']
 GESTOR = ['tareas.ver_equipo', 'tareas.crear', 'tareas.editar', 'tareas.validar', 'tareas.cancelar']
 FORMS_GERENTE = ['flos', 'rutina', 'rutina.llenar', 'promos.publicar', 'formularios']
 ECCP = ['reportes', 'guardias', 'guardias.registrar', 'recorridos', 'recorridos.registrar',
@@ -590,6 +591,8 @@ async def _pendientes(uid: str) -> dict:
             {'responsables': uid})),
         'seguimientos': ('seguimiento abierto', 'seguimientos abiertos', db.tickets.count_documents(
             {'asignado_a.id': uid, 'estado': 'abierto'})),
+        'mis_formularios': ('formulario por entregar', 'formularios por entregar', db.form_asignaciones.count_documents(
+            {'estado': {'$in': ['pendiente', 'proceso', 'devuelto']}, '$or': [{'user_id': uid}, {'miembros': uid}]})),
     }
     out = {}
     for modulo, (uno, varios, consulta) in cuentas.items():

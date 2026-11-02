@@ -25,7 +25,7 @@ function tintRgb(hex, amt = 0.86) {
 }
 function tone(pct) { return pct >= 90 ? 'g' : pct >= 75 ? 'a' : 'r'; }
 
-async function loadImageDataUrl(url) {
+export async function loadImageDataUrl(url) {
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
@@ -99,11 +99,25 @@ function answerText(row) {
       no.length ? `No rotuladas: ${no.join(', ')}` : null,
     ].filter(Boolean).join('\n');
   }
-  if (Array.isArray(row.respuesta)) return row.respuesta.length ? row.respuesta.join(', ') : '—';
+  if (Array.isArray(row.respuesta)) return row.respuesta.length ? row.respuesta.join(row.tipo === 'matriz' ? '\n' : ', ') : '—';
   return row.respuesta ? String(row.respuesta) : '';
 }
 
-export async function generateCustomFormPdf({ formTitulo, meta, rows, hasScoring, totalScore, totalMax, generalPhotos = [] }) {
+// Una tabla larga no cabe en una tarjeta: se parte en varias y sus fotos van al final.
+const FILAS_POR_TARJETA = 20;
+function partirLarga(row) {
+  const lineas = typeof row.respuesta === 'string' ? row.respuesta.split('\n') : [];
+  if (lineas.length <= FILAS_POR_TARJETA) return [row];
+  const trozos = [];
+  for (let i = 0; i < lineas.length; i += FILAS_POR_TARJETA) {
+    const ultimo = i + FILAS_POR_TARJETA >= lineas.length;
+    trozos.push({ ...row, titulo: i ? `${row.titulo} (sigue)` : row.titulo, respuesta: lineas.slice(i, i + FILAS_POR_TARJETA).join('\n'), photos: ultimo ? row.photos : [], note: ultimo ? row.note : '' });
+  }
+  return trozos;
+}
+
+export async function generateCustomFormPdf({ formTitulo, meta, rows: filas, hasScoring, totalScore, totalMax, generalPhotos = [] }) {
+  const rows = filas.flatMap(partirLarga);
   const doc = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
   const logo = await loadImageDataUrl('/icon-192.png');
   let y = 0;

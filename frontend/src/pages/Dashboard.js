@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { CalendarDays, Users, Clock, Activity, ArrowRight, Plus, ChevronLeft, ChevronRight, Bookmark, Bell, Percent, ListChecks, Check } from 'lucide-react';
+import { CalendarDays, Users, Clock, Activity, ArrowRight, Plus, ChevronLeft, ChevronRight, Bookmark, Bell, Percent, ListChecks, Check, ClipboardList } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { greetingEs, fullDateEs, timeAgoEs, capitalize, ymd, MESES_CORTO, fmtHora } from '@/lib/time';
@@ -16,6 +16,7 @@ import { periodoLabel } from '@/pages/PromocionesHome';
 import { ESTADO_TAREA, estadoVisible } from '@/components/promociones/PromoRevision';
 import { PlazoChip } from '@/lib/promoPlazos';
 import { PrioridadTarea, FechaLimite } from '@/pages/Tareas';
+import { cuandoVence } from '@/lib/formularios';
 
 // Promociones del mes en Inicio: al coordinador de tienda, lo que falta por
 // contestar y lo que ya contestó; al jefe y al gerente de tienda (revisan),
@@ -89,6 +90,32 @@ function PromosPendientes() {
           );
         })}
       </div>
+    </motion.div>
+  );
+}
+
+// Mis formularios en Inicio: cuántos tiene por entregar o revisar y qué vence primero.
+function FormulariosInicio() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [c, setC] = useState(null);
+  const conModulo = puede(user, 'mis_formularios');
+  useEffect(() => { if (conModulo) api.get('/formularios-v2/mis/contador').then(({ data }) => setC(data)).catch(() => {}); }, [conModulo]);
+  if (!c?.total && !c?.vencidos) return null;
+  const partes = [];
+  if (c.proximo) partes.push(`El próximo vence ${cuandoVence(c.proximo).texto}`);
+  if (c.devueltos) partes.push(`${c.devueltos} ${c.devueltos === 1 ? 'devuelto' : 'devueltos'}`);
+  if (c.revisar) partes.push(`${c.revisar} por revisar`);
+  if (c.vencidos) partes.push(`${c.vencidos} ${c.vencidos === 1 ? 'vencido' : 'vencidos'}`);
+  return (
+    <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.16 }}
+      className="rounded-[18px] bg-card border shadow-card p-5 mb-6 flex flex-wrap items-center gap-x-4 gap-y-3" data-testid="dashboard-formularios-card">
+      <span className="h-11 w-11 rounded-xl grid place-items-center bg-[#e8eef7] text-[#1e395e] dark:bg-[rgba(60,190,246,0.14)] dark:text-[#3cbef6] shrink-0"><ClipboardList className="h-5 w-5" /></span>
+      <div className="flex-[1_1_220px] min-w-0">
+        <p className="font-heading text-[22px] font-semibold leading-tight">{c.pendientes} {c.pendientes === 1 ? 'pendiente' : 'pendientes'}</p>
+        <p className="text-[13px] text-muted-foreground">{partes.join(' · ') || 'Mis formularios'}</p>
+      </div>
+      <Button variant="outline" className="rounded-[10px]" onClick={() => navigate('/mis-formularios')}>Ver pendientes</Button>
     </motion.div>
   );
 }
@@ -233,6 +260,7 @@ export default function Dashboard() {
       </div>
 
       <PromosPendientes />
+      <FormulariosInicio />
       <TareasInicio />
 
       {/* Today + Recent */}

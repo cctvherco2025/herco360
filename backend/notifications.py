@@ -21,6 +21,7 @@ _PUSH_URL_BY_TYPE = {
     'tarea': '/tareas',
     'mant_tarea': '/mantenimiento',
     'mant_plan': '/mantenimiento/planificaciones',
+    'formulario': '/mis-formularios',
 }
 
 
@@ -83,6 +84,13 @@ NOTIFICATION_META = {
     'mant_ciclo_incompleto': {'title': 'Ciclo con tareas incompletas', 'icon': 'Wrench', 'color': '#ec9032'},
     'mant_plan_activado': {'title': 'Planificación activada', 'icon': 'Wrench', 'color': '#16a34a'},
     'mant_plan_finalizado': {'title': 'Planificación terminada', 'icon': 'Wrench', 'color': '#64748b'},
+    'form_asignado': {'title': 'Formulario por llenar', 'icon': 'ClipboardList', 'color': '#00a5df'},
+    'form_recordatorio': {'title': 'Formulario por vencer', 'icon': 'Clock', 'color': '#ec9032'},
+    'form_vencido': {'title': 'Formulario vencido', 'icon': 'Clock', 'color': '#dc2626'},
+    'form_por_revisar': {'title': 'Formulario por revisar', 'icon': 'ClipboardCheck', 'color': '#ec9032'},
+    'form_devuelto': {'title': 'Formulario devuelto', 'icon': 'ClipboardCheck', 'color': '#dc2626'},
+    'form_aprobado': {'title': 'Formulario aprobado', 'icon': 'ClipboardCheck', 'color': '#16a34a'},
+    'form_regla': {'title': 'Aviso de formulario', 'icon': 'Bell', 'color': '#00a5df'},
 }
 
 

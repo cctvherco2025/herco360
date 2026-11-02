@@ -131,6 +131,24 @@ body {
 :root { color-scheme: light; }
 .dark { color-scheme: dark; }
 
+/* Formularios del constructor: en la vista previa un formulario puede verse
+   claro aunque la app esté en modo oscuro (sus campos vuelven a los colores claros). */
+.tema-claro {
+  color-scheme: light;
+  --background: 228 33% 97%;
+  --foreground: 222 49% 8%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 49% 8%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 49% 8%;
+  --muted: 218 38% 95%;
+  --muted-foreground: 218 16% 42%;
+  --accent: 197 85% 94%;
+  --accent-foreground: 214 51% 24%;
+  --border: 220 25% 90%;
+  --input: 220 25% 90%;
+}
+
 /* Campos de fecha/hora angostos (p. ej. Desde/Hasta en celular): si no cabe
    todo, se recorta el texto de la fecha y NUNCA el ícono del calendario. */
 input[type="date"]::-webkit-datetime-edit,

@@ -47,6 +47,12 @@ const MantPlanDetalle = lazyWithRetry(() => import('@/pages/MantPlanDetalle'), '
 const MantChecklists = lazyWithRetry(() => import('@/pages/MantChecklists'), 'MantChecklists');
 const CustomFormBuilderPage = lazyWithRetry(() => import('@/pages/CustomFormBuilderPage'), 'CustomFormBuilderPage');
 const CustomFormPage = lazyWithRetry(() => import('@/pages/CustomFormPage'), 'CustomFormPage');
+const ConstructorFormulario = lazyWithRetry(() => import('@/pages/ConstructorFormulario'), 'ConstructorFormulario');
+const MisFormularios = lazyWithRetry(() => import('@/pages/MisFormularios'), 'MisFormularios');
+const SupervisionFormularios = lazyWithRetry(() => import('@/pages/SupervisionFormularios'), 'SupervisionFormularios');
+const LlenarFormulario = lazyWithRetry(() => import('@/pages/LlenarFormulario'), 'LlenarFormulario');
+const PaginaLlenar = lazyWithRetry(() => import('@/pages/LlenarFormulario').then((m) => ({ default: m.PaginaLlenar })), 'PaginaLlenar');
+const ModificarRespuesta = lazyWithRetry(() => import('@/pages/ModificarRespuesta'), 'ModificarRespuesta');
 const PromoPublishWizardPage = lazyWithRetry(() => import('@/pages/PromoPublishWizardPage'), 'PromoPublishWizardPage');
 const Tickets = lazyWithRetry(() => import('@/pages/Tickets'), 'Tickets');
 const TicketDetalle = lazyWithRetry(() => import('@/pages/TicketDetalle'), 'TicketDetalle');
@@ -97,7 +103,13 @@ function App() {
               <Route path="/mantenimiento/checklists" element={<ConModulo modulo={'checklists'} nombre="Checklists"><Suspense fallback={<PageFallback />}><MantChecklists /></Suspense></ConModulo>} />
               <Route path="/formularios/nuevo" element={<ConModulo modulo={'formularios'} nombre="Formularios"><Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense></ConModulo>} />
               <Route path="/formularios/custom/:id/editar" element={<ConModulo modulo={'formularios'} nombre="Formularios"><Suspense fallback={<PageFallback />}><CustomFormBuilderPage /></Suspense></ConModulo>} />
+              <Route path="/formularios/v2/:id/editar" element={<ConModulo modulo={'formularios'} nombre="Formularios"><Suspense fallback={<PageFallback />}><ConstructorFormulario /></Suspense></ConModulo>} />
               <Route path="/formularios/custom/:id" element={<Suspense fallback={<PageFallback />}><CustomFormPage /></Suspense>} />
+              <Route path="/formularios/supervision" element={<Suspense fallback={<PageFallback />}><SupervisionFormularios /></Suspense>} />
+              <Route path="/formularios/v2/:id/llenar" element={<Suspense fallback={<PageFallback />}><PaginaLlenar /></Suspense>} />
+              <Route path="/formularios/v2/:id/respuestas/:rid/modificar" element={<Suspense fallback={<PageFallback />}><ModificarRespuesta /></Suspense>} />
+              <Route path="/mis-formularios" element={<ConModulo modulo={'mis_formularios'} nombre="Mis formularios"><Suspense fallback={<PageFallback />}><MisFormularios /></Suspense></ConModulo>} />
+              <Route path="/mis-formularios/:aid" element={<Suspense fallback={<PageFallback />}><LlenarFormulario /></Suspense>} />
               <Route path="/formularios/tickets" element={<ConModulo modulo={'seguimientos'} nombre="Seguimientos"><Suspense fallback={<PageFallback />}><Tickets /></Suspense></ConModulo>} />
               <Route path="/formularios/tickets/:id" element={<ConModulo modulo={'seguimientos'} nombre="Seguimientos"><Suspense fallback={<PageFallback />}><TicketDetalle /></Suspense></ConModulo>} />
               <Route path="/tareas" element={<ConModulo modulo={'tareas'} nombre="Tareas"><Suspense fallback={<PageFallback />}><Tareas /></Suspense></ConModulo>} />

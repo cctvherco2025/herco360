@@ -156,12 +156,21 @@ function SidebarContent({ onNavigate }) {
   const location = useLocation();
 
   // Tickets que esperan algo de la persona (se refresca al cambiar de pantalla).
-  const verTickets = puedeVerTickets(user);
-  const [ticketsPendientes, setTicketsPendientes] = useState(0);
+  // Los de formularios llegan a cualquier departamento: quien tenga alguno también ve el menú.
+  const conSeguimientos = puede(user, 'seguimientos');
+  const [tickets, setTickets] = useState({ pendientes: 0, tiene: false });
   useEffect(() => {
-    if (!verTickets) return;
-    api.get('/tickets/contador').then(({ data }) => setTicketsPendientes(data.pendientes || 0)).catch(() => {});
-  }, [verTickets, location.pathname]);
+    if (!conSeguimientos) return;
+    api.get('/tickets/contador').then(({ data }) => setTickets(data)).catch(() => {});
+  }, [conSeguimientos, location.pathname]);
+  const verTickets = puedeVerTickets(user) || (conSeguimientos && tickets.tiene);
+  const ticketsPendientes = tickets.pendientes || 0;
+  const conFormularios = puede(user, 'mis_formularios');
+  const [misFormularios, setMisFormularios] = useState([]);
+  useEffect(() => {
+    if (!conFormularios) return;
+    api.get('/formularios-v2/mis/contador').then(({ data }) => setMisFormularios(data.formularios || [])).catch(() => {});
+  }, [conFormularios, location.pathname]);
   const verTareas = puedeVerTareas(user);
   const [tareasPendientes, setTareasPendientes] = useState(0);
   useEffect(() => {
@@ -195,7 +204,7 @@ function SidebarContent({ onNavigate }) {
   // padre "Formulario" solo se arma/muestra si queda al menos un hijo visible.
   const formularioChildren = [];
   if (canAccessFormulariosPrincipal(user)) {
-    formularioChildren.push({ to: '/formularios', label: 'Formularios', icon: FileText, testid: 'sidebar-nav-formularios' });
+    formularioChildren.push({ to: '/formularios', end: true, label: 'Formularios', icon: FileText, testid: 'sidebar-nav-formularios' });
   }
   if (canAccessFlos(user)) {
     formularioChildren.push({ to: '/formulario', label: 'Evaluación FLOS', icon: ClipboardCheck, testid: 'sidebar-nav-formulario-flos' });
@@ -215,6 +224,10 @@ function SidebarContent({ onNavigate }) {
   if (canAccessPromocionesMes(user)) {
     formularioChildren.push({ to: '/formularios/promociones', label: 'Promociones del mes', icon: Percent, testid: 'sidebar-nav-promociones-mes' });
   }
+  // Los formularios creados salen aquí para quien le tocan, igual que los fijos.
+  misFormularios.forEach((f) => {
+    formularioChildren.push({ to: `/formularios/custom/${f.id}`, label: f.titulo, icon: ClipboardList, testid: `sidebar-nav-form-${f.id}`, count: f.pendientes });
+  });
   if (verTickets) {
     formularioChildren.push({ to: '/formularios/tickets', label: 'Seguimientos', icon: Ticket, testid: 'sidebar-nav-tickets', count: ticketsPendientes });
   }

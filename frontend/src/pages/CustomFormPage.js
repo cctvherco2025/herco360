@@ -10,6 +10,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { confirmar } from '@/components/ConfirmDialog';
 import CustomFormWizard from '@/components/customform/CustomFormWizard';
 import CustomFormHistorial from '@/components/customform/CustomFormHistorial';
+import { LlenarPorFormulario } from '@/pages/LlenarFormulario';
+import ResultadosFormulario from '@/components/formularios/ResultadosFormulario';
 import PromoResultados from '@/components/promociones/PromoResultados';
 import PromoRevision from '@/components/promociones/PromoRevision';
 
@@ -20,7 +22,7 @@ export default function CustomFormPage() {
   const [schema, setSchema] = useState(null);
   const [error, setError] = useState(null);
   const [params] = useSearchParams();
-  const [tab, setTab] = useState(params.get('tab') || 'responder');
+  const [tab, setTab] = useState(params.get('tab') || null);
   // una notificación puede abrir la misma página en otra pestaña (?tab=revision)
   useEffect(() => { if (params.get('tab')) setTab(params.get('tab')); }, [params]);
   const [historyKey, setHistoryKey] = useState(0);
@@ -59,10 +61,17 @@ export default function CustomFormPage() {
   // Quien tiene "Administrar Promociones del mes" ve y administra cualquier
   // publicación de Promociones como si la hubiera creado.
   const promoAdmin = schema.kind === 'promociones' && canAdminPromos(user);
-  const canSeeAll = user?.role === 'admin' || (user?.position || '').trim() === 'Director comercial' || schema.creator_id === user?.id || promoAdmin;
-  const canManage = user?.role === 'admin' || schema.creator_id === user?.id || promoAdmin;
   // Promociones con tareas: el jefe o gerente de tienda (y quien administra) revisa.
   const puedeRevisar = !!schema.flujo_tareas && (esRevisorTienda(user) || promoAdmin);
+  const nuevoFormato = schema.esquema === 2;
+  // Constructor nuevo: lo dice el servidor, según la pestaña Permisos del formulario.
+  const mis = schema.mis_permisos || {};
+  const canSeeAll = nuevoFormato ? !!mis.resultados : user?.role === 'admin' || (user?.position || '').trim() === 'Director comercial' || schema.creator_id === user?.id || promoAdmin;
+  const canManage = nuevoFormato ? !!mis.eliminar : user?.role === 'admin' || schema.creator_id === user?.id || promoAdmin;
+  const puedeEditar = nuevoFormato ? !!schema.puede_editar : canManage;
+  const puedeResponder = !nuevoFormato || !!schema.puede_llenar;
+  const pestana = tab || (puedeResponder ? 'responder' : 'historial');
+  const editar = nuevoFormato ? `/formularios/v2/${id}/editar` : `/formularios/custom/${id}/editar`;
 
   return (
     <div className="max-w-[1000px] mx-auto pt-2">
@@ -73,7 +82,7 @@ export default function CustomFormPage() {
           </h1>
           {schema.descripcion && <p className="text-muted-foreground text-sm mt-0.5">{schema.descripcion}</p>}
         </div>
-        {canManage && (
+        {(canManage || puedeEditar) && (
           // celular: menú de tres puntos
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -82,42 +91,54 @@ export default function CustomFormPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-[160px] rounded-xl">
-              <DropdownMenuItem asChild className="cursor-pointer">
-                <Link to={`/formularios/custom/${id}/editar`}><Pencil className="h-4 w-4 mr-2" /> Editar</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => remove()} className="cursor-pointer text-[#dc2626] focus:text-[#dc2626] focus:bg-[rgba(220,38,38,0.08)]">
-                <Trash2 className="h-4 w-4 mr-2" /> Eliminar
-              </DropdownMenuItem>
+              {puedeEditar && (
+                <DropdownMenuItem asChild className="cursor-pointer">
+                  <Link to={editar}><Pencil className="h-4 w-4 mr-2" /> Editar</Link>
+                </DropdownMenuItem>
+              )}
+              {canManage && (
+                <DropdownMenuItem onSelect={() => remove()} className="cursor-pointer text-[#dc2626] focus:text-[#dc2626] focus:bg-[rgba(220,38,38,0.08)]">
+                  <Trash2 className="h-4 w-4 mr-2" /> Eliminar
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-        {canManage && (
+        {(canManage || puedeEditar) && (
           <div className="hidden md:flex items-center gap-1 shrink-0">
-            <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="customform-edit-button">
-              <Link to={`/formularios/custom/${id}/editar`}><Pencil className="h-4 w-4 mr-1.5" /> Editar</Link>
-            </Button>
-            <Button variant="ghost" size="sm" onClick={remove} className="text-[#dc2626] hover:text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)]" data-testid="customform-delete-button">
-              <Trash2 className="h-4 w-4 mr-1.5" /> Eliminar
-            </Button>
+            {puedeEditar && (
+              <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="customform-edit-button">
+                <Link to={editar}><Pencil className="h-4 w-4 mr-1.5" /> Editar</Link>
+              </Button>
+            )}
+            {canManage && (
+              <Button variant="ghost" size="sm" onClick={remove} className="text-[#dc2626] hover:text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)]" data-testid="customform-delete-button">
+                <Trash2 className="h-4 w-4 mr-1.5" /> Eliminar
+              </Button>
+            )}
           </div>
         )}
       </div>
 
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={pestana} onValueChange={setTab}>
         <TabsList className="rounded-xl mb-5">
-          <TabsTrigger value="responder" className="rounded-lg" data-testid="customform-tab-responder">Responder</TabsTrigger>
+          {puedeResponder && <TabsTrigger value="responder" className="rounded-lg" data-testid="customform-tab-responder">Responder</TabsTrigger>}
           <TabsTrigger value="historial" className="rounded-lg" data-testid="customform-tab-historial">Historial</TabsTrigger>
           {puedeRevisar && (
             <TabsTrigger value="revision" className="rounded-lg" data-testid="customform-tab-revision">Revisión</TabsTrigger>
           )}
-          {schema.kind === 'promociones' && (
+          {(schema.kind === 'promociones' || (nuevoFormato && mis.resultados)) && (
             <TabsTrigger value="resultados" className="rounded-lg" data-testid="customform-tab-resultados">Resultados</TabsTrigger>
           )}
         </TabsList>
 
-        <TabsContent value="responder">
-          <CustomFormWizard schema={schema} onSubmitted={() => { setHistoryKey((k) => k + 1); setTab('historial'); }} />
-        </TabsContent>
+        {puedeResponder && (
+          <TabsContent value="responder">
+            {nuevoFormato
+              ? <ResponderV2 schema={schema} puedeEditar={puedeEditar} editar={editar} onEnviado={() => setHistoryKey((k) => k + 1)} />
+              : <CustomFormWizard schema={schema} onSubmitted={() => { setHistoryKey((k) => k + 1); setTab('historial'); }} />}
+          </TabsContent>
+        )}
         <TabsContent value="historial">
           <CustomFormHistorial key={historyKey} schema={schema} canSeeAll={canSeeAll} canManage={canManage} />
         </TabsContent>
@@ -131,7 +152,25 @@ export default function CustomFormPage() {
             <PromoResultados formId={schema.id} />
           </TabsContent>
         )}
+        {nuevoFormato && mis.resultados && (
+          <TabsContent value="resultados">
+            <ResultadosFormulario formId={schema.id} titulo={schema.titulo} puedeExportar={mis.exportar} />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
+}
+
+// Formularios del constructor nuevo: se contesta lo publicado (la versión vigente).
+function ResponderV2({ schema, puedeEditar, editar, onEnviado }) {
+  if (schema.estado !== 'publicado') {
+    return (
+      <div className="rounded-2xl border bg-card p-8 text-center">
+        <p className="text-sm text-muted-foreground">{schema.estado === 'despublicado' ? 'Este formulario está despublicado: ya no recibe respuestas.' : 'Este formulario todavía no está publicado.'}</p>
+        {puedeEditar && <Button asChild variant="outline" className="rounded-xl mt-4"><Link to={editar}><Pencil className="h-4 w-4 mr-1.5" /> Abrir el constructor</Link></Button>}
+      </div>
+    );
+  }
+  return <LlenarPorFormulario formId={schema.id} onEnviado={onEnviado} />;
 }

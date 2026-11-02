@@ -14,6 +14,7 @@ export function destinoNotificacion(n) {
     case 'tarea': return n.related_id ? `/tareas/${n.related_id}` : '/tareas';
     case 'mant_tarea': return n.related_id ? `/mantenimiento/tareas/${n.related_id}` : '/mantenimiento';
     case 'mant_plan': return n.related_id ? `/mantenimiento/planificaciones/${n.related_id}` : '/mantenimiento/planificaciones';
+    case 'formulario': return n.related_id ? `/mis-formularios/${n.related_id}` : '/mis-formularios';
     default: return null;
   }
 }
