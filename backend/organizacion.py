@@ -131,11 +131,15 @@ async def asegurar():
         await _area(RETAIL, a, sistema=a in AREAS_RETAIL_SISTEMA, orden=i)
     for i, (n, nivel, sis) in enumerate(CARGOS_RETAIL):
         await _cargo(RETAIL, n, nivel, sis, i)
-    viejas = (await db.config.find_one({'_id': 'areas_logistica'}) or {}).get('areas') or ['Bodega', 'Distribución', 'Transporte']
-    for i, a in enumerate(['Gerencia'] + viejas):
-        await _area(LOGISTICA, a, orden=i)
-    for i, (n, nivel, sis) in enumerate(CARGOS_LOGISTICA):
-        await _cargo(LOGISTICA, n, nivel, sis, i)
+    # Logística solo se siembra la primera vez: lo que después se borra desde
+    # Jerarquía no vuelve a aparecer al arrancar.
+    if not await db.org_areas.find_one({'departamento': LOGISTICA}, {'_id': 1}):
+        viejas = (await db.config.find_one({'_id': 'areas_logistica'}) or {}).get('areas') or ['Bodega', 'Distribución', 'Transporte']
+        for i, a in enumerate(['Gerencia'] + viejas):
+            await _area(LOGISTICA, a, orden=i)
+    if not await db.org_cargos.find_one({'departamento': LOGISTICA}, {'_id': 1}):
+        for i, (n, nivel, sis) in enumerate(CARGOS_LOGISTICA):
+            await _cargo(LOGISTICA, n, nivel, sis, i)
 
     # usuarios sin estructura: se ubican por el nombre de su área y cargo
     async for u in db.users.find({'$or': [{'cargo_id': {'$exists': False}}, {'area_id': {'$exists': False}}]},
