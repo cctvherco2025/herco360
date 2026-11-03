@@ -1,12 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { CalendarDays, Plus, ChevronLeft, ChevronRight, Percent, ListChecks, Check, ClipboardList, Palmtree } from 'lucide-react';
+import { CalendarDays, Plus, ChevronLeft, ChevronRight, Percent, ListChecks, Check, ClipboardList, Palmtree, PenLine } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { greetingEs, capitalize, ymd, fmtHora, DIAS, MESES } from '@/lib/time';
 import { catStyle, puedeVerTickets, puede, canAccessVacaciones } from '@/lib/constants';
 import ActivityModal from '@/components/ActivityModal';
+import FichaActividad, { claveNotas } from '@/components/FichaActividad';
+import Tour, { useTour } from '@/components/Tour';
 import { DayView, startOfWeek, addDays, ocupaDia, esVariosDias, rangoCortoCal } from '@/components/CalendarViews';
 import { MantResumen, mantComoActividad, rutaMant } from '@/pages/Agenda';
 import { useTheme } from '@/context/ThemeContext';
@@ -332,10 +334,22 @@ export default function Dashboard() {
   const [pendingDate, setPendingDate] = useState(ymd(new Date()));
   const [pendingTime, setPendingTime] = useState('09:00');
   const [mantSel, setMantSel] = useState(null);
+  // ficha de la actividad con sus notas (foco: abrir directo en el cuadro para escribir)
+  const [ficha, setFicha] = useState(null);
+  const [conteoNotas, setConteoNotas] = useState({});
+  const [pc, setPc] = useState(() => window.matchMedia('(min-width: 1024px)').matches);
+  useEffect(() => {
+    const m = window.matchMedia('(min-width: 1024px)'); const f = () => setPc(m.matches);
+    m.addEventListener('change', f); return () => m.removeEventListener('change', f);
+  }, []);
 
   const load = useCallback(async () => {
     const r = `start=${ini}&end=${fin}`;
-    try { const { data } = await api.get(`/activities?${r}`); setActs(data); } catch (e) { setActs([]); }
+    try {
+      const { data } = await api.get(`/activities?${r}`); setActs(data);
+      const ids = [...new Set(data.map((a) => a.id))];
+      if (ids.length) api.get(`/activities/notas/conteo?ids=${ids.join(',')}`).then(({ data: c }) => setConteoNotas(c)).catch(() => {});
+    } catch (e) { setActs([]); }
     try { const { data } = await api.get(`/tareas/agenda?${r}`); setTareas(data); } catch (e) { setTareas([]); }
     try { const { data } = await api.get(`/mantenimiento/agenda?${r}`); setMants(data); } catch (e) { setMants({ ahora: '', mantenimientos: [] }); }
     if (canAccessVacaciones(user)) {
@@ -349,7 +363,11 @@ export default function Dashboard() {
     api.get('/promo-tareas/mias').then(({ data }) => setPromos(data)).catch(() => {});
   }, [user, conAgenda]);
 
-  const enCalendario = [...acts, ...mants.mantenimientos.map((m) => mantComoActividad(m, mants.ahora))];
+  const recargarNotas = () => {
+    const ids = [...new Set(acts.map((a) => a.id))];
+    if (ids.length) api.get(`/activities/notas/conteo?ids=${ids.join(',')}`).then(({ data: c }) => setConteoNotas(c)).catch(() => {});
+  };
+  const enCalendario = [...acts.map((a) => ({ ...a, notas: conteoNotas[claveNotas(a)] || 0 })), ...mants.mantenimientos.map((m) => mantComoActividad(m, mants.ahora))];
   const vences = vencimientosDe(forms, promos);
   // vacaciones y permisos del equipo (las propias aprobadas ya salen como actividad)
   const ausencias = (ds) => vacas.filter((v) => v.user_id !== user?.id && v.start_date <= ds && ds <= v.end_date).map((v) => ({
@@ -363,7 +381,9 @@ export default function Dashboard() {
     return { puntos: [...Array(rojos).fill(true), ...evs.map(() => false)], total: evs.length + rojos };
   };
 
-  const openEvent = (ev) => { if (ev.mant) { setMantSel(ev.datos); return; } setEditing(ev); setModalOpen(true); };
+  // tocar una actividad abre su ficha con las notas; desde ahí se edita
+  const openEvent = (ev, foco = false) => { if (ev.mant) { setMantSel(ev.datos); return; } setFicha({ ev, foco }); };
+  const editar = (ev) => { setFicha(null); setEditing(ev); setModalOpen(true); };
   const openNew = (ds, t) => { setEditing(null); setPendingDate(typeof ds === 'string' ? ds : ymd(dia)); setPendingTime(t || '09:00'); setModalOpen(true); };
 
   // la actividad de ahora o la próxima de hoy, para la tarjetita del saludo
@@ -373,6 +393,16 @@ export default function Dashboard() {
   const sigue = deHoy.find((a) => a.start_time > ya);
   const destacada = enCurso || sigue;
   const faltan = sigue && !enCurso ? minDeHora(sigue.start_time) - (ahoraD.getHours() * 60 + ahoraD.getMinutes()) : 0;
+
+  // Recorrido de las notas (el mismo globo de Activos): la primera vez que entra
+  const conNota = !!(destacada && !destacada.mant);
+  const tourNotas = useTour('tour-inicio-notas', conAgenda && acts.length > 0);
+  const pasosNotas = [
+    ...(conNota ? [{ target: 'inicio-nota', titulo: 'Nuevo: notas en tus actividades',
+      texto: 'Con el botón Nota anotas lo que se habló, acuerdos o pendientes de tu próxima actividad.' }] : []),
+    { target: 'inicio-agenda', titulo: conNota ? 'En cualquier actividad' : 'Nuevo: notas en tus actividades',
+      texto: 'Toca una actividad de tu agenda para abrir su ficha y ver o agregar notas. Cada nota dice quién la escribió y a qué hora.\n\nLas ven todos los participantes; marca "Solo para mí" si quieres que solo la veas tú.' },
+  ];
 
   const ds = ymd(dia);
   const esHoy = ds === hoyDs;
@@ -389,8 +419,9 @@ export default function Dashboard() {
             {greetingEs()}, {user?.name?.split(' ')[0]} <span className="inline-block">👋</span>
           </h1>
           {conAgenda && destacada && (
+            <div className="mt-4 flex max-w-full items-center gap-2 rounded-[14px] border bg-card py-2.5 pl-2.5 pr-2.5 shadow-card w-fit">
             <button type="button" onClick={() => openEvent(destacada)} data-testid="inicio-proxima"
-              className="mt-4 flex max-w-full items-center gap-3 rounded-[14px] border bg-card py-2.5 pl-2.5 pr-4 text-left shadow-card transition-colors hover:border-[#1e395e] dark:hover:border-[#3cbef6]">
+              className="flex min-w-0 items-center gap-3 rounded-[10px] pr-1 text-left">
               <span className="grid h-11 min-w-[56px] shrink-0 place-items-center rounded-[10px] bg-[rgba(0,165,223,0.12)] px-2 font-heading text-[15px] font-semibold tabular-nums text-[#1e395e] dark:text-[#3cbef6]">
                 {fmtHora(destacada.start_time)}
               </span>
@@ -402,6 +433,13 @@ export default function Dashboard() {
                 <span className="block truncate text-[14.5px] font-medium">{destacada.title.trim()}</span>
               </span>
             </button>
+            {!destacada.mant && (
+              <button type="button" onClick={() => openEvent(destacada, true)} aria-label={`Tomar nota en ${destacada.title.trim()}`} data-testid="inicio-proxima-nota" data-tour="inicio-nota"
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] bg-[rgba(236,144,50,0.13)] px-2.5 text-[13px] font-medium text-[#9a5a12] hover:bg-[rgba(236,144,50,0.22)] dark:text-[#f5b56b]">
+                <PenLine className="h-4 w-4" /><span className="hidden sm:inline">Nota</span>
+              </button>
+            )}
+            </div>
           )}
         </div>
         {conAgenda && (
@@ -417,7 +455,7 @@ export default function Dashboard() {
           <TiraSemana lunes={lunes} dia={dia} onDia={setDia} onMover={(n) => setDia(addDays(dia, n * 7))} cosasDe={cosasDe} />
           <div className={`grid grid-cols-[minmax(0,1fr)] gap-6 items-start ${canAccessVacaciones(user) ? 'xl:grid-cols-[minmax(0,1fr)_340px]' : ''}`}>
           <motion.section initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.06 }}
-            className="rounded-[18px] bg-card border shadow-card p-4 sm:p-5 min-w-0" data-testid="dashboard-today-activities-card">
+            className="rounded-[18px] bg-card border shadow-card p-4 sm:p-5 min-w-0" data-testid="dashboard-today-activities-card" data-tour="inicio-agenda">
             <div className="flex flex-wrap items-center justify-between gap-2 px-1">
               <h2 className="font-heading text-lg font-semibold">{esHoy ? 'Hoy, ' : ''}{(esHoy ? (s) => s : capitalize)(`${DIAS[dia.getDay()]} ${dia.getDate()} de ${MESES[dia.getMonth()]}`)}</h2>
               <div className="flex items-center gap-3">
@@ -443,6 +481,8 @@ export default function Dashboard() {
       )}
 
       <ActivityModal open={modalOpen} onOpenChange={setModalOpen} activity={editing} defaultDate={pendingDate} defaultTime={pendingTime} onSaved={load} />
+      <Tour tour={tourNotas} pasos={pasosNotas} />
+      <FichaActividad ev={ficha?.ev} foco={ficha?.foco} pc={pc} onClose={() => setFicha(null)} onEditar={editar} onCambio={recargarNotas} />
       <MantResumen m={mantSel} ahora={mants.ahora} onClose={() => setMantSel(null)} onIr={(m) => { setMantSel(null); navigate(rutaMant(m)); }} />
     </div>
   );

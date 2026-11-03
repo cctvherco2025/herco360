@@ -1,7 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, ChevronRight, Plus, ListChecks, Check, Wrench } from 'lucide-react';
+import { X, ChevronRight, Plus, ListChecks, Check, Wrench, MessageSquare } from 'lucide-react';
 import useEsMovil from '@/lib/useEsMovil';
 import { catStyle, ACTIVITY_COLORS } from '@/lib/constants';
 import { ymd, DIAS, DIAS_CORTO, MESES_CORTO, fmtHora, fmtRangoHoras } from '@/lib/time';
@@ -105,6 +105,12 @@ function EventBlock({ ev, isDark, onClick, compact, draggable, onDragStart, onDr
           style={{ color: solid, ...clampStyle(titleLines) }}
         >
           {ev.mant && <IconoMant />}{seRepite(ev) && <IconoRepite />}{ev.title}
+          {/* notas de la actividad (Inicio las cuenta y las pone en ev.notas) */}
+          {ev.notas > 0 && (
+            <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-white/75 px-1.5 align-[1px] text-[10px] font-semibold dark:bg-black/30" title={`${ev.notas} ${ev.notas === 1 ? 'nota' : 'notas'}`} data-testid="calendar-event-notas">
+              <MessageSquare className="h-2.5 w-2.5" />{ev.notas}
+            </span>
+          )}
         </span>
         {variosDias && (
           <span className="block text-[9px] font-medium leading-[14px] truncate opacity-80" style={{ color: solid }}>

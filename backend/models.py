@@ -128,6 +128,12 @@ class RespondInput(BaseModel):
     response: str  # accepted | rejected
 
 
+class NotaActividadInput(BaseModel):
+    texto: str
+    privada: bool = False  # "Solo para mí": solo la ve quien la escribió
+    ocurrencia: Optional[str] = None  # YYYY-MM-DD de la repetición, en una serie
+
+
 # ---- Reservations ----
 class ReservationInput(BaseModel):
     room_id: Optional[str] = None

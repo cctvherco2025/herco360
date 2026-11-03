@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from core import (require_modulo, puede_modulo, db, get_current_user, serialize_doc, new_id, now_iso, now_local, GERENTE_LOGISTICA,
                   es_jefe_depto, es_retail, es_super_admin, filtro_depto, mismo_depto)
 import recurrence as rec
-from models import ActivityInput, RespondInput
+from models import ActivityInput, RespondInput, NotaActividadInput
 import mando
 from notifications import create_notification, log_activity
 from reminders import DEFAULT_REMINDER_OFFSETS
@@ -753,3 +753,86 @@ async def respond_participation(activity_id: str, data: RespondInput, user=Depen
         await log_activity(user['id'], user['name'], user.get('avatar_url'),
                            'rechazó su participación', a['title'], 'activity')
     return {'message': 'Respuesta registrada', 'status': data.response}
+
+
+# ── Notas de la actividad ───────────────────────────────────────────────────
+# Bitácora corta: cada nota guarda quién la escribió y cuándo. Las ven el
+# creador y los participantes; las "Solo para mí" solo quien las escribió.
+# En una serie con RRULE las notas son de cada repetición (`ocurrencia`), no
+# de toda la serie. Cada quien puede borrar solo sus propias notas.
+MAX_NOTA = 2000
+
+
+def _es_de_la_actividad(a: dict, user) -> bool:
+    return (a.get('created_by') == user['id'] or es_super_admin(user)
+            or any(p.get('user_id') == user['id'] for p in a.get('participants', [])))
+
+
+async def _actividad_para_notas(activity_id: str, user) -> dict:
+    a = await db.activities.find_one({'id': activity_id}, {'_id': 0, 'id': 1, 'created_by': 1, 'participants': 1, 'rrule': 1})
+    if not a:
+        raise HTTPException(status_code=404, detail='Actividad no encontrada')
+    if not _es_de_la_actividad(a, user):
+        raise HTTPException(status_code=403, detail='No participas en esta actividad')
+    return a
+
+
+def _visibles(user) -> dict:
+    return {'$or': [{'privada': False}, {'autor_id': user['id']}]}
+
+
+@router.get('/notas/conteo')
+async def conteo_notas(ids: str = '', user=Depends(require_modulo('agenda'))):
+    """Cuántas notas ve la persona en cada actividad. Clave: "id" o, en una
+    serie, "id|YYYY-MM-DD" (la repetición)."""
+    lista = [i for i in ids.split(',') if i][:300]
+    if not lista:
+        return {}
+    acts = await db.activities.find({'id': {'$in': lista}}, {'_id': 0, 'id': 1, 'created_by': 1, 'participants': 1}).to_list(300)
+    mias = [a['id'] for a in acts if _es_de_la_actividad(a, user)]
+    out = {}
+    async for n in db.activity_notes.find({'activity_id': {'$in': mias}, **_visibles(user)}, {'_id': 0, 'activity_id': 1, 'ocurrencia': 1}):
+        k = n['activity_id'] + (f"|{n['ocurrencia']}" if n.get('ocurrencia') else '')
+        out[k] = out.get(k, 0) + 1
+    return out
+
+
+@router.get('/{activity_id}/notas')
+async def listar_notas(activity_id: str, ocurrencia: str = None, user=Depends(require_modulo('agenda'))):
+    a = await _actividad_para_notas(activity_id, user)
+    q = {'activity_id': activity_id, 'ocurrencia': ocurrencia if a.get('rrule') else None, **_visibles(user)}
+    rows = await db.activity_notes.find(q, {'_id': 0}).sort('created_at', 1).to_list(500)
+    return serialize_doc(rows)
+
+
+@router.post('/{activity_id}/notas')
+async def agregar_nota(activity_id: str, data: NotaActividadInput, user=Depends(require_modulo('agenda'))):
+    a = await _actividad_para_notas(activity_id, user)
+    texto = (data.texto or '').strip()
+    if not texto:
+        raise HTTPException(status_code=400, detail='Escribe la nota antes de agregarla')
+    if len(texto) > MAX_NOTA:
+        raise HTTPException(status_code=400, detail=f'La nota no puede pasar de {MAX_NOTA} caracteres')
+    if a.get('rrule') and not data.ocurrencia:
+        raise HTTPException(status_code=400, detail='Falta el día de la repetición')
+    doc = {
+        'id': new_id(), 'activity_id': activity_id, 'ocurrencia': data.ocurrencia if a.get('rrule') else None,
+        'texto': texto, 'privada': bool(data.privada),
+        'autor_id': user['id'], 'autor_nombre': user['name'], 'autor_avatar': user.get('avatar_url'),
+        'created_at': now_iso(),
+    }
+    await db.activity_notes.insert_one(doc)
+    doc.pop('_id', None)
+    return serialize_doc(doc)
+
+
+@router.delete('/{activity_id}/notas/{nota_id}')
+async def borrar_nota(activity_id: str, nota_id: str, user=Depends(require_modulo('agenda'))):
+    await _actividad_para_notas(activity_id, user)
+    n = await db.activity_notes.find_one({'id': nota_id, 'activity_id': activity_id}, {'_id': 0, 'autor_id': 1})
+    if not n:
+        raise HTTPException(status_code=404, detail='Nota no encontrada')
+    if n['autor_id'] != user['id']:
+        raise HTTPException(status_code=403, detail='Solo puedes borrar tus propias notas')
+    await db.activity_notes.delete_one({'id': nota_id})
+    return {'ok': True}
