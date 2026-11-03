@@ -315,8 +315,9 @@ def _base(payload, cat, padre, ubic):
 
 # ── Acceso y catálogo ────────────────────────────────────────────
 @router.get('/acceso')
-async def acceso(user=Depends(get_current_user)):
-    """Para el menú: si la persona ve Activos y si los administra."""
+async def acceso_menu(user=Depends(get_current_user)):
+    """Para el menú: si la persona ve Activos y si los administra. (No se llama
+    `acceso`: taparía al módulo acceso que usan las categorías.)"""
     admin, visibles, _ = await _acceso(user)
     return {'ver': admin or bool(visibles), 'admin': admin}
 

@@ -176,7 +176,7 @@ def _responsable_actual(plan):
 
 # ── Acceso (menú) ────────────────────────────────────────────────
 @router.get('/acceso')
-async def acceso(user=Depends(get_current_user)):
+async def acceso_menu(user=Depends(get_current_user)):  # no `acceso`: taparía al módulo acceso
     planificar = await _puede_planificar(user)
     es_parte = await db.mant_planes.find_one(
         {'$or': [{'supervisor_id': user['id']}, {'responsables.usuario_id': user['id']}], 'estado': {'$ne': 'borrador'}}, {'_id': 1})
