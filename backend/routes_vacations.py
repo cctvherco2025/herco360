@@ -5,19 +5,18 @@ aprueban (por su perfil) en el área más cercana hacia arriba y tienen a la
 persona en su equipo; si no hay, el jefe del departamento. Se calculan al pedirla
 (y al editarla) y se guardan en la solicitud (`aprobadores`). El jefe del
 departamento y sus admins también pueden aprobar cualquiera del departamento.
-Las solicitudes de antes (sin `aprobadores`) siguen con la regla del área."""
+Las de antes de la jerarquía recibieron sus aprobadores con
+scripts/vacaciones_aprobadores.py; una solicitud sin `aprobadores` solo la
+aprueban ellos."""
 from datetime import date as date_cls, timedelta
 from fastapi import APIRouter, HTTPException, Depends
 from core import (db, get_current_user, require_vacaciones_access, serialize_doc, now_iso, new_id, today_local_str,
-                  GERENTE_LOGISTICA, RETAIL, departamento_de, es_jefe_depto, es_super_admin, filtro_depto)
+                  RETAIL, departamento_de, es_jefe_depto, es_super_admin, filtro_depto)
 from models import VacationRequestInput, VacationReview
 from notifications import create_notification, log_activity
 import mando
 
 router = APIRouter(prefix='/vacations', tags=['vacations'])
-
-MANAGER_POSITIONS = {'Jefe', 'Gerente', 'Director comercial', GERENTE_LOGISTICA}
-
 
 TYPE_COLORS = {
     
@@ -25,10 +24,6 @@ TYPE_COLORS = {
     'Permiso': '#3cbef6',
     'Incapacidad': '#dc2626',
 }
-
-
-def _is_manager(user):
-    return user.get('role') == 'admin' or user.get('position') in MANAGER_POSITIONS or mando.es_mando(user)
 
 
 def _sees_all_areas(user):
@@ -47,14 +42,11 @@ async def _avisar_aprobadores(ids, user, mensaje, request_id):
 def _filtro_por_revisar(user) -> dict:
     """Solicitudes que la persona puede aprobar: todas las del departamento
     (super admin, admins, jefe del departamento) o aquellas en las que es
-    aprobador (y las de antes, de su área, si tiene cargo de mando)."""
+    aprobador."""
     base = {'status': 'pending', 'user_id': {'$ne': user['id']}, **filtro_depto(user)}
     if _sees_all_areas(user):
         return base
-    ors = [{'aprobadores': user['id']}]
-    if _is_manager(user):
-        ors.append({'aprobadores': {'$exists': False}, 'area': user.get('area')})
-    return {**base, '$or': ors}
+    return {**base, 'aprobadores': user['id']}
 
 
 def _date_range(start, end):
@@ -123,10 +115,7 @@ async def _load_reviewable(request_id, user):
     if req['user_id'] == user['id']:
         raise HTTPException(status_code=403, detail='No puedes autorizar tu propia solicitud')
     mismo = (req.get('departamento') or RETAIL) == departamento_de(user)
-    if 'aprobadores' in req:
-        es_aprobador = user['id'] in (req.get('aprobadores') or [])
-    else:  # solicitudes de antes: regla del área
-        es_aprobador = _is_manager(user) and req.get('area') == user.get('area')
+    es_aprobador = user['id'] in (req.get('aprobadores') or [])
     allowed = es_super_admin(user) or (mismo and (_sees_all_areas(user) or es_aprobador))
     if not allowed:
         raise HTTPException(status_code=403, detail='Esta solicitud la aprueba el responsable de su área')
