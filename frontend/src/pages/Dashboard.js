@@ -247,17 +247,18 @@ function CuadroVacaciones({ vacas, lunes }) {
   const corto = (n) => (n || '').split(' ').slice(0, 2).join(' ');
   return (
     <motion.section initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.1 }}
-      className="rounded-[18px] bg-card border shadow-card p-4 sm:p-5 xl:sticky xl:top-4" data-testid="inicio-vacaciones">
+      className="min-w-0 rounded-[18px] bg-card border shadow-card p-4 sm:p-5 xl:sticky xl:top-4" data-testid="inicio-vacaciones">
       <div className="flex items-center gap-2.5">
         <span className="h-9 w-9 rounded-full grid place-items-center bg-[rgba(236,144,50,0.14)]"><Palmtree className="h-4 w-4 text-[#ec9032]" /></span>
         <h2 className="font-heading font-semibold flex-1">Vacaciones</h2>
         <Button size="sm" variant="outline" className="rounded-xl" onClick={() => navigate('/vacaciones')}>Pedir</Button>
       </div>
-      <div className={`mt-4 grid gap-4 ${porAprobar.length ? 'md:grid-cols-3' : 'md:grid-cols-2'} xl:grid-cols-1 xl:gap-5`}>
+      {/* minmax(0,1fr): un nombre largo se corta con "…" en vez de ensanchar el cuadro */}
+      <div className={`mt-4 grid grid-cols-[minmax(0,1fr)] gap-4 ${porAprobar.length ? 'md:grid-cols-3' : 'md:grid-cols-2'} xl:grid-cols-[minmax(0,1fr)] xl:gap-5`}>
       {porAprobar.length > 0 && (
         <button onClick={() => navigate('/vacaciones')} className="w-full self-start text-left rounded-xl border border-[#ec9032]/50 bg-[rgba(236,144,50,0.07)] p-3 flex items-center gap-3" data-testid="inicio-vacaciones-aprobar">
           <span className="flex-1 min-w-0">
-            <span className="block text-sm font-medium">{porAprobar.length} {porAprobar.length === 1 ? 'solicitud' : 'solicitudes'} por aprobar</span>
+            <span className="block text-sm font-medium truncate">{porAprobar.length} {porAprobar.length === 1 ? 'solicitud' : 'solicitudes'} por aprobar</span>
             <span className="block text-xs text-muted-foreground truncate">{porAprobar.slice(0, 3).map((v) => corto(v.user_name)).join(', ')}{porAprobar.length > 3 ? ' y más' : ''}</span>
           </span>
           <span className="text-xs font-semibold text-[#ec9032] shrink-0">Revisar</span>
@@ -278,7 +279,7 @@ function CuadroVacaciones({ vacas, lunes }) {
         {faltan.length ? (
           <ul className="mt-1 space-y-1">
             {faltan.slice(0, 5).map((v) => (
-              <li key={v.id} className="flex items-center gap-2 text-sm"><span className="flex-1 min-w-0 truncate">{corto(v.user_name)}</span><span className="text-xs text-muted-foreground shrink-0">{v.type} · {rango(v)}</span></li>
+              <li key={v.id} className="flex items-center gap-2 text-sm"><span className="flex-1 min-w-0 truncate">{corto(v.user_name)}</span><span className="text-xs text-muted-foreground shrink-0 whitespace-nowrap">{v.type} · {rango(v)}</span></li>
             ))}
             {faltan.length > 5 && <li className="text-xs text-muted-foreground">y {faltan.length - 5} más</li>}
           </ul>
@@ -414,7 +415,7 @@ export default function Dashboard() {
       {conAgenda ? (
         <>
           <TiraSemana lunes={lunes} dia={dia} onDia={setDia} onMover={(n) => setDia(addDays(dia, n * 7))} cosasDe={cosasDe} />
-          <div className={`grid gap-6 items-start ${canAccessVacaciones(user) ? 'xl:grid-cols-[minmax(0,1fr)_340px]' : ''}`}>
+          <div className={`grid grid-cols-[minmax(0,1fr)] gap-6 items-start ${canAccessVacaciones(user) ? 'xl:grid-cols-[minmax(0,1fr)_340px]' : ''}`}>
           <motion.section initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.06 }}
             className="rounded-[18px] bg-card border shadow-card p-4 sm:p-5 min-w-0" data-testid="dashboard-today-activities-card">
             <div className="flex flex-wrap items-center justify-between gap-2 px-1">
