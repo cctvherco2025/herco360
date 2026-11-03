@@ -1,16 +1,15 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { CalendarDays, Users, Clock, Activity, ArrowRight, Plus, ChevronLeft, ChevronRight, Bookmark, Bell, Percent, ListChecks, Check, ClipboardList } from 'lucide-react';
+import { CalendarDays, Plus, ChevronLeft, ChevronRight, Percent, ListChecks, Check, ClipboardList, Palmtree } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { greetingEs, fullDateEs, timeAgoEs, capitalize, ymd, MESES_CORTO, fmtHora } from '@/lib/time';
-import { catStyle, ROOM_STATES, puedeVerTickets, puedeGestionarUsuarios, puede } from '@/lib/constants';
+import { greetingEs, capitalize, ymd, fmtHora, DIAS, MESES } from '@/lib/time';
+import { catStyle, puedeVerTickets, puede, canAccessVacaciones } from '@/lib/constants';
 import ActivityModal from '@/components/ActivityModal';
-import { WeekView, DayView, MonthView, startOfWeek, addDays } from '@/components/CalendarViews';
+import { DayView, startOfWeek, addDays, ocupaDia, esVariosDias, rangoCortoCal } from '@/components/CalendarViews';
+import { MantResumen, mantComoActividad, rutaMant } from '@/pages/Agenda';
 import { useTheme } from '@/context/ThemeContext';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { periodoLabel } from '@/pages/PromocionesHome';
 import { ESTADO_TAREA, estadoVisible } from '@/components/promociones/PromoRevision';
@@ -169,205 +168,281 @@ function TareasInicio() {
   );
 }
 
-function KpiCard({ icon: Icon, label, value, sub, color, tint, onClick, testid, delay }) {
+const hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+const DIA_CORTO = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+const minDeHora = (h) => { const [a, b] = h.split(':').map(Number); return a * 60 + b; };
+// "2 – 8 de noviembre" o "27 de octubre – 2 de noviembre"
+const rangoSemana = (lunes) => {
+  const dom = addDays(lunes, 6);
+  return lunes.getMonth() === dom.getMonth()
+    ? `${lunes.getDate()} – ${dom.getDate()} de ${MESES[dom.getMonth()]}`
+    : `${lunes.getDate()} de ${MESES[lunes.getMonth()]} – ${dom.getDate()} de ${MESES[dom.getMonth()]}`;
+};
+// "en 25 min", "en 1 h", "en 2 h 10 min"
+const faltaTexto = (m) => {
+  if (m < 60) return `en ${Math.max(1, m)} min`;
+  const h = Math.floor(m / 60); const r = m % 60;
+  return `en ${h} h${r ? ` ${r} min` : ''}`;
+};
+
+// Tira de la semana: arriba el rango y las flechas; cada día con su número en
+// un círculo (azul el elegido, naranja hoy) y un puntito por actividad, hasta
+// 3 (rojo si vence algo). Al tocarlo, abajo se ve ese día.
+function TiraSemana({ lunes, dia, onDia, onMover, cosasDe }) {
+  const hoy = ymd(new Date());
+  const flecha = 'grid h-8 w-8 place-items-center rounded-full border bg-card text-muted-foreground hover:text-foreground';
   return (
-    <motion.button initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay }}
-      onClick={onClick} data-testid={testid}
-      className="text-left rounded-[18px] bg-card border shadow-card hover:shadow-cardmd hover:-translate-y-0.5 transition-[transform,box-shadow] p-5 group">
-      <div className="flex items-start justify-between">
-        <div className="h-11 w-11 rounded-full grid place-items-center" style={{ background: tint }}>
-          <Icon className="h-5 w-5" style={{ color }} />
+    <div className="space-y-2.5" data-testid="inicio-semana">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-heading text-[15px] font-semibold">{rangoSemana(lunes)}</span>
+        <div className="flex gap-1.5">
+          <button onClick={() => onMover(-1)} aria-label="Semana anterior" className={flecha}><ChevronLeft className="h-4 w-4" /></button>
+          <button onClick={() => onMover(1)} aria-label="Semana siguiente" className={flecha}><ChevronRight className="h-4 w-4" /></button>
         </div>
       </div>
-      <p className="mt-4 text-sm text-muted-foreground">{label}</p>
-      <p className="font-heading text-2xl font-semibold mt-0.5" style={{ color: typeof value === 'string' && isNaN(value) ? color : undefined }}>{value}</p>
-      <p className="text-xs text-muted-foreground mt-1">{sub}</p>
-      <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium" style={{ color }}>
-        Ver detalle <ArrowRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
-      </span>
-    </motion.button>
+      <div className="grid grid-cols-7 rounded-[20px] border bg-card px-2 py-3 shadow-card">
+        {Array.from({ length: 7 }, (_, i) => {
+          const d = addDays(lunes, i); const ds = ymd(d);
+          const { puntos, total } = cosasDe(ds);
+          const sel = ds === ymd(dia); const esHoy = ds === hoy;
+          return (
+            <button key={ds} onClick={() => onDia(d)} aria-pressed={sel} data-testid="inicio-dia"
+              aria-label={`${DIAS[d.getDay()]} ${d.getDate()}, ${total ? `${total} ${total === 1 ? 'actividad' : 'actividades'}` : 'libre'}`}
+              className="group min-w-0 rounded-xl py-0.5 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00a5df]">
+              <span className={`block text-[11px] uppercase tracking-[0.06em] ${esHoy ? 'font-semibold text-[#ec9032]' : 'font-medium text-muted-foreground'}`}>
+                {esHoy ? 'Hoy' : DIA_CORTO[d.getDay()]}
+              </span>
+              <span className={`mx-auto mt-1.5 grid h-9 w-9 sm:h-[42px] sm:w-[42px] place-items-center rounded-full font-heading text-[17px] sm:text-[19px] font-semibold tabular-nums transition-colors ${sel ? 'bg-[#1e395e] text-white dark:bg-[#3cbef6] dark:text-[#0a1220]' : esHoy ? 'text-[#ec9032] group-hover:bg-muted' : 'group-hover:bg-muted'}`}>
+                {d.getDate()}
+              </span>
+              <span className="mt-[7px] flex h-1.5 justify-center gap-[3px]">
+                {puntos.slice(0, 3).map((rojo, k) => <i key={k} className={`h-[5px] w-[5px] rounded-full ${rojo ? 'bg-[#dc2626]' : 'bg-[#00a5df]'}`} />)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
+}
+
+// Vacaciones en Inicio: lo que espera su aprobación, su próxima solicitud y
+// quién del equipo falta esta semana (vacas = calendario de la semana). En PC
+// va en una columna a la derecha del día; en el teléfono, debajo.
+function CuadroVacaciones({ vacas, lunes }) {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [porAprobar, setPorAprobar] = useState([]);
+  const [mias, setMias] = useState([]);
+  useEffect(() => {
+    api.get('/vacations/to-review').then(({ data }) => setPorAprobar(data)).catch(() => {});
+    api.get('/vacations/mine').then(({ data }) => setMias(data)).catch(() => {});
+  }, []);
+  const hoy = ymd(new Date());
+  const proxima = mias.filter((v) => ['pending', 'approved'].includes(v.status) && v.end_date >= hoy)
+    .sort((a, b) => a.start_date.localeCompare(b.start_date))[0];
+  const ini = ymd(lunes); const fin = ymd(addDays(lunes, 6));
+  const faltan = vacas.filter((v) => v.user_id !== user?.id && v.status === 'approved' && v.start_date <= fin && v.end_date >= ini);
+  const rango = (v) => rangoCortoCal({ date: v.start_date, end_date: v.end_date });
+  const corto = (n) => (n || '').split(' ').slice(0, 2).join(' ');
+  return (
+    <motion.section initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.1 }}
+      className="rounded-[18px] bg-card border shadow-card p-4 sm:p-5 xl:sticky xl:top-4" data-testid="inicio-vacaciones">
+      <div className="flex items-center gap-2.5">
+        <span className="h-9 w-9 rounded-full grid place-items-center bg-[rgba(236,144,50,0.14)]"><Palmtree className="h-4 w-4 text-[#ec9032]" /></span>
+        <h2 className="font-heading font-semibold flex-1">Vacaciones</h2>
+        <Button size="sm" variant="outline" className="rounded-xl" onClick={() => navigate('/vacaciones')}>Pedir</Button>
+      </div>
+      <div className={`mt-4 grid gap-4 ${porAprobar.length ? 'md:grid-cols-3' : 'md:grid-cols-2'} xl:grid-cols-1 xl:gap-5`}>
+      {porAprobar.length > 0 && (
+        <button onClick={() => navigate('/vacaciones')} className="w-full self-start text-left rounded-xl border border-[#ec9032]/50 bg-[rgba(236,144,50,0.07)] p-3 flex items-center gap-3" data-testid="inicio-vacaciones-aprobar">
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-medium">{porAprobar.length} {porAprobar.length === 1 ? 'solicitud' : 'solicitudes'} por aprobar</span>
+            <span className="block text-xs text-muted-foreground truncate">{porAprobar.slice(0, 3).map((v) => corto(v.user_name)).join(', ')}{porAprobar.length > 3 ? ' y más' : ''}</span>
+          </span>
+          <span className="text-xs font-semibold text-[#ec9032] shrink-0">Revisar</span>
+        </button>
+      )}
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Tu próxima solicitud</p>
+        {proxima ? (
+          <p className="text-sm mt-1">{proxima.type} · {rango(proxima)}
+            <span className={`ml-2 text-[11px] font-semibold rounded-full px-2 py-0.5 ${proxima.status === 'approved' ? 'bg-[rgba(22,163,74,0.12)] text-[#16a34a]' : 'bg-[rgba(236,144,50,0.14)] text-[#ec9032]'}`}>
+              {proxima.status === 'approved' ? 'Aprobada' : 'Esperando aprobación'}
+            </span>
+          </p>
+        ) : <p className="text-sm text-muted-foreground mt-1">No tienes solicitudes pendientes.</p>}
+      </div>
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Faltan esta semana</p>
+        {faltan.length ? (
+          <ul className="mt-1 space-y-1">
+            {faltan.slice(0, 5).map((v) => (
+              <li key={v.id} className="flex items-center gap-2 text-sm"><span className="flex-1 min-w-0 truncate">{corto(v.user_name)}</span><span className="text-xs text-muted-foreground shrink-0">{v.type} · {rango(v)}</span></li>
+            ))}
+            {faltan.length > 5 && <li className="text-xs text-muted-foreground">y {faltan.length - 5} más</li>}
+          </ul>
+        ) : <p className="text-sm text-muted-foreground mt-1">Nadie de tu equipo falta esta semana.</p>}
+      </div>
+      </div>
+    </motion.section>
+  );
+}
+
+// Lo que tiene fecha y hora para entregar o revisar: formularios y promociones.
+function vencimientosDe(forms, promos) {
+  const out = [];
+  if (forms) {
+    for (const a of [...(forms.pendientes || []), ...(forms.proceso || []), ...(forms.devueltos || [])]) {
+      if (!a.vence) continue;
+      out.push({ id: `f-${a.id}`, fecha: a.vence.slice(0, 10), hora: a.vence.slice(11, 16), texto: `Vence: ${a.titulo}`, ruta: `/mis-formularios/${a.id}` });
+    }
+  }
+  if (promos?.rol) {
+    const rev = promos.rol === 'revisor';
+    for (const p of promos.publicaciones || []) {
+      const v = rev ? (p.por_revisar ? p.vence_revision : null) : (p.pendientes ? p.vence_respuesta : null);
+      if (!v) continue;
+      out.push({ id: `p-${p.id}`, fecha: v.slice(0, 10), hora: v.slice(11, 16), texto: `${rev ? 'Revisar' : 'Contestar'}: ${p.titulo}`, ruta: `/formularios/custom/${p.id}${rev ? '?tab=revision' : ''}` });
+    }
+  }
+  return out;
 }
 
 export default function Dashboard() {
   const { user } = useAuth();
   const { isDark } = useTheme();
   const navigate = useNavigate();
-  const [data, setData] = useState(null);
-  const [weekActs, setWeekActs] = useState([]);
-  const [tareasCal, setTareasCal] = useState([]);
-  const [view, setView] = useState('Semana');
-  const [anchor, setAnchor] = useState(new Date());
+  const conAgenda = puede(user, 'agenda'); // sin Agenda en su perfil no ve actividades
+  const [dia, setDia] = useState(() => new Date());
+  // cada minuto, para que "en 25 min" y la próxima actividad se mantengan al día
+  const [, setMinuto] = useState(0);
+  useEffect(() => { const t = setInterval(() => setMinuto((n) => n + 1), 60000); return () => clearInterval(t); }, []);
+  const lunes = startOfWeek(dia);
+  const ini = ymd(lunes); const fin = ymd(addDays(lunes, 6));
+  const [acts, setActs] = useState([]);
+  const [tareas, setTareas] = useState([]);
+  const [mants, setMants] = useState({ ahora: '', mantenimientos: [] });
+  const [vacas, setVacas] = useState([]);
+  const [forms, setForms] = useState(null);
+  const [promos, setPromos] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [pendingDate, setPendingDate] = useState(ymd(new Date()));
+  const [pendingTime, setPendingTime] = useState('09:00');
+  const [mantSel, setMantSel] = useState(null);
+
   const load = useCallback(async () => {
-    try {
-      const [dash, acts] = await Promise.all([
-        api.get('/dashboard'),
-        api.get(`/activities?start=${ymd(addDays(startOfWeek(new Date()), -7))}&end=${ymd(addDays(startOfWeek(new Date()), 42))}`),
-      ]);
-      setData(dash.data);
-      setWeekActs(acts.data);
-    } catch (e) {}
-    try {
-      const { data: ts } = await api.get(`/tareas/agenda?start=${ymd(addDays(startOfWeek(new Date()), -7))}&end=${ymd(addDays(startOfWeek(new Date()), 42))}`);
-      setTareasCal(ts);
-    } catch (e) { setTareasCal([]); }
-  }, []);
+    const r = `start=${ini}&end=${fin}`;
+    try { const { data } = await api.get(`/activities?${r}`); setActs(data); } catch (e) { setActs([]); }
+    try { const { data } = await api.get(`/tareas/agenda?${r}`); setTareas(data); } catch (e) { setTareas([]); }
+    try { const { data } = await api.get(`/mantenimiento/agenda?${r}`); setMants(data); } catch (e) { setMants({ ahora: '', mantenimientos: [] }); }
+    if (canAccessVacaciones(user)) {
+      try { const { data } = await api.get(`/vacations/calendar?${r}`); setVacas(data); } catch (e) { setVacas([]); }
+    }
+  }, [ini, fin, user]);
+  useEffect(() => { if (conAgenda) load(); }, [load, conAgenda]);
+  useEffect(() => {
+    if (!conAgenda) return;
+    if (puede(user, 'mis_formularios')) api.get('/formularios-v2/mis').then(({ data }) => setForms(data)).catch(() => {});
+    api.get('/promo-tareas/mias').then(({ data }) => setPromos(data)).catch(() => {});
+  }, [user, conAgenda]);
 
-  useEffect(() => { load(); }, [load]);
-
-  const openEvent = (ev) => { setEditing(ev); setModalOpen(true); };
-  const openNew = (dateStr) => { setEditing(null); setPendingDate(typeof dateStr === 'string' ? dateStr : ymd(anchor)); setModalOpen(true); };
-
-  const stats = data?.stats || {};
-  const roomState = ROOM_STATES[stats.room_status] || ROOM_STATES['Disponible'];
-  // el servidor no manda la sala a Logística (es de Ventas Retail)
-  const conSala = stats.room_status !== null;
-  const conAgenda = puede(user, 'agenda'); // sin Agenda en su perfil no ve actividades
-  const gestor = puedeGestionarUsuarios(user);
-
-  const rangeLabel = () => {
-    if (view === 'Mes') return `${capitalize(['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][anchor.getMonth()])} ${anchor.getFullYear()}`;
-    if (view === 'Día') return fullDateEs(anchor);
-    const s = startOfWeek(anchor); const e = addDays(s, 6);
-    return `${s.getDate()} ${MESES_CORTO[s.getMonth()]} - ${e.getDate()} ${MESES_CORTO[e.getMonth()]} ${e.getFullYear()}`;
+  const enCalendario = [...acts, ...mants.mantenimientos.map((m) => mantComoActividad(m, mants.ahora))];
+  const vences = vencimientosDe(forms, promos);
+  // vacaciones y permisos del equipo (las propias aprobadas ya salen como actividad)
+  const ausencias = (ds) => vacas.filter((v) => v.user_id !== user?.id && v.start_date <= ds && ds <= v.end_date).map((v) => ({
+    id: `v-${v.id}`, color: '#ec9032', icono: Palmtree, onClick: () => navigate('/vacaciones'),
+    texto: `${v.user_name?.split(' ').slice(0, 2).join(' ')} · ${(v.type || 'Vacaciones').toLowerCase()}${v.status === 'pending' ? ' (por aprobar)' : ''}`,
+  }));
+  const cosasDe = (ds) => {
+    const evs = enCalendario.filter((a) => ocupaDia(a, ds));
+    const rojos = vences.filter((v) => v.fecha === ds).length + tareas.filter((t) => t.fecha_limite === ds && t.estado !== 'cerrada').length;
+    // los vencimientos primero, para que el puntito rojo no se quede fuera de los 3
+    return { puntos: [...Array(rojos).fill(true), ...evs.map(() => false)], total: evs.length + rojos };
   };
-  const move = (dir) => {
-    if (view === 'Mes') setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1));
-    else if (view === 'Día') setAnchor(addDays(anchor, dir));
-    else setAnchor(addDays(anchor, dir * 7));
-  };
+
+  const openEvent = (ev) => { if (ev.mant) { setMantSel(ev.datos); return; } setEditing(ev); setModalOpen(true); };
+  const openNew = (ds, t) => { setEditing(null); setPendingDate(typeof ds === 'string' ? ds : ymd(dia)); setPendingTime(t || '09:00'); setModalOpen(true); };
+
+  // la actividad de ahora o la próxima de hoy, para la tarjetita del saludo
+  const ahoraD = new Date(); const hoyDs = ymd(ahoraD); const ya = hhmm(ahoraD);
+  const deHoy = enCalendario.filter((a) => a.date === hoyDs && !esVariosDias(a)).sort((a, b) => a.start_time.localeCompare(b.start_time));
+  const enCurso = deHoy.find((a) => a.start_time <= ya && ya < a.end_time);
+  const sigue = deHoy.find((a) => a.start_time > ya);
+  const destacada = enCurso || sigue;
+  const faltan = sigue && !enCurso ? minDeHora(sigue.start_time) - (ahoraD.getHours() * 60 + ahoraD.getMinutes()) : 0;
+
+  const ds = ymd(dia);
+  const esHoy = ds === hoyDs;
+  const delDia = enCalendario.filter((a) => ocupaDia(a, ds)).length;
+  const vencesDia = vences.filter((v) => v.fecha === ds);
 
   return (
-    <div className="max-w-[1320px] mx-auto pt-2">
-      {/* Greeting */}
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="mb-6">
-        <h1 className="font-heading text-3xl sm:text-4xl font-semibold text-foreground">
-          {greetingEs()}, {user?.name?.split(' ')[0]} <span className="inline-block">👋</span>
-        </h1>
-        <p className="text-muted-foreground mt-1">{capitalize(fullDateEs())}. Bienvenido a HERCO OPS.</p>
+    <div className="max-w-[1320px] mx-auto pt-2 space-y-6">
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
+        className="flex flex-wrap items-end justify-between gap-x-4 gap-y-5">
+        <div className="min-w-0">
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{DIAS[ahoraD.getDay()]} {ahoraD.getDate()} de {MESES[ahoraD.getMonth()]}</p>
+          <h1 className="font-heading text-3xl sm:text-4xl font-semibold text-foreground">
+            {greetingEs()}, {user?.name?.split(' ')[0]} <span className="inline-block">👋</span>
+          </h1>
+          {conAgenda && destacada && (
+            <button type="button" onClick={() => openEvent(destacada)} data-testid="inicio-proxima"
+              className="mt-4 flex max-w-full items-center gap-3 rounded-[14px] border bg-card py-2.5 pl-2.5 pr-4 text-left shadow-card transition-colors hover:border-[#1e395e] dark:hover:border-[#3cbef6]">
+              <span className="grid h-11 min-w-[56px] shrink-0 place-items-center rounded-[10px] bg-[rgba(0,165,223,0.12)] px-2 font-heading text-[15px] font-semibold tabular-nums text-[#1e395e] dark:text-[#3cbef6]">
+                {fmtHora(destacada.start_time)}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[11.5px] font-medium text-muted-foreground">
+                  {enCurso ? <>Ahora · <span className="font-semibold text-[#ec9032]">hasta las {fmtHora(enCurso.end_time)}</span></>
+                    : <>Tu próxima actividad · <span className="font-semibold text-[#ec9032]">{faltaTexto(faltan)}</span></>}
+                </span>
+                <span className="block truncate text-[14.5px] font-medium">{destacada.title.trim()}</span>
+              </span>
+            </button>
+          )}
+        </div>
+        {conAgenda && (
+          <div className="grid w-full grid-cols-2 gap-3 sm:flex sm:w-auto">
+            <Button onClick={() => openNew(ymd(dia))} className="h-11 sm:h-10 rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="dashboard-new-activity"><Plus className="h-4 w-4 mr-1" /> Nueva actividad</Button>
+            <Button variant="outline" onClick={() => navigate('/agenda')} className="h-11 sm:h-10 rounded-xl"><CalendarDays className="h-4 w-4 mr-1" /> Abrir agenda</Button>
+          </div>
+        )}
       </motion.div>
 
-      {/* KPI cards */}
-      {/* Sin Sala de Juntas (Logística) quedan 3 tarjetas. Quien aprueba usuarios ve las pendientes. */}
-      <div className={`grid grid-cols-1 sm:grid-cols-2 ${['xl:grid-cols-1', 'xl:grid-cols-2', 'xl:grid-cols-3', 'xl:grid-cols-4'][(conAgenda ? 2 : 0) + (conSala ? 1 : 0)]} gap-4 mb-6`}>
-        {conAgenda && <KpiCard icon={CalendarDays} label="Actividades de hoy" value={stats.today_count ?? 0} sub="actividades programadas" color="#00a5df" tint="rgba(0,165,223,0.14)" onClick={() => navigate('/agenda')} testid="dashboard-card-today" delay={0.02} />}
-        {conAgenda && <KpiCard icon={Clock} label="Próximas actividades" value={stats.upcoming_count ?? 0} sub="en los próximos 7 días" color="#ec9032" tint="rgba(236,144,50,0.14)" onClick={() => navigate('/agenda')} testid="dashboard-card-upcoming" delay={0.06} />}
-        {conSala && <KpiCard icon={Activity} label="Estado Sala de Juntas" value={stats.room_status || 'Disponible'} sub={stats.room_name} color={roomState.solid} tint={roomState.bg} onClick={() => navigate('/sala-de-juntas')} testid="dashboard-card-room" delay={0.1} />}
-        <KpiCard icon={gestor ? Users : Bell} label={gestor ? 'Usuarios pendientes' : 'Notificaciones'} value={gestor ? (stats.pending_users ?? 0) : (stats.unread_notifications ?? 0)} sub={gestor ? 'por aprobar' : 'sin leer'} color="#712146" tint="rgba(113,33,70,0.12)" onClick={() => navigate(gestor ? '/usuarios' : '/notificaciones')} testid="dashboard-card-pending" delay={0.14} />
-      </div>
-
-      <PromosPendientes />
-      <FormulariosInicio />
-      <TareasInicio />
-
-      {/* Today + Recent */}
-      {conAgenda && (
-      <div className="lg:col-span-3 rounded-[18px] bg-card border shadow-card p-5">
-        <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}
-          className="lg:col-span-2 rounded-[18px] bg-card border shadow-card p-5" data-testid="dashboard-today-activities-card">
-          <div className="flex items-center gap-2.5 mb-1">
-            <CalendarDays className="h-5 w-5 text-[#00a5df]" />
-            <h2 className="font-heading text-lg font-semibold">Actividades de hoy</h2>
-          </div>
-          <p className="text-sm text-[#00a5df] mb-4">{capitalize(fullDateEs())}</p>
-          <div className="space-y-1">
-            {(data?.today_activities || []).length === 0 && (
-              <div className="py-10 text-center">
-                <p className="text-sm text-muted-foreground">No tienes actividades para hoy.</p>
-                <Button onClick={openNew} variant="outline" className="mt-3 rounded-xl"><Plus className="h-4 w-4 mr-1" /> Crear actividad</Button>
+      {conAgenda ? (
+        <>
+          <TiraSemana lunes={lunes} dia={dia} onDia={setDia} onMover={(n) => setDia(addDays(dia, n * 7))} cosasDe={cosasDe} />
+          <div className={`grid gap-6 items-start ${canAccessVacaciones(user) ? 'xl:grid-cols-[minmax(0,1fr)_340px]' : ''}`}>
+          <motion.section initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.06 }}
+            className="rounded-[18px] bg-card border shadow-card p-4 sm:p-5 min-w-0" data-testid="dashboard-today-activities-card">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <h2 className="font-heading text-lg font-semibold">{esHoy ? 'Hoy, ' : ''}{(esHoy ? (s) => s : capitalize)(`${DIAS[dia.getDay()]} ${dia.getDate()} de ${MESES[dia.getMonth()]}`)}</h2>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground">
+                  {delDia} {delDia === 1 ? 'actividad' : 'actividades'}{vencesDia.length ? ` · ${vencesDia.length} ${vencesDia.length === 1 ? 'vencimiento' : 'vencimientos'}` : ''}
+                </span>
+                {!esHoy && <button onClick={() => setDia(new Date())} className="text-xs font-medium text-[#00a5df] hover:underline">Ir a hoy</button>}
               </div>
-            )}
-            {(data?.today_activities || []).map((a, i) => {
-              const solid = a.color || '#00a5df';
-              return (
-                <button key={a.id} onClick={() => openEvent(a)} className="w-full flex gap-4 rounded-xl p-3 hover:bg-muted/50 transition-colors text-left">
-                  <div className="flex flex-col items-center pt-0.5">
-                    <span className="text-sm font-semibold text-[#1e395e] dark:text-[#3cbef6]">{fmtHora(a.start_time)}</span>
-                    <span className="text-xs text-muted-foreground">{fmtHora(a.end_time)}</span>
-                  </div>
-                  <div className="relative flex flex-col items-center">
-                    <span className="h-3 w-3 rounded-full mt-1" style={{ background: solid }} />
-                    {i < (data.today_activities.length - 1) && <span className="w-px flex-1 bg-border mt-1" />}
-                  </div>
-                  <div className="flex-1 min-w-0 pb-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: solid }} />
-                      <span className="font-medium text-foreground">{a.title}</span>
-                    </div>
-                    {a.participants?.length > 0 && (
-                      <p className="text-xs text-muted-foreground mt-1 truncate">Participantes: {a.participants.map((p) => p.name).join(', ')}</p>
-                    )}
-                    {a.uses_meeting_room && (
-                      <span className="inline-flex items-center gap-1 text-xs text-[#00a5df] mt-1"><Bookmark className="h-3 w-3" /> Sala de Juntas reservada</span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-          <button onClick={() => navigate('/agenda')} className="mt-3 w-full text-center text-sm font-medium text-[#00a5df] hover:underline">Ver todas mis actividades →</button>
-        </motion.div>
-
-        {/* Recent activity */}
-           {/*<motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.16 }}
-          className="rounded-[18px] bg-card border shadow-card p-5" data-testid="dashboard-recent-activity">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2.5">
-              <Activity className="h-5 w-5 text-[#ec9032]" />
-              <h2 className="font-heading text-lg font-semibold">Actividad reciente</h2>
             </div>
+            <DayView anchor={dia} activities={enCalendario} onEventClick={openEvent} onSlotClick={(d, t) => openNew(d, t)} onNuevoEnDia={(d) => openNew(d)}
+              tareas={tareas} onTareaClick={(t) => navigate(`/tareas/${t.id}`)} extrasDia={ausencias(ds)}
+              vencimientos={vencesDia.map((v) => ({ ...v, onClick: () => navigate(v.ruta) }))} marcarAhora />
+          </motion.section>
+          {canAccessVacaciones(user) && <CuadroVacaciones vacas={vacas} lunes={lunes} />}
           </div>
-          <div className="space-y-1">
-            {(data?.recent_activity || []).map((r) => (
-              <div key={r.id} className="flex items-start gap-3 rounded-xl p-2.5 hover:bg-muted/50 transition-colors">
-                <Avatar className="h-9 w-9 border"><AvatarImage src={r.actor_avatar} /><AvatarFallback>{r.actor_name?.[0]}</AvatarFallback></Avatar>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-foreground"><span className="font-semibold">{r.actor_name}</span> <span className="text-muted-foreground">{r.action}</span>{r.target && <span className="font-medium"> {r.target}</span>}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{timeAgoEs(r.created_at)}</p>
-                </div>
-              </div>
-            ))}
-            {(data?.recent_activity || []).length === 0 && <p className="text-sm text-muted-foreground text-center py-8">Sin actividad reciente</p>}
-          </div>
-        </motion.div>*/}
-      </div>
+        </>
+      ) : (
+        <>
+          <PromosPendientes />
+          <FormulariosInicio />
+          <TareasInicio />
+        </>
       )}
 
-      {/* Mini calendar */}
-      {/*
-      <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }}
-        className="rounded-[18px] bg-card border shadow-card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 rounded-xl border bg-card p-1">
-              <button onClick={() => move(-1)} className="p-1.5 rounded-lg hover:bg-muted"><ChevronLeft className="h-4 w-4" /></button>
-              <button onClick={() => setAnchor(new Date())} className="px-3 py-1 text-sm font-medium rounded-lg hover:bg-muted">Hoy</button>
-              <button onClick={() => move(1)} className="p-1.5 rounded-lg hover:bg-muted"><ChevronRight className="h-4 w-4" /></button>
-            </div>
-            <span className="text-sm font-medium text-foreground">{rangeLabel()}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Tabs value={view} onValueChange={setView}>
-              <TabsList className="rounded-xl">
-                <TabsTrigger value="Día" className="rounded-lg text-xs">Día</TabsTrigger>
-                <TabsTrigger value="Semana" className="rounded-lg text-xs">Semana</TabsTrigger>
-                <TabsTrigger value="Mes" className="rounded-lg text-xs">Mes</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <Button onClick={openNew} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="dashboard-new-activity"><Plus className="h-4 w-4 mr-1" /> Nueva actividad</Button>
-          </div>
-        </div>
-        <div className="overflow-hidden">
-          {view === 'Semana' && <WeekView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onNuevoEnDia={(ds) => openNew(ds)} tareas={tareasCal} onTareaClick={(t) => navigate(`/tareas/${t.id}`)} />}
-          {view === 'Día' && <DayView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onNuevoEnDia={(ds) => openNew(ds)} tareas={tareasCal} onTareaClick={(t) => navigate(`/tareas/${t.id}`)} />}
-          {view === 'Mes' && <MonthView anchor={anchor} activities={weekActs} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} tareas={tareasCal} onTareaClick={(t) => navigate(`/tareas/${t.id}`)} />}
-        </div>
-      </motion.div>*/}
-
-      <ActivityModal open={modalOpen} onOpenChange={setModalOpen} activity={editing} defaultDate={pendingDate} onSaved={load} />
+      <ActivityModal open={modalOpen} onOpenChange={setModalOpen} activity={editing} defaultDate={pendingDate} defaultTime={pendingTime} onSaved={load} />
+      <MantResumen m={mantSel} ahora={mants.ahora} onClose={() => setMantSel(null)} onIr={(m) => { setMantSel(null); navigate(rutaMant(m)); }} />
     </div>
   );
 }

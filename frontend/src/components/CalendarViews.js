@@ -471,7 +471,7 @@ export const esVariosDias = (a) => !!a.end_date && a.end_date !== a.date;
 export const seRepite = (a) => !!(a.rrule || a.serie_madre || a.series_id);
 const IconoRepite = () => <span className="font-normal opacity-70" aria-label="Se repite" title="Se repite">↻ </span>;
 // ¿La actividad ocupa el día `ds` (YYYY-MM-DD)? Incluye cada día de las de varios días.
-const ocupaDia = (a, ds) => (esVariosDias(a) ? a.date <= ds && ds <= a.end_date : a.date === ds);
+export const ocupaDia = (a, ds) => (esVariosDias(a) ? a.date <= ds && ds <= a.end_date : a.date === ds);
 const LANE_H = 22; // alto de cada carril de barras (px)
 const MES_CORTO_CAL = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
@@ -704,7 +704,46 @@ export const WeekView = React.forwardRef(function WeekView({ anchor, activities,
   );
 });
 
-export function DayView({ anchor, activities, onEventClick, onSlotClick, onEventMove, onNuevoEnDia, tareas = [], onTareaClick }) {
+// Inicio le agrega al día: avisos de todo el día (vacaciones del equipo), lo
+// que vence a una hora (línea roja punteada) y la línea de la hora actual.
+function ChipDia({ c }) {
+  return (
+    <button type="button" onClick={(e) => { e.stopPropagation(); c.onClick?.(); }} title={c.texto}
+      className="flex w-full items-center gap-1 overflow-hidden rounded-md border px-1 text-left font-semibold leading-none"
+      style={{ height: CHIP_TAREA_H - 2, background: `${c.color}22`, borderColor: c.color, color: c.color }} data-testid="calendar-chip-dia">
+      {c.icono && <c.icono className="h-3 w-3 shrink-0" />}
+      <span className="truncate text-[10px]">{c.texto}</span>
+    </button>
+  );
+}
+
+const minDe = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+const topDe = (hhmm) => ((Math.min(Math.max(minDe(hhmm), START_HOUR * 60), END_HOUR * 60 + 59) - START_HOUR * 60) / 60) * HOUR_H;
+
+function LineaVence({ v }) {
+  return (
+    <button type="button" onClick={(e) => { e.stopPropagation(); v.onClick?.(); }} title={`${fmtHora(v.hora)} · ${v.texto}`}
+      className="absolute inset-x-1 z-20 flex -translate-y-1/2 items-center gap-1.5 text-left" style={{ top: topDe(v.hora) }} data-testid="calendar-vence">
+      <span className="min-w-0 truncate rounded-full bg-[rgba(220,38,38,0.1)] px-2 py-0.5 text-[11px] font-semibold text-[#dc2626]">{fmtHora(v.hora)} · {v.texto}</span>
+      <span className="flex-1 border-t-2 border-dashed border-[#dc2626]" />
+    </button>
+  );
+}
+
+function LineaAhora() {
+  const [ahora, setAhora] = React.useState(() => new Date());
+  React.useEffect(() => { const t = setInterval(() => setAhora(new Date()), 60000); return () => clearInterval(t); }, []);
+  const hhmm = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+  if (minDe(hhmm) < START_HOUR * 60 || minDe(hhmm) > END_HOUR * 60 + 59) return null;
+  return (
+    <div className="pointer-events-none absolute -left-1.5 right-0 z-30 border-t-2 border-[#ec9032]" style={{ top: topDe(hhmm) }} data-testid="calendar-ahora">
+      <span className="absolute -left-0 -top-[6px] h-2.5 w-2.5 rounded-full bg-[#ec9032]" />
+      <span className="absolute right-2 -top-[10px] rounded-full bg-[#ec9032] px-2 py-px text-[10px] font-semibold text-white">Ahora {fmtHora(hhmm)}</span>
+    </div>
+  );
+}
+
+export function DayView({ anchor, activities, onEventClick, onSlotClick, onEventMove, onNuevoEnDia, tareas = [], onTareaClick, extrasDia = [], vencimientos = [], marcarAhora = false }) {
   const { isDark } = useTheme();
   const [dragEv, setDragEv] = React.useState(null);
   const [grupo, setGrupo] = React.useState(null);
@@ -713,14 +752,16 @@ export function DayView({ anchor, activities, onEventClick, onSlotClick, onEvent
   const dayEvents = activities.filter((a) => ocupaDia(a, ds));
   const railHours = END_HOUR - START_HOUR + 1;
   const tareasDia = tareasDeDia(tareas, ds);
-  const bandaH = tareasDia.length ? tareasDia.length * CHIP_TAREA_H + 4 : 0;
+  const chips = tareasDia.length + extrasDia.length;
+  const bandaH = chips ? chips * CHIP_TAREA_H + 4 : 0;
   return (
     <div className="flex">
       <TimeRail offset={bandaH} />
-      <div className="flex-1">
+      <div className="flex-1 min-w-0">
         <div className="h-[34px]" />
         {bandaH > 0 && (
           <div className="space-y-0.5 border-b px-0.5 py-0.5" style={{ height: bandaH }}>
+            {extrasDia.map((c) => <ChipDia key={c.id} c={c} />)}
             {tareasDia.map((t) => <ChipTarea key={t.id} t={t} onClick={onTareaClick} />)}
           </div>
         )}
@@ -736,6 +777,8 @@ export function DayView({ anchor, activities, onEventClick, onSlotClick, onEvent
           {dayEvents.length === 0 && (
             <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground pointer-events-none">No hay actividades este día</div>
           )}
+          {vencimientos.map((v) => <LineaVence key={v.id} v={v} />)}
+          {marcarAhora && ds === ymd(new Date()) && <LineaAhora />}
         </div>
       </div>
       <PanelGrupo grupo={grupo} isDark={isDark} onClose={cerrarGrupo} onPick={(ev) => onEventClick?.(ev)} onNuevo={onNuevoEnDia} />

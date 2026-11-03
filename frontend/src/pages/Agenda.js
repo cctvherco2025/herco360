@@ -22,8 +22,25 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 // referencia estable y no entra como dependencia de los hooks).
 const TEAM_COLORS = ['#0d9488', '#712146', '#ec9032', '#64748b', '#16a34a', '#dc2626', '#3cbef6', '#1e395e'];
 
+// Mantenimientos como actividades de 1 hora a su hora (los cruces se ven
+// igual que entre actividades). Fuera del horario del calendario (7:00 a
+// 20:00) se dibujan en su borde; la hora real va en el título y el resumen.
+export function mantComoActividad(m, ahora) {
+  const vencido = m.estado === 'pendiente' && m.vence_en <= ahora;
+  const [h, mi] = (m.hora || '08:00').split(':').map(Number);
+  const ini = Math.min(Math.max(h * 60 + mi, 7 * 60), 19 * 60);
+  const hhmm = (x) => `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`;
+  return {
+    id: `mant-${m.id}`, mant: true, foreign: true, datos: m, pending: m.proyectada, date: m.fecha,
+    start_time: hhmm(ini), end_time: hhmm(ini + 60),
+    title: `${m.activo_codigo} · ${m.checklist}`,
+    color: m.estado === 'incompleta' || vencido ? '#dc2626' : m.estado === 'completada' ? '#94a3b8' : MANT_COLOR,
+  };
+}
+export const rutaMant = (m) => (m.tarea_id ? `/mantenimiento/tareas/${m.tarea_id}` : `/mantenimiento/planificaciones/${m.plan_id}`);
+
 // Resumen de un mantenimiento al tocarlo en el calendario (como una actividad).
-function MantResumen({ m, ahora, onClose, onIr }) {
+export function MantResumen({ m, ahora, onClose, onIr }) {
   if (!m) return null;
   const vencido = m.estado === 'pendiente' && m.vence_en <= ahora;
   const estado = m.proyectada ? { t: 'Programado', c: 'bg-muted text-muted-foreground' }
@@ -138,22 +155,7 @@ export default function Agenda() {
     ...activities,
     ...team.filter((m) => visible[m.id]).flatMap((m) => teamEvents[m.id] || []),
   ];
-  // Mantenimientos como actividades de 1 hora a su hora (los cruces se ven
-  // igual que entre actividades). Fuera del horario del calendario (7:00 a
-  // 20:00) se dibujan en su borde; la hora real va en el título y el resumen.
-  const comoActividad = (m) => {
-    const vencido = m.estado === 'pendiente' && m.vence_en <= mants.ahora;
-    const [h, mi] = (m.hora || '08:00').split(':').map(Number);
-    const ini = Math.min(Math.max(h * 60 + mi, 7 * 60), 19 * 60);
-    const hhmm = (x) => `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`;
-    return {
-      id: `mant-${m.id}`, mant: true, foreign: true, datos: m, pending: m.proyectada, date: m.fecha,
-      start_time: hhmm(ini), end_time: hhmm(ini + 60),
-      title: `${m.activo_codigo} · ${m.checklist}`,
-      color: m.estado === 'incompleta' || vencido ? '#dc2626' : m.estado === 'completada' ? '#94a3b8' : MANT_COLOR,
-    };
-  };
-  const enCalendario = [...filtered, ...(verMant ? mants.mantenimientos.map(comoActividad) : [])];
+  const enCalendario = [...filtered, ...(verMant ? mants.mantenimientos.map((m) => mantComoActividad(m, mants.ahora)) : [])];
   const proxMant = mants.mantenimientos.filter((m) => m.estado !== 'completada' && m.estado !== 'incompleta' && m.fecha >= ymd(new Date())).slice(0, 5);
   const [mantSel, setMantSel] = useState(null); // mantenimiento del modal de resumen
   const openEvent = (ev) => { if (ev.mant) { setMantSel(ev.datos); return; } setEditing(ev); setModalOpen(true); };
@@ -378,7 +380,7 @@ export default function Agenda() {
       </div>
 
       <MantResumen m={mantSel} ahora={mants.ahora} onClose={() => setMantSel(null)}
-        onIr={(m) => { setMantSel(null); navTareas(m.tarea_id ? `/mantenimiento/tareas/${m.tarea_id}` : `/mantenimiento/planificaciones/${m.plan_id}`); }} />
+        onIr={(m) => { setMantSel(null); navTareas(rutaMant(m)); }} />
       <ActivityModal open={modalOpen} onOpenChange={setModalOpen} activity={editing} defaultDate={pendingDate} defaultTime={pendingTime} onSaved={load} />
     </div>
   );

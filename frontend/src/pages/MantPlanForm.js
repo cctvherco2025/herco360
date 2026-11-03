@@ -15,6 +15,7 @@ import { NativeSelect } from '@/components/recorridos/RecorridoWizard';
 import { fechaCorta } from '@/components/CalendarioFecha';
 import { Buscador, fechaHora } from '@/components/mantenimiento/comunes';
 import CuandoToca, { esDeMeses, diaMesDe } from '@/components/mantenimiento/CuandoToca';
+import SelectorHora from '@/components/SelectorHora';
 
 const AVISOS = [[0, 'El mismo día'], [1, '1 día antes'], [3, '3 días antes'], [7, '1 semana antes']];
 const RECORDATORIOS = [[0, 'Sin recordatorio'], [1, '1 hora antes'], [2, '2 horas antes'], [24, '1 día antes'], [72, '3 días antes']];
@@ -46,7 +47,7 @@ function ConfigTarea({ value, onChange, checklists, frecuencia, inicio, interval
       </div>
       <CuandoToca value={value} onChange={onChange} frecuencia={frecuencia} inicio={inicio} intervalo={intervalo} compacta={compacta} />
       <Campo label="Hora">
-        <Input type="time" value={value.hora} onChange={(e) => set('hora', e.target.value)} className={compacta ? 'h-10' : 'h-11'} />
+        <SelectorHora value={value.hora} onChange={(v) => set('hora', v)} className={compacta ? 'h-10' : 'h-11'} />
       </Campo>
       <Campo label="Plazo para hacerla">
         <NativeSelect value={String(value.horas_plazo)} onChange={(v) => set('horas_plazo', Number(v))} className={compacta ? 'h-10' : ''}>

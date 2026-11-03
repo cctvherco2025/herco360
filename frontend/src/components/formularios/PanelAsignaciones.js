@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { NativeSelect } from '@/components/recorridos/RecorridoWizard';
 import { Grupo, Segmento, Interruptor } from '@/components/formularios/PanelDiseno';
 import SelectorCriterio, { describirCriterio, useOpcionesCriterio } from '@/components/formularios/SelectorCriterio';
+import SelectorHora from '@/components/SelectorHora';
 
 /* Pestaña Asignaciones: cómo se reparte, a quién le toca, cuándo y cada cuánto,
    y cómo va cada entrega. No se aplica con cada clic: al guardar se le avisa a
@@ -46,13 +47,13 @@ function Repeticion({ rep, set, proximas }) {
       </div>
       <div className="flex flex-wrap gap-2">
         <label className={`flex-[1_1_100px] ${LABEL}`}>Abre a las
-          <Input type="time" value={rep.abre} onChange={(e) => e.target.value && set({ abre: e.target.value })} className="h-10 text-sm text-foreground" />
+          <SelectorHora value={rep.abre} onChange={(v) => set({ abre: v })} className="h-10 text-sm text-foreground" />
         </label>
         <label className={`flex-[1_1_100px] ${LABEL}`}>Días de plazo
           <Input type="number" min={0} max={365} value={rep.vence_dias ?? 0} onChange={(e) => set({ vence_dias: numero(e.target.value, 0, 365) })} className="h-10 text-sm text-foreground" />
         </label>
         <label className={`flex-[1_1_100px] ${LABEL}`}>Hora límite
-          <Input type="time" value={rep.vence_hora} onChange={(e) => e.target.value && set({ vence_hora: e.target.value })} className="h-10 text-sm text-foreground" />
+          <SelectorHora value={rep.vence_hora} onChange={(v) => set({ vence_hora: v })} className="h-10 text-sm text-foreground" />
         </label>
       </div>
       <p className="text-xs text-muted-foreground -mt-1">Días de plazo: 0 es el mismo día que abre.</p>
@@ -186,7 +187,7 @@ export default function PanelAsignaciones({ formId, publicado, inicial, valor, o
                   <Input type="date" value={fecha} onChange={(e) => ponerFecha(e.target.value, hora)} className="h-10 text-sm text-foreground" />
                 </label>
                 <label className={`flex-[1_1_100px] ${LABEL}`}>Hora
-                  <Input type="time" value={hora} disabled={!fecha} onChange={(e) => ponerFecha(fecha, e.target.value)} className="h-10 text-sm text-foreground" />
+                  <SelectorHora value={hora} disabled={!fecha} onChange={(v) => ponerFecha(fecha, v)} className="h-10 text-sm text-foreground" />
                 </label>
               </div>
             )}
@@ -292,7 +293,7 @@ function Reabrir({ fila, onCerrar, onListo }) {
             <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className="h-10 text-sm text-foreground" />
           </label>
           <label className="flex-[1_1_100px] flex flex-col gap-1 text-xs font-medium text-muted-foreground">Hora
-            <Input type="time" value={hora} disabled={!fecha} onChange={(e) => setHora(e.target.value)} className="h-10 text-sm text-foreground" />
+            <SelectorHora value={hora} disabled={!fecha} onChange={setHora} className="h-10 text-sm text-foreground" />
           </label>
         </div>
         <div className="flex justify-end gap-2">

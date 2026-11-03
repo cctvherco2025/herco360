@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import SelectorHora from '@/components/SelectorHora';
 import { toast } from 'sonner';
 import {
   Check, Trash2, AlertTriangle, Pencil, CalendarDays, Clock, Repeat, Users, Bell, StickyNote, Building2, UserRound, MapPin,
@@ -48,7 +49,7 @@ const TODO_EL_DIA = { start: '08:00', end: '18:00' };
 
 const addHour = (t) => {
   const [h, m] = (t || '09:00').split(':').map(Number);
-  const end = Math.min(h * 60 + m + 60, 20 * 60);
+  const end = Math.min(h * 60 + m + 60, 23 * 60 + 59);
   return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`;
 };
 
@@ -251,7 +252,8 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
   const limpiarError = (k) => setErrores((e) => (e[k] ? { ...e, [k]: null } : e));
   // Al cambiar Inicio, si Fin queda igual o antes, Fin pasa a Inicio + 1 h.
   const cambiarInicio = (v) => {
-    setForm((f) => ({ ...f, start_time: v, end_time: f.end_time && f.end_time > v ? f.end_time : addHour(v) }));
+    // al elegir el inicio, el fin pasa a una hora después (se puede cambiar)
+    setForm((f) => ({ ...f, start_time: v, end_time: addHour(v) }));
     limpiarError('hora');
   };
   const endDate = variosDias ? form.end_date : form.date;
@@ -508,13 +510,11 @@ export default function ActivityModal({ open, onOpenChange, activity, defaultDat
                 </div>
                 <div className="space-y-1.5 min-w-0">
                   <Label className="flex h-5 items-center">Inicio</Label>
-                  <Input type="time" value={form.start_time} onChange={(e) => cambiarInicio(e.target.value)} disabled={todoElDia}
-                    aria-invalid={!!errores.hora || undefined} className={`h-11 ${errores.hora ? 'border-[#dc2626]' : ''}`} />
+                  <SelectorHora value={form.start_time} onChange={cambiarInicio} disabled={todoElDia} invalido={!!errores.hora} className="h-11" aria-label="Hora de inicio" />
                 </div>
                 <div className="space-y-1.5 min-w-0">
                   <Label className="flex h-5 items-center">Fin</Label>
-                  <Input type="time" value={form.end_time} onChange={(e) => { set('end_time', e.target.value); limpiarError('hora'); }} disabled={todoElDia}
-                    aria-invalid={!!errores.hora || undefined} className={`h-11 ${errores.hora ? 'border-[#dc2626]' : ''}`} />
+                  <SelectorHora value={form.end_time} onChange={(v) => { set('end_time', v); limpiarError('hora'); }} disabled={todoElDia} invalido={!!errores.hora} className="h-11" aria-label="Hora de fin" />
                 </div>
               </div>
               {!readOnly && (

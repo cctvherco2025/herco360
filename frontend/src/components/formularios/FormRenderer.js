@@ -19,6 +19,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { NativeSelect } from '@/components/recorridos/RecorridoWizard';
 import { AuthedImg } from '@/components/customform/CustomFormHistorial';
 import { Logo } from '@/components/Logo';
+import SelectorHora from '@/components/SelectorHora';
 
 /* Dibuja un formulario del constructor (formato 2) para llenarlo, con su
    diseño (tema), su navegación (paso a paso, una pregunta a la vez, todo en
@@ -733,7 +734,7 @@ function Campo({ it, id, listas, valor, archivos, onValor, onArchivos, error, gr
     case 'correo': return <Input id={id} type="email" inputMode="email" autoComplete="email" value={valor || ''} onChange={(e) => onValor(e.target.value)} className={alto} {...invalido} />;
     case 'telefono': return <Input id={id} type="tel" inputMode="tel" value={valor || ''} onChange={(e) => onValor(e.target.value)} className={`${alto} max-w-[260px]`} {...invalido} />;
     case 'fecha': return <Input id={id} type="date" value={valor || ''} onChange={(e) => onValor(e.target.value)} className={`${alto} max-w-[220px]`} {...invalido} />;
-    case 'hora': return <Input id={id} type="time" value={valor || ''} onChange={(e) => onValor(e.target.value)} className={`${alto} max-w-[160px]`} {...invalido} />;
+    case 'hora': return <SelectorHora id={id} value={valor || ''} onChange={onValor} className={`${alto} max-w-[160px]`} invalido={!!invalido['aria-invalid']} />;
     case 'fechahora': return <Input id={id} type="datetime-local" value={valor || ''} onChange={(e) => onValor(e.target.value)} className={`${alto} max-w-[260px]`} {...invalido} />;
     case 'lista':
       return (

@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import SelectorHora, { unaHoraDespues } from '@/components/SelectorHora';
 
 const pub = axios.create({ baseURL: API });
 const LS_KEY = 'herco_guest_reservas';
@@ -314,8 +315,8 @@ export default function SalaPublica() {
             <div className="space-y-1.5"><Label>Motivo / Título</Label><Input value={form.title} onChange={set('title')} placeholder="Ej. Reunión de equipo" className="h-11" data-testid="guest-title-input" /></div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5"><Label>Fecha</Label><Input type="date" min={ymd(new Date())} value={form.date} onChange={set('date')} className="h-11" data-testid="guest-date-input" /></div>
-              <div className="space-y-1.5"><Label>Inicio</Label><Input type="time" value={form.start_time} onChange={set('start_time')} className="h-11" /></div>
-              <div className="space-y-1.5"><Label>Fin</Label><Input type="time" value={form.end_time} onChange={set('end_time')} className="h-11" /></div>
+              <div className="space-y-1.5"><Label>Inicio</Label><SelectorHora value={form.start_time} onChange={(v) => setForm({ ...form, start_time: v, end_time: unaHoraDespues(v) })} className="h-11" aria-label="Hora de inicio" /></div>
+              <div className="space-y-1.5"><Label>Fin</Label><SelectorHora value={form.end_time} onChange={(v) => setForm({ ...form, end_time: v })} className="h-11" aria-label="Hora de fin" /></div>
             </div>
             {mondayBlockConflict(form.date, form.start_time, form.end_time) && (
               <div className="rounded-xl bg-[rgba(113,33,70,0.1)] text-[#712146] text-xs font-medium px-3 py-2 flex items-center gap-2">

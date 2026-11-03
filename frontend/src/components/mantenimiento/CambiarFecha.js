@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { fechaCorta } from '@/components/CalendarioFecha';
+import SelectorHora from '@/components/SelectorHora';
 
 /* Reprogramar un mantenimiento: nueva fecha y hora (cualquier día, aunque
    quede fuera de su ciclo) y motivo opcional. `guardar(body)` recibe
@@ -41,7 +42,7 @@ export default function CambiarFecha({ open, onOpenChange, titulo, detalle, fech
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="cf-hora">Hora</Label>
-            <Input id="cf-hora" type="time" value={h} onChange={(e) => setH(e.target.value)} className="h-11" />
+            <SelectorHora id="cf-hora" value={h} onChange={setH} className="h-11" />
           </div>
         </div>
         <div className="space-y-1.5">

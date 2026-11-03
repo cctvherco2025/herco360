@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import SelectorHora, { unaHoraDespues } from '@/components/SelectorHora';
 
 const ICONS = { CircleCheck, CircleX, Bookmark, Ban, Flag };
 const DC_BLOCK_START = '08:00';
@@ -329,8 +330,8 @@ function SalaDeJuntasPagina() {
             <div className="space-y-1.5"><Label>Motivo / Título</Label><Input value={form.title} onChange={set('title')} placeholder="Ej. Reunión de planeación" className="h-11" data-testid="reservation-title-input" /></div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5"><Label>Fecha</Label><Input type="date" min={ymd(new Date())} value={form.date} onChange={set('date')} className="h-11" data-testid="reservation-date-input" /></div>
-              <div className="space-y-1.5"><Label>Inicio</Label><Input type="time" value={form.start_time} onChange={set('start_time')} className="h-11" /></div>
-              <div className="space-y-1.5"><Label>Fin</Label><Input type="time" value={form.end_time} onChange={set('end_time')} className="h-11" /></div>
+              <div className="space-y-1.5"><Label>Inicio</Label><SelectorHora value={form.start_time} onChange={(v) => setForm({ ...form, start_time: v, end_time: unaHoraDespues(v) })} className="h-11" aria-label="Hora de inicio" /></div>
+              <div className="space-y-1.5"><Label>Fin</Label><SelectorHora value={form.end_time} onChange={(v) => setForm({ ...form, end_time: v })} className="h-11" aria-label="Hora de fin" /></div>
             </div>
             <div className="space-y-1.5"><Label>Notas</Label><Textarea value={form.notes} onChange={set('notes')} rows={2} placeholder="Detalles adicionales…" /></div>
             {mondayBlockConflict(form.date, form.start_time, form.end_time) && (
