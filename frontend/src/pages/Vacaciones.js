@@ -14,8 +14,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { MonthView, WeekView, DayView, startOfWeek, addDays } from '@/components/CalendarViews';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { startOfWeek, addDays } from '@/components/CalendarViews';
 import { confirmar } from '@/components/ConfirmDialog';
 
 const TYPES = ['Vacaciones', 'Permiso', 'Incapacidad'];
@@ -31,6 +31,124 @@ const STATUS = {
   approved: { label: 'Aprobada', color: '#16a34a', bg: 'rgba(22,163,74,0.14)' },
   rejected: { label: 'Rechazada', color: '#dc2626', bg: 'rgba(220,38,38,0.12)' },
 };
+
+const DIA_CORTO = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+const fecha = (s) => new Date(`${s}T00:00:00`);
+// "Mar 8 dic"
+const fechaCorta = (s) => { const d = fecha(s); return `${DIA_CORTO[d.getDay()]} ${d.getDate()} ${MESES[d.getMonth()].slice(0, 3)}`; };
+const diasDe = (r) => Math.round((fecha(r.end_date) - fecha(r.start_date)) / 86400000) + 1;
+const rangoCorto = (r) => (r.start_date === r.end_date ? fechaCorta(r.start_date) : `${fechaCorta(r.start_date)} – ${fechaCorta(r.end_date)}`);
+
+function TipoChip({ type }) {
+  return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ color: TYPE_COLOR[type], background: `${TYPE_COLOR[type]}22` }}>{type}</span>;
+}
+
+// Desde / Hasta / cuántos días, en una franja
+function FranjaFechas({ r }) {
+  const n = diasDe(r);
+  return (
+    <div className="flex items-center gap-3 rounded-xl bg-muted px-3.5 py-2.5">
+      <div className="flex-1 min-w-0"><span className="block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Desde</span><span className="text-sm font-medium">{fechaCorta(r.start_date)}</span></div>
+      <div className="flex-1 min-w-0"><span className="block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Hasta</span><span className="text-sm font-medium">{fechaCorta(r.end_date)}</span></div>
+      <div className="border-l pl-3 text-center"><span className="block font-heading text-xl font-semibold leading-tight tabular-nums">{n}</span><span className="text-[11px] text-muted-foreground">{n === 1 ? 'día' : 'días'}</span></div>
+    </div>
+  );
+}
+
+// Detalle de una solicitud por autorizar, con sus botones (panel en PC, hoja en el teléfono)
+function DetalleSolicitud({ r, onAprobar, onRechazar }) {
+  return (
+    <div className="space-y-4" data-testid="review-vacation-detail">
+      <div className="flex items-center gap-3">
+        <Avatar className="h-12 w-12 border"><AvatarImage src={r.user_avatar} /><AvatarFallback>{r.user_name?.[0]}</AvatarFallback></Avatar>
+        <div className="flex-1 min-w-0">
+          <p className="font-heading text-lg font-semibold truncate">{r.user_name}</p>
+          {r.position && <p className="text-sm text-muted-foreground truncate">{r.position}</p>}
+        </div>
+        <TipoChip type={r.type} />
+      </div>
+      <FranjaFechas r={r} />
+      {r.reason && (
+        <div><span className="block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Motivo</span><p className="text-sm mt-0.5 break-words">{r.reason}</p></div>
+      )}
+      <div className="grid grid-cols-2 gap-2.5">
+        <button onClick={onRechazar} className="h-11 inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#dc2626]/30 bg-card text-[#dc2626] hover:bg-[rgba(220,38,38,0.08)] text-sm font-medium" data-testid="reject-vacation-button"><X className="h-4 w-4" /> Rechazar</button>
+        <button onClick={onAprobar} className="h-11 inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-white text-sm font-medium" data-testid="approve-vacation-button"><Check className="h-4 w-4" /> Autorizar</button>
+      </div>
+    </div>
+  );
+}
+
+// PC (lg en adelante): lista y detalle lado a lado; en el teléfono el detalle sale en una hoja
+const esPC = () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches;
+
+// Color de la barra: pendiente en naranja punteado; aprobada, del color de su tipo
+const colorBarra = (r) => (r.status === 'approved' ? (APPROVED_COLOR[r.type] || TYPE_COLOR[r.type]) : PENDING_COLOR);
+const iniciales = (n) => (n || '').trim().split(/\s+/).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
+
+// Mes de vacaciones: cada solicitud es una sola barra con el nombre que cruza
+// sus días; las que se cruzan van en carriles distintos. En el teléfono
+// (compacto) la barra lleva el primer nombre y caben menos carriles.
+function MesVacaciones({ anchor, requests, compacto, diaSel, onDia, onBarra }) {
+  const inicio = startOfWeek(new Date(anchor.getFullYear(), anchor.getMonth(), 1));
+  const hoy = ymd(new Date());
+  const max = compacto ? 2 : 3; const alto = compacto ? 18 : 24; const gap = compacto ? 2 : 3; const top = compacto ? 30 : 34;
+  const semanas = Array.from({ length: 6 }, (_, w) => Array.from({ length: 7 }, (_, i) => addDays(inicio, w * 7 + i)));
+  return (
+    <div className="overflow-hidden rounded-xl border" data-testid="vacations-month">
+      <div className="grid grid-cols-7 border-b bg-card">
+        {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map((d) => (
+          <span key={d} className="py-1.5 text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{compacto ? d[0] : d}</span>
+        ))}
+      </div>
+      {semanas.map((dias) => {
+        const a = ymd(dias[0]); const z = ymd(dias[6]);
+        // tramos de esta semana, en carriles (los que empiezan antes y los más largos primero)
+        const tramos = requests.filter((r) => r.start_date <= z && r.end_date >= a)
+          .map((r) => ({ r, c0: dias.findIndex((d) => ymd(d) === (r.start_date > a ? r.start_date : a)), c1: dias.findIndex((d) => ymd(d) === (r.end_date < z ? r.end_date : z)) }))
+          .sort((x, y) => x.c0 - y.c0 || (y.c1 - y.c0) - (x.c1 - x.c0));
+        const fin = [];
+        tramos.forEach((t) => { let k = fin.findIndex((e) => e < t.c0); if (k < 0) { k = fin.length; fin.push(-1); } fin[k] = t.c1; t.carril = k; });
+        const vis = tramos.filter((t) => t.carril < max);
+        const ocultos = (i) => tramos.filter((t) => t.carril >= max && t.c0 <= i && t.c1 >= i).length;
+        const carriles = Math.min(fin.length, max);
+        return (
+          <div key={a} className="relative grid grid-cols-7 border-b last:border-b-0"
+            style={{ minHeight: top + carriles * (alto + gap) + (vis.length < tramos.length ? 16 : 0) + (compacto ? 10 : 16) }}>
+            {dias.map((d, i) => {
+              const ds = ymd(d); const otro = d.getMonth() !== anchor.getMonth(); const n = ocultos(i);
+              return (
+                <button key={ds} onClick={() => onDia(ds)} data-testid="vacations-cal-celda"
+                  className={`relative flex flex-col border-l first:border-l-0 transition-colors hover:bg-muted/60 ${otro ? 'bg-muted/50' : 'bg-card'} ${compacto ? 'items-center pt-1' : 'items-end px-2 pt-1.5'}`}>
+                  <span className={`inline-grid h-6 w-6 place-items-center rounded-full text-xs font-semibold tabular-nums ${ds === hoy ? 'bg-[#1e395e] text-white dark:bg-[#3cbef6] dark:text-[#0a1220]' : otro ? 'text-muted-foreground/60' : ''} ${diaSel === ds && ds !== hoy ? 'ring-[1.5px] ring-[#1e395e] dark:ring-[#3cbef6]' : ''}`}>{d.getDate()}</span>
+                  {n > 0 && <span className="absolute bottom-1 inset-x-0 text-center text-[10.5px] font-medium text-muted-foreground">+{n}</span>}
+                </button>
+              );
+            })}
+            {vis.map((t) => {
+              const c = colorBarra(t.r); const pend = t.r.status !== 'approved';
+              const sigue0 = t.r.start_date < a; const sigue1 = t.r.end_date > z;
+              const m0 = sigue0 ? 0 : 3; const m1 = sigue1 ? 0 : 3;
+              return (
+                <button key={t.r.id} onClick={() => onBarra(t.r, ymd(dias[t.c0]))} title={`${t.r.user_name} · ${t.r.type} · ${rangoCorto(t.r)}`} data-testid="vacations-cal-barra"
+                  className={`absolute flex items-center overflow-hidden whitespace-nowrap font-medium text-foreground ${compacto ? 'px-1 text-[10.5px]' : 'gap-1.5 px-1.5 text-xs'}`}
+                  style={{
+                    top: top + t.carril * (alto + gap), height: alto,
+                    left: `calc(${(t.c0 / 7) * 100}% + ${m0}px)`, width: `calc(${((t.c1 - t.c0 + 1) / 7) * 100}% - ${m0 + m1}px)`,
+                    background: `${c}24`, border: pend ? `1.5px dashed ${c}` : 'none', boxShadow: pend ? 'none' : `inset 3px 0 0 ${c}`,
+                    borderRadius: `${sigue0 ? 0 : 6}px ${sigue1 ? 0 : 6}px ${sigue1 ? 0 : 6}px ${sigue0 ? 0 : 6}px`,
+                  }}>
+                  {!compacto && <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full text-[8.5px] font-bold text-white" style={{ background: c }}>{iniciales(t.r.user_name)}</span>}
+                  <span className="truncate">{compacto ? t.r.user_name?.split(' ')[0] : t.r.user_name}</span>
+                </button>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function StatusBadge({ status }) {
   const s = STATUS[status] || STATUS.pending;
@@ -62,6 +180,16 @@ function VacacionesPage() {
   const [form, setForm] = useState({ start_date: today, end_date: today, type: 'Vacaciones', reason: '' });
   const [rejectTarget, setRejectTarget] = useState(null);
   const [rejectComment, setRejectComment] = useState('');
+
+  const [vista, setVista] = useState(null); // 'autorizar' | 'mias' | 'calendario'
+  const [selId, setSelId] = useState(null);
+  const [hojaAbierta, setHojaAbierta] = useState(false);
+  const [pc, setPc] = useState(esPC);
+  useEffect(() => {
+    const m = window.matchMedia('(min-width: 1024px)');
+    const f = () => setPc(m.matches);
+    m.addEventListener('change', f); return () => m.removeEventListener('change', f);
+  }, []);
 
   const load = useCallback(async () => {
     try { const { data } = await api.get('/vacations/mine'); setMine(data); } catch (e) {}
@@ -101,14 +229,20 @@ function VacacionesPage() {
   };
 
   const approve = async (id) => {
-    try { await api.post(`/vacations/${id}/approve`, { comment: '' }); toast.success('Solicitud aprobada'); load(); loadCalendar(); }
+    try { await api.post(`/vacations/${id}/approve`, { comment: '' }); toast.success('Solicitud aprobada'); setHojaAbierta(false); load(); loadCalendar(); }
     catch (err) { toast.error(err?.response?.data?.detail || 'Error'); }
   };
   const doReject = async () => {
     if (!rejectTarget) return;
-    try { await api.post(`/vacations/${rejectTarget.id}/reject`, { comment: rejectComment }); toast.success('Solicitud rechazada'); setRejectTarget(null); setRejectComment(''); load(); loadCalendar(); }
+    try { await api.post(`/vacations/${rejectTarget.id}/reject`, { comment: rejectComment }); toast.success('Solicitud rechazada'); setRejectTarget(null); setRejectComment(''); setHojaAbierta(false); load(); loadCalendar(); }
     catch (err) { toast.error(err?.response?.data?.detail || 'Error'); }
   };
+
+  // pestaña inicial: Por autorizar si hay algo que autorizar; si no, Mis solicitudes
+  const vistaActual = vista || (toReview.length > 0 ? 'autorizar' : 'mias');
+  // en PC siempre hay una elegida (la primera si la elegida ya no está)
+  const sel = toReview.find((r) => r.id === selId) || (pc ? toReview[0] : null);
+  const abrir = (r) => { setSelId(r.id); if (!pc) setHojaAbierta(true); };
 
   const openEdit = (r) => {
     setEditTarget(r);
@@ -129,70 +263,26 @@ function VacacionesPage() {
     if (ok) { load(); loadCalendar(); }
   };
 
-  // ---- Calendario de vacaciones ----
+  // ---- Calendario de vacaciones (mes con una barra por solicitud) ----
   const [calAnchor, setCalAnchor] = useState(new Date());
-  const [calView, setCalView] = useState('Mes');
   const [calRequests, setCalRequests] = useState([]);
-  const [calEvents, setCalEvents] = useState([]);
   const [dayModalDate, setDayModalDate] = useState(null);
-
-  const expandRequests = (rows) => {
-    const events = [];
-    rows.forEach((r) => {
-      let d = new Date(`${r.start_date}T00:00:00`);
-      const endD = new Date(`${r.end_date}T00:00:00`);
-      while (d <= endD) {
-        events.push({
-          id: `${r.id}-${ymd(d)}`,
-          title: `${r.type} — ${r.user_name}`,
-          color: r.status === 'approved' ? (APPROVED_COLOR[r.type] || TYPE_COLOR[r.type]) : PENDING_COLOR,
-          date: ymd(d),
-          start_time: '08:00',
-          end_time: '18:00',
-          pending: r.status === 'pending',
-        });
-        d = new Date(d.getTime() + 86400000);
-      }
-    });
-    return events;
-  };
+  const [calDia, setCalDia] = useState(today); // en el teléfono, el día cuya lista se ve abajo
 
   const loadCalendar = useCallback(async () => {
-    let gridStart, gridEnd;
-    if (calView === 'Día') {
-      gridStart = calAnchor;
-      gridEnd = calAnchor;
-    } else if (calView === 'Semana') {
-      gridStart = startOfWeek(calAnchor);
-      gridEnd = addDays(gridStart, 6);
-    } else {
-      const first = new Date(calAnchor.getFullYear(), calAnchor.getMonth(), 1);
-      gridStart = startOfWeek(first);
-      gridEnd = addDays(gridStart, 41);
-    }
+    const gridStart = startOfWeek(new Date(calAnchor.getFullYear(), calAnchor.getMonth(), 1));
     try {
-      const { data } = await api.get(`/vacations/calendar?start=${ymd(gridStart)}&end=${ymd(gridEnd)}`);
+      const { data } = await api.get(`/vacations/calendar?start=${ymd(gridStart)}&end=${ymd(addDays(gridStart, 41))}`);
       setCalRequests(data);
-      setCalEvents(expandRequests(data));
     } catch (e) {}
-  }, [calAnchor, calView]);
+  }, [calAnchor]);
 
   useEffect(() => { loadCalendar(); }, [loadCalendar]);
 
   const requestsForDay = (dateStr) => calRequests.filter((r) => r.start_date <= dateStr && r.end_date >= dateStr);
-
-  const moveCal = (dir) => {
-    if (calView === 'Mes') setCalAnchor(new Date(calAnchor.getFullYear(), calAnchor.getMonth() + dir, 1));
-    else if (calView === 'Día') setCalAnchor(addDays(calAnchor, dir));
-    else setCalAnchor(addDays(calAnchor, dir * 7));
-  };
-
-  const calRangeLabel = () => {
-    if (calView === 'Mes') return `${capitalize(MESES[calAnchor.getMonth()])} ${calAnchor.getFullYear()}`;
-    if (calView === 'Día') return capitalize(fullDateEs(ymd(calAnchor)));
-    const s = startOfWeek(calAnchor); const e = addDays(s, 6);
-    return `${s.getDate()} ${MESES[s.getMonth()].slice(0, 3)} - ${e.getDate()} ${MESES[e.getMonth()].slice(0, 3)} ${e.getFullYear()}`;
-  };
+  const moveCal = (dir) => setCalAnchor(new Date(calAnchor.getFullYear(), calAnchor.getMonth() + dir, 1));
+  const tocarDia = (ds) => { if (pc) { if (requestsForDay(ds).length) setDayModalDate(ds); } else setCalDia(ds); };
+  const delDia = requestsForDay(calDia);
 
   const RangeRow = ({ r }) => (
     <div className="flex items-center gap-2 text-sm text-foreground">
@@ -210,47 +300,72 @@ function VacacionesPage() {
           <h1 className="font-heading text-2xl sm:text-3xl font-semibold flex items-center gap-2"><Palmtree className="h-6 w-6 text-[#ec9032]" /> Vacaciones y permisos</h1>
           <p className="text-muted-foreground text-sm mt-0.5">Solicita días y sigue el estado de tus autorizaciones</p>
         </div>
-        <Button onClick={() => { setEditTarget(null); setForm({ start_date: today, end_date: today, type: 'Vacaciones', reason: '' }); setOpen(true); }} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="request-vacation-button">
+        <Button onClick={() => { setEditTarget(null); setForm({ start_date: today, end_date: today, type: 'Vacaciones', reason: '' }); setOpen(true); }} className="w-full sm:w-auto h-11 sm:h-10 rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="request-vacation-button">
           <Plus className="h-4 w-4 mr-1.5" /> Solicitar
         </Button>
       </div>
 
-      {/* Manager inbox */}
-      {isManager && (
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
-          className="rounded-[18px] bg-card border shadow-card p-5 mb-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Inbox className="h-5 w-5 text-[#ec9032]" />
-            <h2 className="font-heading text-lg font-semibold">Por autorizar</h2>
-            {toReview.length > 0 && <span className="rounded-full bg-[rgba(236,144,50,0.14)] text-[#ec9032] text-xs font-semibold px-2 py-0.5">{toReview.length}</span>}
+      {/* Pestañas */}
+      <div className={`mb-5 grid ${isManager ? 'grid-cols-[1.3fr_1fr_1fr]' : 'grid-cols-2'} rounded-xl border bg-card p-1 sm:max-w-[480px]`} role="tablist">
+        {[...(isManager ? [['autorizar', 'Por autorizar']] : []), ['mias', 'Mis solicitudes'], ['calendario', 'Calendario']].map(([k, t]) => (
+          <button key={k} role="tab" aria-selected={vistaActual === k} onClick={() => setVista(k)} data-testid={`vacaciones-tab-${k}`}
+            className={`min-w-0 inline-flex items-center justify-center whitespace-nowrap rounded-lg px-1 py-2 text-[13px] sm:text-sm font-medium transition-colors ${vistaActual === k ? 'bg-[#1e395e] text-white dark:bg-[#3cbef6] dark:text-[#0a1220]' : 'text-muted-foreground hover:text-foreground'}`}>
+            <span className="truncate">{t}</span>
+            {k === 'autorizar' && toReview.length > 0 && <span className={`ml-1.5 inline-grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[11px] font-semibold ${vistaActual === k ? 'bg-[#ec9032] text-white' : 'bg-[rgba(236,144,50,0.14)] text-[#ec9032]'}`}>{toReview.length}</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* Por autorizar: lista y detalle */}
+      {isManager && vistaActual === 'autorizar' && (
+        toReview.length === 0 ? (
+          <div className="rounded-[18px] bg-card border shadow-card p-10 text-center">
+            <Inbox className="h-10 w-10 text-muted-foreground/40 mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">No tienes solicitudes por autorizar</p>
           </div>
-          {toReview.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">No hay solicitudes pendientes de tu área</p>
-          ) : (
-            <div className="space-y-3">
-              {toReview.map((r) => (
-                <div key={r.id} className="rounded-xl border p-4" data-testid="review-vacation-card">
-                  <div className="flex items-center gap-3 mb-2">
-                    <Avatar className="h-9 w-9 border"><AvatarImage src={r.user_avatar} /><AvatarFallback>{r.user_name?.[0]}</AvatarFallback></Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{r.user_name} <span className="text-xs text-muted-foreground">· {r.position}</span></p>
-                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ color: TYPE_COLOR[r.type], background: `${TYPE_COLOR[r.type]}22` }}>{r.type}</span>
-                    </div>
-                    <div className="flex gap-1.5">
-                      <button onClick={() => approve(r.id)} className="h-9 px-3 inline-flex items-center gap-1 rounded-lg bg-[rgba(22,163,74,0.12)] text-[#16a34a] hover:bg-[rgba(22,163,74,0.22)] text-sm font-medium" data-testid="approve-vacation-button"><Check className="h-4 w-4" /> Autorizar</button>
-                      <button onClick={() => { setRejectTarget(r); setRejectComment(''); }} className="h-9 px-3 inline-flex items-center gap-1 rounded-lg bg-[rgba(220,38,38,0.1)] text-[#dc2626] hover:bg-[rgba(220,38,38,0.2)] text-sm font-medium" data-testid="reject-vacation-button"><X className="h-4 w-4" /> Rechazar</button>
-                    </div>
-                  </div>
-                  <RangeRow r={r} />
-                  {r.reason && <p className="text-sm text-muted-foreground mt-1.5">{r.reason}</p>}
-                </div>
-              ))}
+        ) : (
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
+            className="grid grid-cols-[minmax(0,1fr)] gap-5 items-start lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+            <div className="rounded-[18px] bg-card border shadow-card overflow-hidden">
+              {toReview.map((r) => {
+                const n = diasDe(r); const activa = pc && sel?.id === r.id;
+                return (
+                  <button key={r.id} onClick={() => abrir(r)} aria-pressed={activa} data-testid="review-vacation-card"
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-left border-t first:border-t-0 transition-colors ${activa ? 'bg-[rgba(0,165,223,0.10)]' : 'hover:bg-muted'}`}>
+                    <Avatar className="h-10 w-10 border shrink-0"><AvatarImage src={r.user_avatar} /><AvatarFallback>{r.user_name?.[0]}</AvatarFallback></Avatar>
+                    <span className="flex-1 min-w-0">
+                      <span className="block font-medium truncate">{r.user_name}</span>
+                      <span className="block text-xs text-muted-foreground truncate">{r.type} · {rangoCorto(r)}</span>
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <span className="block font-heading font-semibold leading-tight tabular-nums">{n}</span>
+                      <span className="text-[11px] text-muted-foreground">{n === 1 ? 'día' : 'días'}</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  </button>
+                );
+              })}
             </div>
-          )}
-        </motion.div>
+            {pc && sel && (
+              <div className="rounded-[18px] bg-card border shadow-card p-5 lg:sticky lg:top-4">
+                <DetalleSolicitud r={sel} onAprobar={() => approve(sel.id)} onRechazar={() => { setRejectTarget(sel); setRejectComment(''); }} />
+              </div>
+            )}
+          </motion.div>
+        )
       )}
 
+      {/* Teléfono: el detalle sube como hoja desde abajo */}
+      <Sheet open={!pc && hojaAbierta && !!sel && !rejectTarget} onOpenChange={setHojaAbierta}>
+        <SheetContent side="bottom" className="rounded-t-[22px] px-4 pb-6 pt-3 max-h-[88vh] overflow-y-auto">
+          <div className="mx-auto mb-7 h-1 w-10 rounded-full bg-border" />
+          <SheetTitle className="sr-only">Solicitud de {sel?.user_name}</SheetTitle>
+          {sel && <DetalleSolicitud r={sel} onAprobar={() => approve(sel.id)} onRechazar={() => { setRejectTarget(sel); setRejectComment(''); }} />}
+        </SheetContent>
+      </Sheet>
+
       {/* My requests */}
+      {vistaActual === 'mias' && (
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.06 }}
         className="rounded-[18px] bg-card border shadow-card p-5">
         <h2 className="font-heading text-lg font-semibold mb-4">Mis solicitudes</h2>
@@ -290,73 +405,48 @@ function VacacionesPage() {
           </div>
         )}
       </motion.div>
+      )}
 
       {/* Calendario de vacaciones */}
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}
-        className="rounded-[18px] bg-card border shadow-card p-5 mt-5" data-testid="vacations-calendar">
+      {vistaActual === 'calendario' && (
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.06 }}
+        className="rounded-[18px] bg-card border shadow-card p-5" data-testid="vacations-calendar">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
           <h2 className="font-heading text-lg font-semibold">Calendario de vacaciones</h2>
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-1 rounded-xl border bg-card p-1">
-              <button
-                onClick={() => moveCal(-1)}
-                className="p-1.5 rounded-lg hover:bg-muted" data-testid="vacations-cal-prev">
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setCalAnchor(new Date())}
-                className="px-3 py-1 text-sm font-medium rounded-lg hover:bg-muted" data-testid="vacations-cal-today">
-                Hoy
-              </button>
-              <button
-                onClick={() => moveCal(1)}
-                className="p-1.5 rounded-lg hover:bg-muted" data-testid="vacations-cal-next">
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-            <span className="text-sm font-medium">{calRangeLabel()}</span>
-            <Tabs value={calView} onValueChange={setCalView}>
-              <TabsList className="rounded-xl">
-                <TabsTrigger value="Día" className="rounded-lg text-xs" data-testid="vacations-view-dia">Día</TabsTrigger>
-                <TabsTrigger value="Semana" className="rounded-lg text-xs" data-testid="vacations-view-semana">Semana</TabsTrigger>
-                <TabsTrigger value="Mes" className="rounded-lg text-xs" data-testid="vacations-view-mes">Mes</TabsTrigger>
-              </TabsList>
-            </Tabs>
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => moveCal(-1)} aria-label="Mes anterior" className="grid h-8 w-8 place-items-center rounded-full border bg-card text-muted-foreground hover:text-foreground" data-testid="vacations-cal-prev"><ChevronLeft className="h-4 w-4" /></button>
+            <span className="min-w-[132px] text-center font-heading text-[15px] font-semibold">{capitalize(MESES[calAnchor.getMonth()])} {calAnchor.getFullYear()}</span>
+            <button onClick={() => moveCal(1)} aria-label="Mes siguiente" className="grid h-8 w-8 place-items-center rounded-full border bg-card text-muted-foreground hover:text-foreground" data-testid="vacations-cal-next"><ChevronRight className="h-4 w-4" /></button>
+            <button onClick={() => { setCalAnchor(new Date()); setCalDia(today); }} className="ml-1 h-8 rounded-full border bg-card px-3 text-xs font-medium hover:bg-muted" data-testid="vacations-cal-today">Hoy</button>
           </div>
         </div>
-        <div className="flex items-center flex-wrap gap-4 text-xs text-muted-foreground mb-3">
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: PENDING_COLOR }} /> Pendiente (cualquier tipo)</span>
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: APPROVED_COLOR.Vacaciones }} /> Vacaciones aprobadas</span>
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: APPROVED_COLOR.Permiso }} /> Permiso aprobado</span>
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: APPROVED_COLOR.Incapacidad }} /> Incapacidad aprobada</span>
+        <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground mb-3">
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] border-[1.5px] border-dashed" style={{ borderColor: PENDING_COLOR, background: `${PENDING_COLOR}22` }} /> Pendiente</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: APPROVED_COLOR.Vacaciones }} /> Vacaciones</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: APPROVED_COLOR.Permiso }} /> Permiso</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: APPROVED_COLOR.Incapacidad }} /> Incapacidad</span>
         </div>
-        <div className="overflow-hidden">
-          {calView === 'Semana' && (
-            <WeekView
-              anchor={calAnchor}
-              activities={calEvents}
-              onEventClick={(ev) => setDayModalDate(ev.date)}
-              onSlotClick={(ds) => { if (requestsForDay(ds).length > 0) setDayModalDate(ds); }}
-            />
-          )}
-          {calView === 'Día' && (
-            <DayView
-              anchor={calAnchor}
-              activities={calEvents}
-              onEventClick={(ev) => setDayModalDate(ev.date)}
-              onSlotClick={(ds) => { if (requestsForDay(ds).length > 0) setDayModalDate(ds); }}
-            />
-          )}
-          {calView === 'Mes' && (
-            <MonthView
-              anchor={calAnchor}
-              activities={calEvents}
-              onEventClick={(ev) => setDayModalDate(ev.date)}
-              onSlotClick={(ds) => { if (requestsForDay(ds).length > 0) setDayModalDate(ds); }}
-            />
-          )}
-        </div>
+        <MesVacaciones anchor={calAnchor} requests={calRequests} compacto={!pc} diaSel={pc ? null : calDia} onDia={tocarDia}
+          onBarra={(r, ds) => (pc ? setDayModalDate(ds) : setCalDia(ds))} />
+        {!pc && (
+          <div className="mt-4 space-y-2" data-testid="vacations-cal-dia">
+            <h3 className="font-heading text-sm font-semibold">
+              {capitalize(fullDateEs(calDia))} · {delDia.length ? `${delDia.length} ${delDia.length === 1 ? 'persona' : 'personas'}` : 'nadie falta'}
+            </h3>
+            {delDia.map((r) => (
+              <div key={r.id} className="flex items-center gap-2.5 rounded-xl bg-muted px-3 py-2.5">
+                <Avatar className="h-8 w-8 border"><AvatarImage src={r.user_avatar} /><AvatarFallback>{r.user_name?.[0]}</AvatarFallback></Avatar>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{r.user_name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{r.type} · {rangoCorto(r)}</p>
+                </div>
+                <StatusBadge status={r.status} />
+              </div>
+            ))}
+          </div>
+        )}
       </motion.div>
+      )}
 
       {/* Day detail dialog */}
       <Dialog open={!!dayModalDate} onOpenChange={(o) => !o && setDayModalDate(null)}>
