@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowLeft, Camera, Check, Loader2, Send, Undo2, Pencil, Trash2, Ban } from 'lucide-react';
+import { ArrowLeft, Camera, Check, Loader2, Send, Undo2, Pencil, Trash2, Ban, Paperclip, FileText, X } from 'lucide-react';
 import api from '@/lib/api';
+import useChatEnVivo, { AvisoNuevos } from '@/lib/useChatEnVivo';
 import { useAuth } from '@/context/AuthContext';
 import { timeAgoEs } from '@/lib/time';
 import { compressImage } from '@/lib/flosPhoto';
@@ -18,6 +19,21 @@ import { confirmar } from '@/components/ConfirmDialog';
 import CalendarioFecha from '@/components/CalendarioFecha';
 import { PRIORIDADES_TAREA } from '@/lib/constants';
 import { EstadoTarea, PrioridadTarea, FechaLimite, PRIORIDAD_META, SelectorPersonas } from '@/pages/Tareas';
+
+// Documentos que se pueden adjuntar en la conversación (lo mismo que acepta el servidor)
+const ACEPTA_DOCS = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip';
+const MAX_DOC_MB = 15;
+const tamanoDe = (b) => (b >= 1024 * 1024 ? `${(b / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+
+async function descargarDoc(url, nombre) {
+  try {
+    const res = await api.get(url, { responseType: 'blob' });
+    const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: res.headers['content-type'] }));
+    const a = document.createElement('a');
+    a.href = blobUrl; a.download = nombre; document.body.appendChild(a); a.click();
+    a.remove(); setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+  } catch (e) { toast.error('No se pudo descargar el documento'); }
+}
 
 async function fotosAFormData(fd, files) {
   for (const file of Array.from(files || [])) {
@@ -128,12 +144,26 @@ export default function TareaDetalle() {
   const [motivo, setMotivo] = useState('');
   const fotoMsg = useRef(null);
   const fotoHecho = useRef(null);
+  const docMsg = useRef(null);
+  const finChat = useRef(null);
+  const [docs, setDocs] = useState([]);
 
   const load = useCallback(async () => {
     try { const { data } = await api.get(`/tareas/${id}`); setT(data); }
     catch (e) { setError(e?.response?.data?.detail || 'No se pudo abrir la tarea'); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
+  // la conversación y los estados se actualizan solos mientras la tarea está abierta en pantalla
+  const { nuevos, verNuevos } = useChatEnVivo({
+    ruta: `/tareas/${id}`, clave: 'tarea', obj: t, setObj: setT, miId: user?.id, finRef: finChat,
+    pausado: editar || !!devolviendo || !!ocupado,
+  });
+  const elegirDocs = (files) => {
+    const lista = Array.from(files || []);
+    const grandes = lista.filter((f) => f.size > MAX_DOC_MB * 1024 * 1024);
+    if (grandes.length) toast.error(`${grandes[0].name} supera el máximo de ${MAX_DOC_MB} MB`);
+    setDocs((d) => [...d, ...lista.filter((f) => f.size <= MAX_DOC_MB * 1024 * 1024)]);
+  };
 
   const accion = async (key, fn, ok) => {
     setOcupado(key);
@@ -168,9 +198,10 @@ export default function TareaDetalle() {
     const ok = await accion('mensaje', async () => {
       const fd = new FormData(); fd.append('texto', texto.trim());
       await fotosAFormData(fd, adjuntos);
+      docs.forEach((f) => fd.append('archivos', f, f.name));
       return api.post(`/tareas/${id}/mensajes`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
     });
-    if (ok) { setTexto(''); setAdjuntos([]); }
+    if (ok) { setTexto(''); setAdjuntos([]); setDocs([]); setTimeout(() => finChat.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 60); }
   };
 
   const cancelar = async () => {
@@ -329,6 +360,20 @@ export default function TareaDetalle() {
                     {m.fotos.map((f) => <AuthedImg key={f.id} url={fotoUrl(f)} className="h-16 w-16 rounded-lg object-cover border cursor-zoom-in" onClick={() => setZoom(fotoUrl(f))} />)}
                   </div>
                 )}
+                {(m.archivos || []).length > 0 && (
+                  <div className="mt-1.5 space-y-1">
+                    {m.archivos.map((a) => (
+                      <button key={a.id} type="button" onClick={() => descargarDoc(`/tareas/${t.id}/archivo/${a.id}`, a.nombre)} data-testid="tarea-doc"
+                        className="flex w-full min-w-0 items-center gap-2 rounded-xl border bg-card px-2.5 py-2 text-left hover:bg-muted/60">
+                        <FileText className="h-5 w-5 shrink-0 text-[#1e395e] dark:text-[#93c5fd]" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13px] font-medium">{a.nombre}</span>
+                          <span className="block text-[11px] text-muted-foreground">{(a.nombre.split('.').pop() || '').toUpperCase()} · {tamanoDe(a.tamano || 0)} · Descargar</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <p className="text-[11px] text-muted-foreground mt-0.5">{timeAgoEs(m.at)}</p>
               </div>
             )))}
@@ -338,11 +383,28 @@ export default function TareaDetalle() {
             <div className="space-y-2 pt-2 border-t">
               <Textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={2} placeholder="Escribe un mensaje…" data-testid="tarea-texto" />
               <input ref={fotoMsg} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { setAdjuntos(Array.from(e.target.files || [])); e.target.value = ''; }} />
+              <input ref={docMsg} type="file" accept={ACEPTA_DOCS} multiple className="hidden" data-testid="tarea-doc-input" onChange={(e) => { elegirDocs(e.target.files); e.target.value = ''; }} />
+              {docs.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {docs.map((f, i) => (
+                    <span key={`${f.name}-${i}`} className="inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-lg border bg-muted/50 px-2 py-1 text-xs">
+                      <FileText className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate max-w-[180px]">{f.name}</span>
+                      <button type="button" aria-label={`Quitar ${f.name}`} onClick={() => setDocs((d) => d.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <button type="button" onClick={() => fotoMsg.current?.click()} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-                  <Camera className="h-3.5 w-3.5" /> {adjuntos.length ? `${adjuntos.length} foto${adjuntos.length === 1 ? '' : 's'}` : 'Adjuntar foto'}
-                </button>
-                <Button size="sm" variant="outline" className="rounded-xl" disabled={!!ocupado || (!texto.trim() && !adjuntos.length)} onClick={enviarMensaje}>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button type="button" onClick={() => fotoMsg.current?.click()} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+                    <Camera className="h-3.5 w-3.5" /> {adjuntos.length ? `${adjuntos.length} foto${adjuntos.length === 1 ? '' : 's'}` : 'Adjuntar foto'}
+                  </button>
+                  <button type="button" onClick={() => docMsg.current?.click()} data-testid="tarea-adjuntar-doc" className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+                    <Paperclip className="h-3.5 w-3.5" /> Adjuntar documento
+                  </button>
+                </div>
+                <Button size="sm" variant="outline" className="rounded-xl" disabled={!!ocupado || (!texto.trim() && !adjuntos.length && !docs.length)} onClick={enviarMensaje}>
                   {ocupado === 'mensaje' ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Send className="h-4 w-4 mr-1.5" /> Enviar mensaje</>}
                 </Button>
               </div>
@@ -351,6 +413,8 @@ export default function TareaDetalle() {
         </div>
       </div>
 
+      <div ref={finChat} />
+      <AvisoNuevos nuevos={nuevos} onClick={verNuevos} />
       <EditarTarea open={editar} onOpenChange={setEditar} tarea={t} onGuardada={setT} />
       <PhotoZoomDialog open={!!zoom} onClose={() => setZoom(null)}>
         {zoom && <AuthedImg url={zoom} className={ZOOM_IMG_CLASS} />}

@@ -29,6 +29,7 @@ fecha límite es un día (YYYY-MM-DD) en hora de la empresa.
 """
 import json
 import logging
+from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
@@ -49,6 +50,17 @@ router = APIRouter(prefix='/tareas', tags=['tareas'])
 logger = logging.getLogger('tareas')
 
 MAX_FOTO = 8 * 1024 * 1024
+MAX_ARCHIVO = 15 * 1024 * 1024
+# documentos que se pueden adjuntar en la conversación (extensión -> tipo)
+TIPOS_ARCHIVO = {
+    'pdf': 'application/pdf', 'doc': 'application/msword',
+    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'xls': 'application/vnd.ms-excel',
+    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'ppt': 'application/vnd.ms-powerpoint',
+    'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'csv': 'text/csv', 'txt': 'text/plain', 'zip': 'application/zip',
+}
 PRIORIDADES = ('alta', 'media', 'baja')
 ESTADOS = ('abierta', 'cerrada', 'cancelada')
 # estado de cada persona asignada
@@ -285,9 +297,32 @@ async def _subir_fotos(tarea_id: str, fotos: List[UploadFile]) -> list:
     return out
 
 
-def _mensaje(user: dict, texto: str, rol: str, fotos=None) -> dict:
+async def _subir_archivos(tarea_id: str, archivos: List[UploadFile]) -> list:
+    out = []
+    for f in archivos or []:
+        content = await f.read()
+        if not content:
+            continue
+        nombre = (f.filename or 'documento').replace('\\', '/').split('/')[-1].strip()[:150] or 'documento'
+        ext = nombre.rsplit('.', 1)[-1].lower() if '.' in nombre else ''
+        if ext not in TIPOS_ARCHIVO:
+            raise HTTPException(status_code=400, detail=f'No se puede adjuntar "{nombre}": solo PDF, Word, Excel, PowerPoint, CSV, TXT o ZIP')
+        if len(content) > MAX_ARCHIVO:
+            raise HTTPException(status_code=400, detail=f'"{nombre}" supera el máximo de {MAX_ARCHIVO // (1024 * 1024)} MB')
+        aid = new_id()
+        path = f'{storage.APP_NAME}/tareas/{tarea_id}/doc_{aid}.{ext}'
+        try:
+            await storage.put_object(path, content, TIPOS_ARCHIVO[ext])
+        except Exception as ex:
+            logger.error(f'tarea file upload failed: {ex}')
+            raise HTTPException(status_code=502, detail=f'No se pudo subir "{nombre}"')
+        out.append({'id': aid, 'path': path, 'content_type': TIPOS_ARCHIVO[ext], 'nombre': nombre, 'tamano': len(content)})
+    return out
+
+
+def _mensaje(user: dict, texto: str, rol: str, fotos=None, archivos=None) -> dict:
     return {'id': new_id(), 'de_id': user.get('id'), 'de_name': user.get('name'), 'rol': rol,
-            'texto': texto, 'fotos': fotos or [], 'at': now_iso()}
+            'texto': texto, 'fotos': fotos or [], 'archivos': archivos or [], 'at': now_iso()}
 
 
 def _sistema(texto: str) -> dict:
@@ -466,6 +501,39 @@ async def detalle(tarea_id: str, user=Depends(require_modulo('tareas'))):
     if not puede_ver(user, t):
         raise HTTPException(status_code=403, detail='No puedes ver esta tarea')
     return serialize_doc(_pintar(t, user))
+
+
+@router.get('/{tarea_id}/cambios')
+async def cambios(tarea_id: str, desde: str = '', user=Depends(require_modulo('tareas'))):
+    """Consulta liviana que la pantalla hace cada pocos segundos mientras la
+    conversación está abierta: si nada cambió desde `desde` (el updated_at que
+    ya tiene), no devuelve la tarea."""
+    t = await db.tareas.find_one({'id': tarea_id}, {'_id': 0, 'mensajes': 0})
+    if not t:
+        raise HTTPException(status_code=404, detail='Tarea no encontrada')
+    if not puede_ver(user, t):
+        raise HTTPException(status_code=403, detail='No puedes ver esta tarea')
+    if desde and t.get('updated_at') == desde:
+        return {'cambio': False}
+    return {'cambio': True, 'tarea': await detalle(tarea_id, user)}
+
+
+@router.get('/{tarea_id}/archivo/{archivo_id}')
+async def archivo(tarea_id: str, archivo_id: str, user=Depends(require_modulo('tareas'))):
+    t = await _tarea_o_404(tarea_id)
+    if not puede_ver(user, t):
+        raise HTTPException(status_code=403, detail='No puedes ver esta tarea')
+    p = next((a for m in t.get('mensajes', []) for a in (m.get('archivos') or []) if a['id'] == archivo_id), None)
+    if not p:
+        raise HTTPException(status_code=404, detail='Documento no encontrado')
+    try:
+        content, ctype = await storage.get_object(p['path'])
+    except Exception as ex:
+        logger.error(f'tarea file download failed: {ex}')
+        raise HTTPException(status_code=502, detail='No se pudo descargar el documento')
+    nombre = p.get('nombre') or 'documento'
+    return Response(content=content, media_type=p.get('content_type', ctype),
+                    headers={'Content-Disposition': f"attachment; filename*=UTF-8''{quote(nombre)}"})
 
 
 @router.get('/{tarea_id}/foto/{foto_id}')
@@ -731,7 +799,7 @@ async def devolver(tarea_id: str, asignado_id: str = Form(...), texto: str = For
 
 @router.post('/{tarea_id}/mensajes')
 async def mensaje(tarea_id: str, texto: str = Form(''), fotos: List[UploadFile] = File(default=[]),
-                  user=Depends(require_modulo('tareas'))):
+                  archivos: List[UploadFile] = File(default=[]), user=Depends(require_modulo('tareas'))):
     t = await _tarea_o_404(tarea_id)
     if not puede_ver(user, t):
         raise HTTPException(status_code=403, detail='No puedes escribir en esta tarea')
@@ -739,16 +807,17 @@ async def mensaje(tarea_id: str, texto: str = Form(''), fotos: List[UploadFile] 
         raise HTTPException(status_code=409, detail='La tarea ya está cerrada o cancelada')
     texto = (texto or '').strip()[:2000]
     subidas = await _subir_fotos(t['id'], fotos)
-    if not texto and not subidas:
-        raise HTTPException(status_code=400, detail='Escribe un mensaje o adjunta una foto')
+    docs = await _subir_archivos(t['id'], archivos)
+    if not texto and not subidas and not docs:
+        raise HTTPException(status_code=400, detail='Escribe un mensaje o adjunta una foto o documento')
     rol = _rol_en(user, t)
-    await db.tareas.update_one({'id': t['id']}, {'$push': {'mensajes': _mensaje(user, texto, rol, subidas)},
+    await db.tareas.update_one({'id': t['id']}, {'$push': {'mensajes': _mensaje(user, texto, rol, subidas, docs)},
                                                  '$set': {'updated_at': now_iso()}})
     if rol == 'responsable':
         destino = await _validadores_ids(t)
     else:
         destino = [a['id'] for a in t['asignados'] if a['estado'] != EST_VALIDADA]
-    await _avisar(destino, 'tarea_mensaje', f"{t['numero']} · {user['name']}: {texto[:80] or 'envió una foto'}", t, user)
+    await _avisar(destino, 'tarea_mensaje', f"{t['numero']} · {user['name']}: {texto[:80] or ('envió un documento' if docs else 'envió una foto')}", t, user)
     return await detalle(t['id'], user)
 
 

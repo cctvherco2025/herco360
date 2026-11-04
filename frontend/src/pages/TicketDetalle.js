@@ -3,6 +3,8 @@ import { useParams, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { ArrowLeft, Camera, Check, Loader2, Send } from 'lucide-react';
 import api from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import useChatEnVivo, { AvisoNuevos } from '@/lib/useChatEnVivo';
 import { timeAgoEs } from '@/lib/time';
 import { compressImage } from '@/lib/flosPhoto';
 import { Button } from '@/components/ui/button';
@@ -40,6 +42,12 @@ export default function TicketDetalle() {
     catch (e) { setError(e?.response?.data?.detail || 'No se pudo abrir el seguimiento'); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
+  // la conversación y el estado se actualizan solos mientras el seguimiento está abierto en pantalla
+  const { user } = useAuth();
+  const finChat = useRef(null);
+  const { nuevos, verNuevos } = useChatEnVivo({
+    ruta: `/tickets/${id}`, clave: 'ticket', obj: t, setObj: setT, miId: user?.id, finRef: finChat, pausado: !!ocupado,
+  });
 
   const accion = async (key, fn, ok) => {
     setOcupado(key);
@@ -61,7 +69,7 @@ export default function TicketDetalle() {
       const fd = await fotosAFormData(formTexto(), adjuntos);
       return api.post(`/tickets/${id}/mensajes`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
     });
-    if (ok) { setTexto(''); setAdjuntos([]); }
+    if (ok) { setTexto(''); setAdjuntos([]); setTimeout(() => finChat.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 60); }
   };
   const conTexto = (key, ruta, ok) => async () => {
     const hecho = await accion(key, () => api.post(`/tickets/${id}/${ruta}`, formTexto(), { headers: { 'Content-Type': 'multipart/form-data' } }), ok);
@@ -218,6 +226,8 @@ export default function TicketDetalle() {
         </div>
       </div>
 
+      <div ref={finChat} />
+      <AvisoNuevos nuevos={nuevos} onClick={verNuevos} />
       <PhotoZoomDialog open={!!zoom} onClose={() => setZoom(null)}>
         {zoom && <AuthedImg url={zoom} className={ZOOM_IMG_CLASS} />}
       </PhotoZoomDialog>

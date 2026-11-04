@@ -277,6 +277,20 @@ async def detalle(ticket_id: str, user=Depends(require_modulo('seguimientos'))):
     return serialize_doc(t)
 
 
+@router.get('/{ticket_id}/cambios')
+async def cambios(ticket_id: str, desde: str = '', user=Depends(require_modulo('seguimientos'))):
+    """Consulta liviana que la pantalla hace cada pocos segundos mientras la
+    conversación está abierta: si nada cambió desde `desde`, no devuelve el seguimiento."""
+    t = await db.tickets.find_one({'id': ticket_id}, {'_id': 0, 'mensajes': 0})
+    if not t:
+        raise HTTPException(status_code=404, detail='Seguimiento no encontrado')
+    if not puede_ver(user, t):
+        raise HTTPException(status_code=403, detail='No puedes ver este seguimiento')
+    if desde and t.get('updated_at') == desde:
+        return {'cambio': False}
+    return {'cambio': True, 'ticket': await detalle(ticket_id, user)}
+
+
 @router.get('/{ticket_id}/foto/{foto_id}')
 async def foto(ticket_id: str, foto_id: str, user=Depends(require_modulo('seguimientos'))):
     t = await _ticket_o_404(ticket_id)
