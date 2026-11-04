@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight, Camera, Upload, X, Info, Send, FileDown, RotateCcw,
+  AlertTriangle,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -10,7 +11,6 @@ import { compressImage } from '@/lib/flosPhoto';
 import { generateCustomFormPdf } from '@/lib/customFormPdf';
 import { ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
 import { Link } from 'react-router-dom';
-import { EstadoTarea } from '@/components/promociones/PromoRevision';
 import { PlazoChip } from '@/lib/promoPlazos';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -30,6 +30,13 @@ const draftKey = (formId) => `herco360_customform_draft_${formId}`;
 
 function loadDraft(formId) {
   try { const raw = localStorage.getItem(draftKey(formId)); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+}
+
+// Foto del borrador del servidor -> { blob, dataUrl } para verla y para el PDF
+async function bajarFotoBorrador(formId, f) {
+  const { data: blob } = await api.get(`/formularios-custom/${formId}/borrador/fotos/${f.id}`, { responseType: 'blob' });
+  const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+  return { localId: f.id, borradorId: f.id, blob, dataUrl, name: f.name };
 }
 
 export default function CustomFormWizard({ schema, onSubmitted }) {
@@ -108,38 +115,83 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
   })();
   const bloqueadaPor = conTareas && sucursal && catActual ? ocupadaPor(sucursal, catActual) : null;
 
+  // Cada foto se sube al borrador del servidor en cuanto se toma: si se cierra
+  // la app no se pierde. Si no hay señal, queda en el teléfono y se sube al enviar.
+  const subirAlBorrador = async (owner, blob, name) => {
+    try {
+      const fd = new FormData();
+      fd.append('owner', owner); fd.append('foto', blob, name || 'foto.jpg');
+      const { data } = await api.post(`/formularios-custom/${schema.id}/borrador/fotos`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      return data.id;
+    } catch (e) { return null; }
+  };
+  const quitarDelBorrador = (ph) => { if (ph?.borradorId) api.delete(`/formularios-custom/${schema.id}/borrador/fotos/${ph.borradorId}`).catch(() => {}); };
+
   const pickGeneralPhoto = async (fileList) => {
     const file = fileList?.[0];
     if (!file) return;
     setGeneralUploading(true);
     try {
       const { blob, dataUrl } = await compressImage(file);
-      setGeneralPhoto({ localId: `${Date.now()}-${Math.random()}`, blob, dataUrl, name: file.name });
+      const borradorId = await subirAlBorrador(GENERAL_PHOTO_OWNER, blob, file.name);
+      quitarDelBorrador(generalPhoto);
+      setGeneralPhoto({ localId: `${Date.now()}-${Math.random()}`, blob, dataUrl, name: file.name, borradorId });
     } catch (e) { toast.error('No se pudo procesar la foto'); }
     finally { setGeneralUploading(false); }
   };
 
+  const [borradorListo, setBorradorListo] = useState(false);
   useEffect(() => {
-    const d = loadDraft(schema.id);
-    if (d && (d.touched || []).length) {
+    let vivo = true;
+    const aplicar = (d) => {
       setChoice(d.choice || {}); setNotes(d.notes || {}); setTouched(new Set(d.touched || [])); setCursor(d.cursor || 0);
       if (d.categoria) setCategoria(d.categoria);
-      setHasDraft(true);
-    }
+      if (d.sucursal) setSucursal(d.sucursal);
+      if (typeof d.socializo === 'boolean') setSocializo(d.socializo);
+    };
+    (async () => {
+      let srv = null;
+      try { srv = (await api.get(`/formularios-custom/${schema.id}/borrador`)).data; } catch (e) { /* sin servidor: el del teléfono */ }
+      if (!vivo) return;
+      const local = loadDraft(schema.id);
+      const d = srv?.data && ((srv.data.touched || []).length || (srv.fotos || []).length) ? srv.data : local;
+      if (d && ((d.touched || []).length || (srv?.fotos || []).length)) { aplicar(d); setHasDraft(true); }
+      setBorradorListo(true);
+      // fotos ya subidas: se bajan para verlas y para el PDF
+      const fotos = srv?.fotos || [];
+      if (fotos.length) {
+        const bajadas = await Promise.all(fotos.map((f) => bajarFotoBorrador(schema.id, f).then((x) => ({ ...x, owner: f.owner })).catch(() => null)));
+        if (!vivo) return;
+        const porPregunta = {};
+        bajadas.filter(Boolean).forEach((x) => {
+          if (x.owner === GENERAL_PHOTO_OWNER) setGeneralPhoto(x);
+          else (porPregunta[x.owner] = porPregunta[x.owner] || []).push(x);
+        });
+        setPhotos(porPregunta);
+      }
+    })();
+    return () => { vivo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schema.id]);
 
+  // Se guarda en el teléfono al instante y en el servidor cada poco (para
+  // seguir desde otro equipo); las fotos ya se subieron al tomarlas.
   useEffect(() => {
-    if (phase === 'intro') return;
+    if (phase === 'intro' || !borradorListo) return undefined;
+    const d = { choice, notes, touched: [...touched], cursor, categoria, sucursal, socializo };
     const t = setTimeout(() => {
-      try { localStorage.setItem(draftKey(schema.id), JSON.stringify({ choice, notes, touched: [...touched], cursor, categoria })); }
-      catch (e) { /* localStorage lleno: se pierde el borrador, no rompe la app */ }
+      try { localStorage.setItem(draftKey(schema.id), JSON.stringify(d)); }
+      catch (e) { /* localStorage lleno: queda el del servidor */ }
     }, 400);
-    return () => clearTimeout(t);
+    const t2 = setTimeout(() => { api.put(`/formularios-custom/${schema.id}/borrador`, { data: d }).catch(() => {}); }, 1500);
+    return () => { clearTimeout(t); clearTimeout(t2); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, choice, notes, touched, cursor, categoria]);
+  }, [phase, borradorListo, choice, notes, touched, cursor, categoria, sucursal, socializo]);
 
-  const clearDraft = () => { try { localStorage.removeItem(draftKey(schema.id)); } catch (e) {} };
+  const clearDraft = (servidor = true) => {
+    try { localStorage.removeItem(draftKey(schema.id)); } catch (e) {}
+    if (servidor) api.delete(`/formularios-custom/${schema.id}/borrador`).catch(() => {});
+  };
 
   const itemScore = useCallback((it) => {
     if (!it.scored) return 0;
@@ -188,12 +240,16 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
     try {
       for (const file of toProcess) {
         const { blob, dataUrl } = await compressImage(file);
-        setPhotos((p) => ({ ...p, [id]: [...(p[id] || []), { localId: `${Date.now()}-${Math.random()}`, blob, dataUrl, name: file.name }] }));
+        const borradorId = await subirAlBorrador(id, blob, file.name);
+        setPhotos((p) => ({ ...p, [id]: [...(p[id] || []), { localId: `${Date.now()}-${Math.random()}`, blob, dataUrl, name: file.name, borradorId }] }));
       }
     } catch (e) { toast.error('No se pudo procesar una de las fotos'); }
     finally { setUploading(null); }
   };
-  const removePhoto = (id, localId) => setPhotos((p) => ({ ...p, [id]: (p[id] || []).filter((ph) => ph.localId !== localId) }));
+  const removePhoto = (id, localId) => {
+    quitarDelBorrador((photos[id] || []).find((ph) => ph.localId === localId));
+    setPhotos((p) => ({ ...p, [id]: (p[id] || []).filter((ph) => ph.localId !== localId) }));
+  };
 
   const goto = (i) => setCursor(Math.max(0, Math.min(STEPS - 1, i)));
   const next = () => {
@@ -256,19 +312,23 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
         score: itemScore(it), note: (notes[it.id] || '').trim(),
       }));
       const fd = new FormData();
-      fd.append('data', JSON.stringify({ entries, ...(isPromo ? { sucursal, socializo, categoria } : {}) }));
       const idsActuales = new Set(items.map((it) => it.id));
+      const fotosBorrador = [];
       Object.entries(photos).filter(([id]) => idsActuales.has(id)).forEach(([id, list]) => {
-        list.forEach((p) => { fd.append('photos', p.blob, p.name || `${id}.jpg`); fd.append('photo_owner', id); });
+        list.forEach((p) => {
+          if (p.borradorId) fotosBorrador.push(p.borradorId);
+          else { fd.append('photos', p.blob, p.name || `${id}.jpg`); fd.append('photo_owner', id); }
+        });
       });
       if (isPromo && generalPhoto) {
-        fd.append('photos', generalPhoto.blob, generalPhoto.name || 'general.jpg');
-        fd.append('photo_owner', GENERAL_PHOTO_OWNER);
+        if (generalPhoto.borradorId) fotosBorrador.push(generalPhoto.borradorId);
+        else { fd.append('photos', generalPhoto.blob, generalPhoto.name || 'general.jpg'); fd.append('photo_owner', GENERAL_PHOTO_OWNER); }
       }
+      fd.append('data', JSON.stringify({ entries, fotos_borrador: fotosBorrador, ...(isPromo ? { sucursal, socializo, categoria } : {}) }));
       await api.post(`/formularios-custom/${schema.id}/respuestas`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Respuesta enviada correctamente');
       cargarTareas();
-      clearDraft();
+      clearDraft(false); // el servidor ya borró su borrador al guardar la respuesta
       setChoice({}); setNotes({}); setTouched(new Set()); setPhotos({}); setCursor(0); setPhase('intro'); setHasDraft(false);
       setSucursal(''); setSocializo(false); setGeneralPhoto(null); setCategoria('');
       onSubmitted?.();
@@ -297,42 +357,17 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
     );
   }
 
-  // Lo que ya contestó en esta publicación, con su estado y, si quien revisa
-  // encontró inconsistencias, cuáles son (se corrigen en piso).
-  const misTareas = conTareas ? tareas.filter((t) => t.coordinador_id === user?.id) : [];
-  const tituloItem = (iid) => schema.items.find((it) => it.id === iid)?.titulo || 'Promoción';
-  const misCategorias = misTareas.length > 0 && (
-    <div className="max-w-[520px] mx-auto rounded-[18px] bg-card border shadow-card p-5 mb-4" data-testid="promo-mis-categorias">
-      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Lo que ya contestaste</p>
-      <div className="space-y-2.5">
-        {misTareas.map((t) => {
-          const obs = Object.entries(t.revision?.lineas || {}).filter(([, l]) => l.v === 'mal');
-          return (
-            <div key={t.id} className="rounded-xl border p-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium">{t.tienda} · {t.categoria}</span>
-                <EstadoTarea estado={t.estado} />
-              </div>
-              {t.estado === 'con_observaciones' && obs.length > 0 && (
-                <div className="mt-2 space-y-1.5">
-                  <p className="text-xs text-muted-foreground">
-                    {t.revision?.revisor_name} encontró {obs.length} inconsistencia{obs.length === 1 ? '' : 's'}. Corrígelas y sube la foto en el ticket.
-                    {t.ticket_id && <> <Link to={`/formularios/tickets/${t.ticket_id}`} className="font-semibold text-[#00a5df] hover:underline">Abrir ticket</Link></>}
-                  </p>
-                  {obs.map(([iid, l]) => (
-                    <p key={iid} className="text-xs rounded-lg bg-[rgba(236,144,50,0.12)] px-2.5 py-1.5">
-                      <span className="font-semibold">{tituloItem(iid)}</span> · {l.tipo}{l.comentario ? `: ${l.comentario}` : ''}
-                    </p>
-                  ))}
-                </div>
-              )}
-              {t.estado === 'validada' && t.validada_por_name && (
-                <p className="text-xs text-muted-foreground mt-1">Validada por {t.validada_por_name}.</p>
-              )}
-            </div>
-          );
-        })}
-      </div>
+  // Lo ya contestado y sus inconsistencias se ven en Seguimientos (cada una
+  // abre un ticket ahí); aquí solo un aviso si hay algo por corregir.
+  const porCorregir = conTareas ? tareas.filter((t) => t.coordinador_id === user?.id && t.estado === 'con_observaciones') : [];
+  const misCategorias = porCorregir.length > 0 && (
+    <div className="max-w-[520px] mx-auto mb-4 flex flex-wrap items-center gap-3 rounded-[18px] border border-[#ec9032]/40 bg-[rgba(236,144,50,0.07)] p-4" data-testid="promo-mis-categorias">
+      <AlertTriangle className="h-5 w-5 shrink-0 text-[#ec9032]" />
+      <p className="min-w-0 flex-1 text-sm">
+        <b>Tienes {porCorregir.length} {porCorregir.length === 1 ? 'categoría' : 'categorías'} con inconsistencias por corregir</b>
+        <span className="block text-xs text-muted-foreground">{porCorregir.map((t) => `${t.tienda} · ${t.categoria}`).join(', ')}</span>
+      </p>
+      <Link to="/formularios/tickets" className="inline-flex h-9 items-center rounded-xl bg-[#1e395e] px-3.5 text-sm font-medium text-white hover:bg-[#162c49]">Ir a Seguimientos</Link>
     </div>
   );
 
@@ -360,7 +395,7 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
         )}
         {hasDraft && (
           <div className="flex items-center gap-2 rounded-xl bg-[rgba(0,165,223,0.1)] text-[#1e395e] dark:text-[#3cbef6] text-xs px-3 py-2 mb-4">
-            <Info className="h-3.5 w-3.5 shrink-0" /> Tienes respuestas guardadas en este dispositivo.
+            <Info className="h-3.5 w-3.5 shrink-0" /> <span><b>¿Quieres continuar donde lo dejaste?</b> Guardamos tus respuestas y fotos. Toca Continuar para seguir.</span>
           </div>
         )}
 

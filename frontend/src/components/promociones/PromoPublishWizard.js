@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import {
   UploadCloud, FileSpreadsheet, X, ChevronLeft, ChevronRight, ListChecks,
-  Trash2, Plus, ArrowUp, ArrowDown, Check, Rocket, Loader2, FileDown, Layers,
+  Trash2, Plus, ArrowUp, ArrowDown, Check, Rocket, Loader2, FileDown, Layers, History,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,12 @@ const STEP_LABELS = ['Cargar Excel', 'Detectar columnas', 'Categorizar', 'Config
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const OPCIONES_BASE = [{ label: 'Sí' }, { label: 'No' }, { label: 'No aplica' }];
 const newItemId = () => `${Date.now()}-${Math.random()}`;
+// "hoy a las 5:42 p. m." o "el 3 nov a las 5:42 p. m."
+const fechaHoraBorrador = (iso) => {
+  const d = new Date(iso);
+  const hora = d.toLocaleTimeString('es-HN', { hour: 'numeric', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? `hoy a las ${hora}` : `el ${d.toLocaleDateString('es-HN', { day: 'numeric', month: 'short' })} a las ${hora}`;
+};
 
 // Respaldo si /promociones/meta no responde; la lista oficial vive en el backend.
 const CATEGORIAS_DEFAULT = ['Herramientas', 'Hogar', 'Ferretería', 'Iluminación', 'Pinturas', 'Revestimiento'];
@@ -216,6 +222,48 @@ export default function PromoPublishWizard() {
 
   const periodo = `${anio}-${String(mes).padStart(2, '0')}`;
 
+  // --- Borrador: lo que se lleva armado se guarda en el servidor (uno por
+  // persona) para seguir donde se quedó si se sale; se borra al publicar. ---
+  const [borrador, setBorrador] = useState(null); // el guardado, mientras se decide si continuar
+  const [borradorListo, setBorradorListo] = useState(false); // ya se decidió (o no había): se puede guardar
+  const [guardadoA, setGuardadoA] = useState(null);
+  useEffect(() => {
+    api.get('/formularios-custom/promociones/publicacion-borrador')
+      .then(({ data }) => { if (data?.data?.excelData) setBorrador(data); else setBorradorListo(true); })
+      .catch(() => setBorradorListo(true));
+  }, []);
+  const continuarBorrador = () => {
+    const d = borrador.data;
+    setFile(d.archivo ? { name: d.archivo.name, size: d.archivo.size, guardado: true } : null);
+    setExcelData(d.excelData); setMainColumn(d.mainColumn || ''); setRefColumns(d.refColumns || []);
+    setItems(d.items || []); setAgruparMarca(d.agruparMarca ?? true);
+    if (d.titulo) setTitulo(d.titulo);
+    if (d.mes) setMes(d.mes);
+    if (d.anio) setAnio(d.anio);
+    setDescripcion(d.descripcion || '');
+    if (d.plazos) setPlazos(d.plazos);
+    setStep(borrador.paso || 1);
+    setGuardadoA(borrador.updated_at);
+    setBorrador(null); setBorradorListo(true);
+  };
+  const descartarBorrador = () => {
+    api.delete('/formularios-custom/promociones/publicacion-borrador').catch(() => {});
+    setBorrador(null); setBorradorListo(true);
+  };
+  useEffect(() => {
+    if (!borradorListo || !excelData || saving) return undefined;
+    const t = setTimeout(() => {
+      const data = {
+        archivo: file ? { name: file.name, size: file.size } : null, excelData, mainColumn, refColumns, items, agruparMarca,
+        titulo, mes, anio, descripcion, plazos,
+      };
+      api.put('/formularios-custom/promociones/publicacion-borrador', { paso: step, data })
+        .then(({ data: r }) => setGuardadoA(r.updated_at)).catch(() => {});
+    }, 1500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [borradorListo, step, excelData, mainColumn, refColumns, items, agruparMarca, titulo, mes, anio, descripcion, plazos]);
+
   const pickFile = (f) => {
     if (!f) return;
     const name = f.name.toLowerCase();
@@ -233,6 +281,7 @@ export default function PromoPublishWizard() {
 
   const inspectAndAdvance = async () => {
     if (!file) { toast.error('Selecciona un archivo de Excel'); return; }
+    if (file.guardado && excelData) { setStep(1); return; } // Excel del borrador, ya leído
     setInspecting(true);
     try {
       const fd = new FormData();
@@ -415,6 +464,7 @@ export default function PromoPublishWizard() {
         items: preguntas.map(({ localIds, ...q }) => q),
       };
       const { data } = await api.post('/formularios-custom', payload);
+      api.delete('/formularios-custom/promociones/publicacion-borrador').catch(() => {});
       toast.success('Formulario publicado correctamente');
       navigate(`/formularios/custom/${data.id}`);
     } catch (e) {
@@ -424,7 +474,27 @@ export default function PromoPublishWizard() {
 
   return (
     <div className="max-w-[820px] mx-auto">
+      {borrador && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[18px] border border-[#ec9032]/40 bg-[rgba(236,144,50,0.07)] p-4" data-testid="promo-borrador">
+          <History className="h-5 w-5 shrink-0 text-[#ec9032]" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">¿Quieres continuar donde lo dejaste?</p>
+            <p className="text-xs text-muted-foreground">
+              {borrador.data?.archivo?.name || 'Promociones del mes'} · {(borrador.data?.items || []).length || borrador.data?.excelData?.total_rows || 0} líneas · guardada {fechaHoraBorrador(borrador.updated_at)} · ibas en «{STEP_LABELS[borrador.paso] || STEP_LABELS[1]}»
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="rounded-xl" onClick={descartarBorrador} data-testid="promo-borrador-descartar">Empezar de nuevo</Button>
+            <Button size="sm" className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" onClick={continuarBorrador} data-testid="promo-borrador-continuar">Continuar donde lo dejé</Button>
+          </div>
+        </div>
+      )}
       <Stepper step={step} />
+      {guardadoA && !borrador && (
+        <p className="-mt-2 mb-3 flex items-center justify-end gap-1 text-[11px] text-muted-foreground" data-testid="promo-borrador-guardado">
+          <Check className="h-3 w-3 text-[#16a34a]" /> Borrador guardado {fechaHoraBorrador(guardadoA)}
+        </p>
+      )}
 
       <AnimatePresence mode="wait">
         <motion.div key={step} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.2 }}>

@@ -246,6 +246,43 @@ async def promo_meta(user=Depends(require_promociones_mes_access)):
 #  "Cargar Excel". Cualquier estructura de columnas funciona igual (Fase 1 la
 #  detecta sola); esta plantilla es solo una guía con un ejemplo llenado.
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+#  Promociones del mes — borrador de la publicación. Mientras se arma (Excel
+#  leído, columnas, categorías, grupos, configuración) se guarda aquí, uno por
+#  persona, para seguir donde se quedó si se sale; se borra al publicar.
+# --------------------------------------------------------------------------- #
+MAX_BORRADOR = 3 * 1024 * 1024
+DIAS_BORRADOR = 30  # un borrador sin tocar en este tiempo ya no se ofrece
+
+
+def _vigente(doc) -> bool:
+    if not doc:
+        return False
+    limite = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=DIAS_BORRADOR)).isoformat()
+    return (doc.get('updated_at') or '') >= limite
+
+
+@router.get('/promociones/publicacion-borrador')
+async def ver_borrador_publicacion(user=Depends(require_promo_access)):
+    doc = await db.promo_publicacion_borradores.find_one({'user_id': user['id']}, {'_id': 0})
+    return serialize_doc(doc) if _vigente(doc) else None
+
+
+@router.put('/promociones/publicacion-borrador')
+async def guardar_borrador_publicacion(payload: dict, user=Depends(require_promo_access)):
+    if len(json.dumps(payload, default=str)) > MAX_BORRADOR:
+        raise HTTPException(status_code=413, detail='El borrador es demasiado grande para guardarse')
+    doc = {'user_id': user['id'], 'data': payload.get('data') or {}, 'paso': int(payload.get('paso') or 0), 'updated_at': now_iso()}
+    await db.promo_publicacion_borradores.update_one({'user_id': user['id']}, {'$set': doc}, upsert=True)
+    return {'updated_at': doc['updated_at']}
+
+
+@router.delete('/promociones/publicacion-borrador')
+async def borrar_borrador_publicacion(user=Depends(require_promo_access)):
+    await db.promo_publicacion_borradores.delete_one({'user_id': user['id']})
+    return {'ok': True}
+
+
 @router.get('/promociones/plantilla')
 async def promo_template(user=Depends(require_promo_access)):
     from openpyxl import Workbook
@@ -748,6 +785,96 @@ async def delete_form(form_id: str, user=Depends(get_current_user)):
 
 
 # --------------------------------------------------------------------------- #
+#  Borrador al llenar: respuestas, notas y en qué pregunta iba, uno por persona
+#  y formulario. Cada foto se sube en cuanto se toma (no se pierde si se cierra
+#  la app) y al enviar la respuesta se usa tal cual, sin volver a subirla.
+# --------------------------------------------------------------------------- #
+MAX_FOTOS_BORRADOR = 200
+
+
+async def _form_para_borrador(form_id: str, user) -> dict:
+    form = await _get_form_or_404(form_id)
+    if not _can_fill(user, form):
+        raise HTTPException(status_code=403, detail='No tienes acceso a este formulario')
+    return form
+
+
+@router.get('/{form_id}/borrador')
+async def ver_borrador(form_id: str, user=Depends(get_current_user)):
+    await _form_para_borrador(form_id, user)
+    doc = await db.custom_form_borradores.find_one({'form_id': form_id, 'user_id': user['id']}, {'_id': 0})
+    return serialize_doc(doc) if _vigente(doc) else None
+
+
+@router.put('/{form_id}/borrador')
+async def guardar_borrador(form_id: str, payload: dict, user=Depends(get_current_user)):
+    await _form_para_borrador(form_id, user)
+    if len(json.dumps(payload, default=str)) > 512 * 1024:
+        raise HTTPException(status_code=413, detail='El borrador es demasiado grande para guardarse')
+    ahora = now_iso()
+    await db.custom_form_borradores.update_one(
+        {'form_id': form_id, 'user_id': user['id']},
+        {'$set': {'data': payload.get('data') or {}, 'updated_at': ahora},
+         '$setOnInsert': {'form_id': form_id, 'user_id': user['id'], 'fotos': []}}, upsert=True)
+    return {'updated_at': ahora}
+
+
+@router.delete('/{form_id}/borrador')
+async def borrar_borrador(form_id: str, user=Depends(get_current_user)):
+    await db.custom_form_borradores.delete_one({'form_id': form_id, 'user_id': user['id']})
+    return {'ok': True}
+
+
+@router.post('/{form_id}/borrador/fotos')
+async def subir_foto_borrador(form_id: str, owner: str = Form(...), foto: UploadFile = File(...), user=Depends(get_current_user)):
+    await _form_para_borrador(form_id, user)
+    content = await foto.read()
+    if not content:
+        raise HTTPException(status_code=400, detail='La foto está vacía')
+    if len(content) > MAX_PHOTO_SIZE:
+        raise HTTPException(status_code=400, detail=f'Una foto supera el máximo de {MAX_PHOTO_SIZE // (1024 * 1024)} MB')
+    b = await db.custom_form_borradores.find_one({'form_id': form_id, 'user_id': user['id']}, {'_id': 0, 'fotos': 1})
+    if b and len(b.get('fotos') or []) >= MAX_FOTOS_BORRADOR:
+        raise HTTPException(status_code=400, detail='El borrador ya tiene demasiadas fotos')
+    ctype = foto.content_type or 'image/jpeg'
+    photo_id = new_id()
+    ext = 'png' if 'png' in ctype else ('webp' if 'webp' in ctype else 'jpg')
+    path = f'{storage.APP_NAME}/formularios-custom/{form_id}/borradores/{user["id"]}/{photo_id}.{ext}'
+    try:
+        await storage.put_object(path, content, ctype)
+    except Exception as ex:
+        logger.error(f'draft photo upload failed: {ex}')
+        raise HTTPException(status_code=502, detail='No se pudo subir la foto')
+    f = {'id': photo_id, 'owner': owner, 'path': path, 'content_type': ctype, 'name': foto.filename or f'{photo_id}.{ext}', 'created_at': now_iso()}
+    ahora = now_iso()
+    await db.custom_form_borradores.update_one(
+        {'form_id': form_id, 'user_id': user['id']},
+        {'$push': {'fotos': f}, '$set': {'updated_at': ahora}, '$setOnInsert': {'form_id': form_id, 'user_id': user['id'], 'data': {}}},
+        upsert=True)
+    return {'id': photo_id}
+
+
+@router.delete('/{form_id}/borrador/fotos/{photo_id}')
+async def quitar_foto_borrador(form_id: str, photo_id: str, user=Depends(get_current_user)):
+    await db.custom_form_borradores.update_one({'form_id': form_id, 'user_id': user['id']}, {'$pull': {'fotos': {'id': photo_id}}})
+    return {'ok': True}
+
+
+@router.get('/{form_id}/borrador/fotos/{photo_id}')
+async def ver_foto_borrador(form_id: str, photo_id: str, user=Depends(get_current_user)):
+    b = await db.custom_form_borradores.find_one({'form_id': form_id, 'user_id': user['id']}, {'_id': 0, 'fotos': 1})
+    f = next((x for x in (b or {}).get('fotos', []) if x['id'] == photo_id), None)
+    if not f:
+        raise HTTPException(status_code=404, detail='Foto no encontrada')
+    try:
+        content, ctype = await storage.get_object(f['path'])
+    except Exception as ex:
+        logger.error(f'draft photo download failed: {ex}')
+        raise HTTPException(status_code=502, detail='No se pudo descargar la foto')
+    return Response(content=content, media_type=f.get('content_type', ctype))
+
+
+# --------------------------------------------------------------------------- #
 #  Responder
 # --------------------------------------------------------------------------- #
 @router.post('/{form_id}/respuestas')
@@ -832,6 +959,13 @@ async def submit_response(
 
     if len(photos) != len(photo_owner):
         raise HTTPException(status_code=400, detail='Las fotos no coinciden con sus preguntas')
+    # fotos que ya se subieron al borrador mientras se llenaba (no se vuelven a subir)
+    ids_borrador = [str(i) for i in (payload.get('fotos_borrador') or [])]
+    fotos_borrador = []
+    if ids_borrador:
+        b = await db.custom_form_borradores.find_one({'form_id': form_id, 'user_id': user['id']}, {'_id': 0, 'fotos': 1})
+        por_id = {f['id']: f for f in (b or {}).get('fotos', [])}
+        fotos_borrador = [por_id[i] for i in ids_borrador if i in por_id]
 
     # Promociones con tareas: la tienda × categoría queda a nombre de quien
     # contesta (409 si otro coordinador ya la contestó). Si el envío falla más
@@ -841,11 +975,12 @@ async def submit_response(
         tarea, previo = await promo_tareas.tomar_tarea(form, sucursal_reportada, categoria, user)
     try:
         doc = await _guardar_respuesta(form, form_id, user, photos, photo_owner, clean_entries, total_score, total_max,
-                                       is_promo, sucursal_reportada, socializo, categoria, tarea)
+                                       is_promo, sucursal_reportada, socializo, categoria, tarea, fotos_borrador)
     except Exception:
         if tarea:
             await promo_tareas.deshacer_toma(tarea['id'], previo)
         raise
+    await db.custom_form_borradores.delete_one({'form_id': form_id, 'user_id': user['id']})
     if tarea:
         anterior = tarea.get('respuesta_id')
         await db.promo_tareas.update_one({'id': tarea['id']}, {'$set': {'respuesta_id': doc['id']}})
@@ -866,11 +1001,18 @@ async def submit_response(
 
 
 async def _guardar_respuesta(form, form_id, user, photos, photo_owner, clean_entries, total_score, total_max,
-                             is_promo, sucursal_reportada, socializo, categoria, tarea):
-    """Sube las fotos y guarda la respuesta. Devuelve el documento guardado."""
+                             is_promo, sucursal_reportada, socializo, categoria, tarea, fotos_borrador=()):
+    """Sube las fotos y guarda la respuesta. Devuelve el documento guardado.
+    `fotos_borrador`: las que ya se subieron al borrador; se enlazan tal cual."""
     resp_id = new_id()
     entries_by_id = {e['id']: e for e in clean_entries}
     general_photos = []
+    for f in fotos_borrador:
+        photo_doc = {'id': f['id'], 'path': f['path'], 'content_type': f.get('content_type') or 'image/jpeg'}
+        if f.get('owner') == GENERAL_PHOTO_OWNER:
+            general_photos.append(photo_doc)
+        elif f.get('owner') in entries_by_id:
+            entries_by_id[f['owner']]['photos'].append(photo_doc)
     for f, owner in zip(photos, photo_owner):
         content = await f.read()
         if not content:
