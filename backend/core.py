@@ -343,8 +343,8 @@ JEFE_TIENDA = 'Jefe de tienda'
 CARGOS_SOLO_ADMIN = {JEFE_TIENDA, 'Jefe', 'Gerente', 'Director comercial', GERENTE_LOGISTICA}
 
 # Promociones del mes: tiendas que participan, por la sucursal del perfil.
-# Por ahora solo Herco Max y Herco Centro (las que tienen coordinadores y jefe).
-PROMO_TIENDAS = {'H1': 'Herco Max', 'H2': 'Herco Centro', 'H6': 'Herco JT'}
+# Tiendas que participan en Promociones del mes (las que tienen coordinadores).
+PROMO_TIENDAS = {'H1': 'Herco Max', 'H2': 'Herco Centro', 'H4': 'Herco SL', 'H6': 'Herco JT'}
 
 
 def tienda_promos(user) -> str:

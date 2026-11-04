@@ -122,7 +122,7 @@ export const canManagePromos = (user) => puede(user, 'promos.publicar');
 
 // Promociones del mes: tiendas que participan según la sucursal del perfil
 // (mismo mapa que core.PROMO_TIENDAS en el servidor).
-export const PROMO_TIENDAS = { H1: 'Herco Max', H2: 'Herco Centro', H6: 'Herco JT' };
+export const PROMO_TIENDAS = { H1: 'Herco Max', H2: 'Herco Centro', H4: 'Herco SL', H6: 'Herco JT' };
 export const tiendaPromos = (user) => PROMO_TIENDAS[(user?.sucursal || '').trim()] || '';
 // Revisa Promociones del mes de su tienda: jefe o gerente de tienda.
 export function esRevisorTienda(user) {

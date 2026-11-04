@@ -17,7 +17,7 @@ La tarea completa queda:
   cerrada     cuando todas las partes están validadas
   cancelada   el gerente/jefe la canceló
 
-Tiendas que participan en Promociones del mes: H1 (Herco Max), H2 (Herco Centro) y H6 (Herco JT).
+Tiendas que participan en Promociones del mes: H1 (Herco Max), H2 (Herco Centro), H4 (Herco SL) y H6 (Herco JT).
 
 Los demás departamentos (Logística y los que se creen; sin tiendas) funcionan
 por mando (mando.py): el jefe del departamento (y sus admins) asigna a
@@ -203,15 +203,19 @@ def _sucursales_de(tienda: str) -> list:
 
 async def _validadores_ids(t: dict) -> list:
     """Gerentes y jefes de la tienda (a quienes se avisa cuando se marca hecha).
-    En Logística: quien la creó, el Gerente de Logística y el Jefe del área."""
+    En Logística: quien la creó, el Gerente de Logística y el Jefe del área.
+    En Retail el Director comercial solo recibe los avisos de las tareas que
+    asignó él (como quien la creó), no los de toda la operación."""
     if _es_tarea_log(t):
+        depto = t.get('departamento') or RETAIL
+        jefe_depto = [] if depto == RETAIL else [{'nivel': 'jefe_depto'}]
         if t.get('area_path'):
-            ors = [{'nivel': 'jefe_depto'}, {'nivel': {'$in': ['jefe', 'gerente']}, 'area_id': {'$in': t['area_path']}}]
+            ors = jefe_depto + [{'nivel': {'$in': ['jefe', 'gerente']}, 'area_id': {'$in': t['area_path']}}]
         else:
-            ors = [{'nivel': 'jefe_depto'}] + ([{'nivel': {'$in': ['jefe', 'gerente']}, 'area': t['area']}] if t.get('area') else [])
-        users = await db.users.find({'status': 'approved', **filtro_departamento(t.get('departamento') or RETAIL), '$or': ors},
-                                    {'_id': 0, 'id': 1}).to_list(50)
-        return list(dict.fromkeys([(t.get('creado_por') or {}).get('id')] + [u['id'] for u in users]))
+            ors = jefe_depto + ([{'nivel': {'$in': ['jefe', 'gerente']}, 'area': t['area']}] if t.get('area') else [])
+        users = await db.users.find({'status': 'approved', **filtro_departamento(depto), '$or': ors},
+                                    {'_id': 0, 'id': 1}).to_list(50) if ors else []
+        return [i for i in dict.fromkeys([(t.get('creado_por') or {}).get('id')] + [u['id'] for u in users]) if i]
     tienda = t.get('tienda')
     users = await db.users.find(
         {'status': 'approved', 'sucursal': {'$in': _sucursales_de(tienda)},
