@@ -1,6 +1,7 @@
 {
   "short_name": "HERCO OPS",
   "name": "HERCO OPS · Operations Management System",
+  "lang": "es",
   "id": "/",
   "scope": "/",
   "start_url": ".",
