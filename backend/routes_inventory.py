@@ -6,7 +6,10 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.responses import StreamingResponse
 from core import db, require_inventory_access, serialize_doc, new_id, now_iso, now_local
-from models import InventoryIntake, InventoryMovementInput, CatalogItemInput, SUCURSALES
+from models import InventoryIntake, InventoryMovementInput, CatalogItemInput, SUCURSALES as _TIENDAS
+
+# Ubicaciones del inventario: las tiendas y la bodega de ECCP.
+SUCURSALES = [*_TIENDAS, 'ECCP']
 
 router = APIRouter(prefix='/inventory', tags=['inventory'])
 
@@ -201,14 +204,135 @@ async def movement(data: InventoryMovementInput, user=Depends(require_inventory_
 
 
 @router.get('/movements')
-async def movements(sucursal: str = None, type: str = None, user=Depends(require_inventory_access)):
+async def movements(sucursal: str = None, type: str = None, article: str = None, user=Depends(require_inventory_access)):
     query = {}
     if sucursal:
         query['sucursal'] = sucursal
     if type:
         query['type'] = type
+    if article and article.strip():  # los de un artículo (ficha del producto)
+        query['article'] = {'$regex': f'^{re.escape(article.strip())}$', '$options': 'i'}
     items = await db.inventory_movements.find(query, {'_id': 0}).sort('created_at', -1).limit(300).to_list(300)
     return serialize_doc(items)
+
+
+# ---- Miniaturas de las fotos (cuadrícula de productos) ----
+def _miniatura(data_url: str) -> str:
+    """Foto guardada (data URL) -> JPEG de 360 px como data URL."""
+    import base64
+    from PIL import Image as PILImage
+    raw = base64.b64decode(data_url.split(',', 1)[1])
+    im = PILImage.open(io.BytesIO(raw))
+    im = im.convert('RGBA') if im.mode in ('P', 'LA') else im
+    if im.mode == 'RGBA':  # fondo blanco para las transparencias
+        fondo = PILImage.new('RGB', im.size, (255, 255, 255)); fondo.paste(im, mask=im.split()[3]); im = fondo
+    im = im.convert('RGB'); im.thumbnail((360, 360))
+    buf = io.BytesIO(); im.save(buf, 'JPEG', quality=75)
+    return 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
+
+
+async def _miniaturas_de(keys: list) -> dict:
+    """{name_key: miniatura} de los que tienen foto; la miniatura se guarda la primera vez."""
+    out = {}
+    if not keys:
+        return out
+    # solo la miniatura (la foto completa pesa hasta MB y no hace falta traerla)
+    async for d in db.inventory_images.find({'name_key': {'$in': keys}, 'thumb': {'$exists': True}}, {'_id': 0, 'name_key': 1, 'thumb': 1}):
+        out[d['name_key']] = d['thumb']
+    faltan = [k for k in keys if k not in out]
+    if faltan:  # las que todavía no tienen miniatura: se hace una vez y se guarda
+        async for d in db.inventory_images.find({'name_key': {'$in': faltan}, 'data': {'$exists': True}}, {'_id': 0, 'name_key': 1, 'data': 1}):
+            try:
+                thumb = _miniatura(d['data'])
+            except Exception as e:
+                logger.warning(f'miniatura failed for {d["name_key"]}: {e}')
+                continue
+            await db.inventory_images.update_one({'name_key': d['name_key']}, {'$set': {'thumb': thumb}})
+            out[d['name_key']] = thumb
+    return out
+
+
+@router.post('/miniaturas')
+async def miniaturas(payload: dict, user=Depends(require_inventory_access)):
+    """{"articles": [...]} -> {"<nombre en minúsculas>": data URL de la miniatura}."""
+    keys = list({str(a).strip().lower() for a in (payload.get('articles') or []) if str(a).strip()})[:500]
+    return await _miniaturas_de(keys)
+
+
+# ---- Productos (inventario por artículo, paginado) ----
+@router.get('/productos')
+async def productos(ubicacion: str = '', q: str = '', page: int = 1, per_page: int = 12, user=Depends(require_inventory_access)):
+    """Una fila por artículo con lo que hay en cada ubicación ({"H1": 20, ...}),
+    ordenado por nombre y de `per_page` en `per_page`. Con `ubicacion`, solo los
+    artículos que tienen existencia ahí. Trae la miniatura de los de la página."""
+    per_page = max(1, min(int(per_page or 12), 60))
+    page = max(1, int(page or 1))
+    match = {'quantity': {'$gt': 0}}
+    if q and q.strip():
+        match['article_key'] = {'$regex': re.escape(q.strip().lower())}
+    pipe = [
+        {'$match': match},
+        {'$group': {'_id': '$article_key', 'nombre': {'$first': '$article'}, 'por': {'$push': {'u': '$sucursal', 'n': '$quantity'}}}},
+    ]
+    if ubicacion:
+        if ubicacion not in SUCURSALES:
+            raise HTTPException(status_code=400, detail='Ubicación inválida')
+        pipe.append({'$match': {'por.u': ubicacion}})
+    pipe += [
+        {'$sort': {'_id': 1}},
+        {'$facet': {'total': [{'$count': 'n'}], 'items': [{'$skip': (page - 1) * per_page}, {'$limit': per_page}]}},
+    ]
+    res = (await db.inventory_stock.aggregate(pipe).to_list(1))[0]
+    total = res['total'][0]['n'] if res['total'] else 0
+    items = []
+    for it in res['items']:
+        por = {}
+        for x in it['por']:
+            por[x['u']] = por.get(x['u'], 0) + x['n']
+        items.append({'key': it['_id'], 'nombre': it['nombre'], 'por': por, 'total': sum(por.values())})
+    thumbs = await _miniaturas_de([i['key'] for i in items])
+    for i in items:
+        i['thumb'] = thumbs.get(i['key'])
+    return {'items': items, 'total': total, 'page': page, 'per_page': per_page, 'pages': max(1, -(-total // per_page))}
+
+
+@router.get('/fotos-faltantes')
+async def fotos_faltantes(user=Depends(require_inventory_access)):
+    """Cuántos artículos con existencia no tienen foto (aviso en Importar)."""
+    keys = await db.inventory_stock.distinct('article_key', {'quantity': {'$gt': 0}})
+    con = await db.inventory_images.count_documents({'name_key': {'$in': keys}, 'data': {'$exists': True}})
+    return {'total': len(keys), 'sin_foto': max(0, len(keys) - con)}
+
+
+# ---- Movimientos (historial paginado) ----
+@router.get('/movimientos')
+async def movimientos(tipo: str = '', ubicacion: str = '', q: str = '', article: str = '', skip: int = 0, limit: int = 12,
+                      user=Depends(require_inventory_access)):
+    """Historial del más nuevo al más viejo, de `limit` en `limit` ("Ver más").
+    Un traslado se muestra una sola vez (su salida, con el destino).
+    tipo: entrada | salida | traslado."""
+    limit = max(1, min(int(limit or 12), 100))
+    skip = max(0, int(skip or 0))
+    conds = [{'sucursal_origen': {'$exists': False}}]  # la entrada del traslado no se repite
+    if tipo == 'entrada':
+        conds.append({'type': 'entrada'})
+    elif tipo == 'salida':
+        conds += [{'type': 'salida'}, {'sucursal_destino': {'$exists': False}}]
+    elif tipo == 'traslado':
+        conds.append({'sucursal_destino': {'$exists': True}})
+    if ubicacion:
+        conds.append({'$or': [{'sucursal': ubicacion}, {'sucursal_destino': ubicacion}]})
+    if article and article.strip():
+        conds.append({'article': {'$regex': f'^{re.escape(article.strip())}$', '$options': 'i'}})
+    elif q and q.strip():
+        conds.append({'article': {'$regex': re.escape(q.strip()), '$options': 'i'}})
+    query = {'$and': conds}
+    total = await db.inventory_movements.count_documents(query)
+    rows = await db.inventory_movements.find(query, {'_id': 0}).sort('created_at', -1).skip(skip).limit(limit).to_list(limit)
+    thumbs = await _miniaturas_de(list({(r.get('article') or '').lower() for r in rows}))
+    for r in rows:
+        r['thumb'] = thumbs.get((r.get('article') or '').lower())
+    return {'items': serialize_doc(rows), 'total': total, 'hay_mas': skip + len(rows) < total}
 
 
 
@@ -649,7 +773,8 @@ async def import_images(file: UploadFile = File(...), user=Depends(require_inven
         await db.inventory_images.update_one(
             {'name_key': key},
             {'$set': {'name': article, 'name_key': key, 'data': data_url, 'updated_at': now_iso()},
-             '$setOnInsert': {'id': new_id(), 'created_at': now_iso()}},
+             '$setOnInsert': {'id': new_id(), 'created_at': now_iso()},
+             '$unset': {'thumb': ''}},  # foto nueva: la miniatura se vuelve a hacer
             upsert=True)
         # Keep catalog in sync so the article is searchable.
         await db.inventory_catalog.update_one(

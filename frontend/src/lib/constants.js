@@ -80,6 +80,8 @@ const fueraDeRetail = (user) => !!user && !esSuperAdmin(user) && !esRetail(user)
 
 // Inventory branches (sucursales)
 export const SUCURSALES = ['H1', 'H2', 'H4', 'H5', 'H6'];
+// Ubicaciones de Inventarios Autoservicio: las tiendas y la bodega de ECCP
+export const UBICACIONES_INVENTARIO = [...SUCURSALES, 'ECCP'];
 
 // Report types delivered by ECCP coordinators (mirror of backend models.REPORT_TYPES)
 export const REPORT_TYPES = [
