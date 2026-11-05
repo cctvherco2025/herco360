@@ -22,6 +22,7 @@ import Inventario from '@/pages/Inventario';
 import Reportes from '@/pages/Reportes';
 import FormulariosHub from '@/pages/FormulariosHub';
 import PromocionesHome from '@/pages/PromocionesHome';
+import PromocionesConfig from '@/pages/PromocionesConfig';
 import Usuarios from '@/pages/Usuarios';
 import Organigrama from '@/pages/Organigrama';
 import Configuracion from '@/pages/Configuracion';
@@ -85,6 +86,7 @@ function App() {
               <Route path="/reportes-cams" element={<ConModulo modulo={'cams'} nombre="Reportes CAMS"><Suspense fallback={<PageFallback />}><ReportesCams /></Suspense></ConModulo>} />
               <Route path="/formularios" element={<ConModulo modulo={'formularios'} nombre="Formularios"><FormulariosHub /></ConModulo>} />
               <Route path="/formularios/promociones" element={<ConModulo modulo={'promos'} nombre="Promociones del mes"><PromocionesHome /></ConModulo>} />
+              <Route path="/formularios/promociones/configuracion" element={<ConModulo modulo={'promos'} nombre="Promociones del mes"><PromocionesConfig /></ConModulo>} />
               <Route path="/formularios/promociones/nuevo" element={<ConModulo modulo={'promos'} nombre="Promociones del mes"><Suspense fallback={<PageFallback />}><PromoPublishWizardPage /></Suspense></ConModulo>} />
               <Route path="/formulario" element={<ConModulo modulo={'flos'} nombre="Evaluación FLOS"><Suspense fallback={<PageFallback />}><Formulario /></Suspense></ConModulo>} />
               <Route path="/rutina-operativa" element={<ConModulo modulo={'rutina'} nombre="Rutina Operativa"><Suspense fallback={<PageFallback />}><RutinaOperativa /></Suspense></ConModulo>} />

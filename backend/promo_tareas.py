@@ -18,7 +18,8 @@ Quien revisa recorre cada línea (Correcto / Inconsistencia con tipo y comentari
 Enviar observaciones abre un ticket con esas líneas; al cerrarlo, la categoría
 queda validada.
 """
-from typing import Dict, Optional
+import re
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -28,6 +29,7 @@ from core import (db, get_current_user, serialize_doc, new_id, now_iso, PROMO_TI
                   require_promociones_mes_access, can_admin_promos)
 from notifications import create_notification, notify_admins
 import promo_plazos
+import promo_revisores
 import tickets
 
 router = APIRouter(prefix='/promo-tareas', tags=['promo-tareas'])
@@ -88,6 +90,7 @@ async def sincronizar_tareas(form: dict) -> list:
     if not form.get('flujo_tareas') or (form.get('status') or 'publicado') != 'publicado':
         return []
     revisores = await revisores_por_tienda()
+    await promo_revisores.cargar()
     cats = categorias_de(form)
     plazos = form.get('plazos')
     vence = promo_plazos.mas(form.get('publicada_at'), plazos['responder_dias'] * 24) if plazos else None
@@ -104,7 +107,8 @@ async def sincronizar_tareas(form: dict) -> list:
             doc = {
                 'id': new_id(), 'form_id': form['id'], 'form_titulo': form.get('titulo'),
                 'periodo': form.get('periodo'), 'tienda': tienda, 'sucursal': suc, 'categoria': cat,
-                'revisor_ids': [r['id'] for r in revisores.get(tienda, [])],
+                'revisor_ids': list(dict.fromkeys([r['id'] for r in revisores.get(tienda, [])]
+                                                  + promo_revisores.extras_ids(tienda, cat))),
                 'estado': 'pendiente', 'coordinador_id': None, 'coordinador_name': None,
                 'respuesta_id': None, 'enviada_at': None, 'created_at': now_iso(),
                 'vence_respuesta': vence, 'vence_revision': None,
@@ -143,6 +147,21 @@ async def avisar_publicacion(form: dict, actor: dict):
             await create_notification(
                 r['id'], 'promo_publicada',
                 f'Promociones de {mes} publicadas para {tienda}: {cats_txt}. {extra}',
+                related_id=form['id'], related_type='promociones',
+                actor_name=actor.get('name'), actor_avatar=actor.get('avatar_url'))
+    # quienes revisan algunas categorías (revisores por categoría)
+    await promo_revisores.cargar()
+    suyas = {}
+    for tienda in PROMO_TIENDAS.values():
+        for cat in categorias_de(form):
+            for p in promo_revisores.extras(tienda, cat):
+                suyas.setdefault(p['id'], {}).setdefault(tienda, []).append(cat)
+    for uid, por_tienda in suyas.items():
+        for tienda, cats in por_tienda.items():
+            await create_notification(
+                uid, 'promo_publicada',
+                f"Promociones de {mes} publicadas para {tienda}. Revisas {' y '.join(cats)}: "
+                f"te avisaremos cuando se contesten.",
                 related_id=form['id'], related_type='promociones',
                 actor_name=actor.get('name'), actor_avatar=actor.get('avatar_url'))
 
@@ -192,11 +211,12 @@ async def liberar_por_respuesta(resp_ids: list):
 
 
 def puede_revisar(user: dict, tarea: dict) -> bool:
-    """Jefe o gerente de esa tienda, o quien administra Promociones; nunca
-    quien la contestó."""
+    """Jefe o gerente de esa tienda, quien revisa esa categoría (revisores por
+    categoría) o quien administra Promociones; nunca quien la contestó."""
     if tarea.get('coordinador_id') == user.get('id'):
         return False
-    return (es_revisor_tienda(user) and tienda_promos(user) == tarea.get('tienda')) or can_admin_promos(user)
+    return ((es_revisor_tienda(user) and tienda_promos(user) == tarea.get('tienda'))
+            or promo_revisores.revisa(user, tarea.get('tienda'), tarea.get('categoria')) or can_admin_promos(user))
 
 
 def puede_ver(user: dict, tarea: dict) -> bool:
@@ -237,9 +257,13 @@ async def mis_tareas(user=Depends(get_current_user)):
     """Para Inicio. Coordinador de tienda: publicaciones con categorías sin
     contestar y lo que ya contestó. Jefe o gerente de tienda: cada categoría de
     su tienda. Cualquier otra persona: lista vacía."""
-    rol = 'revisor' if es_revisor_tienda(user) else ('coordinador' if es_coordinador_tienda(user) else None)
+    await promo_revisores.cargar()
+    pares = [] if es_revisor_tienda(user) else promo_revisores.pares_de(user)
+    rol = 'revisor' if (es_revisor_tienda(user) or pares) else ('coordinador' if es_coordinador_tienda(user) else None)
     if not rol:
         return {'rol': None, 'publicaciones': []}
+    # revisor por categoría: solo esas categorías de esas tiendas
+    tiendas_cat = list(dict.fromkeys(t for t, _ in pares))
     forms = await db.custom_forms.find(
         {'kind': 'promociones', 'flujo_tareas': True, 'status': 'publicado'},
         {'_id': 0, 'id': 1, 'titulo': 1, 'periodo': 1, 'created_at': 1}).sort('created_at', -1).to_list(6)
@@ -247,9 +271,13 @@ async def mis_tareas(user=Depends(get_current_user)):
     for f in forms:
         q = {'form_id': f['id'], 'estado': {'$ne': 'cancelada'}}
         if rol == 'revisor':
-            q['tienda'] = tienda_promos(user)
+            q['tienda'] = {'$in': tiendas_cat} if pares else tienda_promos(user)
         tareas = _sin_revision_ajena(
             await db.promo_tareas.find(q, _PUBLICO).sort([('tienda', 1), ('categoria', 1)]).to_list(200), user)
+        if pares:
+            tareas = [t for t in tareas if (t['tienda'], promo_revisores.norm(t['categoria'])) in pares]
+            if not tareas:
+                continue
         if rol == 'coordinador':
             mias = [t for t in tareas if t.get('coordinador_id') == user['id']]
             pendientes = sum(1 for t in tareas if t['estado'] == 'pendiente')
@@ -261,7 +289,8 @@ async def mis_tareas(user=Depends(get_current_user)):
             por_revisar = sum(1 for t in tareas if t['estado'] == 'enviada' and t.get('coordinador_id') != user['id'])
             vences = [t['vence_revision'] for t in tareas
                       if t['estado'] == 'enviada' and t.get('coordinador_id') != user['id'] and t.get('vence_revision')]
-            out.append({**f, 'tienda': tienda_promos(user), 'tareas': tareas, 'por_revisar': por_revisar,
+            out.append({**f, 'tienda': ' · '.join(tiendas_cat) if pares else tienda_promos(user),
+                        'tareas': tareas, 'por_revisar': por_revisar,
                         'vence_revision': min(vences) if vences else None})
     return serialize_doc({'rol': rol, 'publicaciones': out})
 
@@ -289,6 +318,52 @@ async def cambiar_plazos(data: PlazosInput, user=Depends(get_current_user)):
 
 
 # --------------------------------------------------------------------------- #
+#  Revisores por categoría (los configuran los admins de Promociones)
+# --------------------------------------------------------------------------- #
+class ReglaRevisores(BaseModel):
+    id: Optional[str] = None
+    categorias: List[str] = []
+    por_tienda: Dict[str, Optional[Dict[str, Optional[str]]]] = {}
+
+
+class ReglasInput(BaseModel):
+    reglas: List[ReglaRevisores] = []
+
+
+@router.get('/revisores-categoria')
+async def ver_revisores_categoria(user=Depends(require_promociones_mes_access)):
+    return {'reglas': await promo_revisores.cargar(forzar=True),
+            'tiendas': [{'sucursal': s, 'tienda': t} for s, t in PROMO_TIENDAS.items()]}
+
+
+@router.put('/revisores-categoria')
+async def guardar_revisores_categoria(data: ReglasInput, user=Depends(get_current_user)):
+    if not can_admin_promos(user):
+        raise HTTPException(status_code=403, detail='Solo quien administra Promociones del mes cambia quién revisa')
+    reglas = await promo_revisores.guardar([r.model_dump() for r in data.reglas], user)
+    # las tareas abiertas toman los revisores nuevos
+    base = await revisores_por_tienda()
+    for t in await db.promo_tareas.find({'estado': {'$in': ['pendiente', 'enviada', 'con_observaciones']}},
+                                        {'_id': 0, 'id': 1, 'tienda': 1, 'categoria': 1}).to_list(2000):
+        ids = [r['id'] for r in base.get(t['tienda'], [])] + promo_revisores.extras_ids(t['tienda'], t['categoria'])
+        await db.promo_tareas.update_one({'id': t['id']}, {'$set': {'revisor_ids': list(dict.fromkeys(ids))}})
+    return {'reglas': reglas}
+
+
+@router.get('/personas')
+async def personas(q: str = '', user=Depends(get_current_user)):
+    """Buscador de personas para elegir quién revisa (admins de Promociones)."""
+    if not can_admin_promos(user):
+        raise HTTPException(status_code=403, detail='Solo quien administra Promociones del mes')
+    filtro = {'status': 'approved'}
+    q = ' '.join((q or '').split())[:40]
+    if q:
+        filtro['name'] = {'$regex': re.escape(q), '$options': 'i'}
+    return await db.users.find(filtro, {'_id': 0, 'id': 1, 'name': 1, 'position': 1, 'area': 1}) \
+        .sort('name', 1).to_list(30)
+
+
+# --------------------------------------------------------------------------- #
 #  Revisión (jefe o gerente de la tienda)
 # --------------------------------------------------------------------------- #
 async def _tarea_o_404(tarea_id: str) -> dict:
@@ -303,6 +378,7 @@ async def detalle(tarea_id: str, user=Depends(get_current_user)):
     """Lo que necesita la pantalla de revisión: la tarea (con su revisión), la
     respuesta del coordinador y las preguntas de la publicación."""
     t = await _tarea_o_404(tarea_id)
+    await promo_revisores.cargar()
     if not puede_ver(user, t):
         raise HTTPException(status_code=403, detail='No puedes ver esta tarea')
     resp = None
@@ -342,8 +418,9 @@ async def revisar(tarea_id: str, data: RevisionInput, user=Depends(get_current_u
     t = await _tarea_o_404(tarea_id)
     if t.get('coordinador_id') == user['id']:
         raise HTTPException(status_code=403, detail='No puedes revisar tu propia respuesta')
+    await promo_revisores.cargar()
     if not puede_revisar(user, t):
-        raise HTTPException(status_code=403, detail='Solo el jefe o el gerente de la tienda revisan esta categoría')
+        raise HTTPException(status_code=403, detail='No te toca revisar esta categoría')
     if t['estado'] == 'con_observaciones':
         raise HTTPException(status_code=409, detail='Esta categoría tiene un seguimiento abierto: atiéndela desde el seguimiento')
     if t['estado'] != 'enviada':

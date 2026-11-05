@@ -17,6 +17,7 @@ lados conversan en el mismo hilo. El ticket guarda de dónde viene (`origen`)
 para poder usarse después con otros formularios.
 """
 import json
+import re
 import logging
 from typing import List
 
@@ -28,6 +29,7 @@ from core import (require_modulo, puede_modulo, db, get_current_user, serialize_
                   tienda_promos, can_admin_promos, es_super_admin)
 from notifications import create_notification
 import promo_plazos
+import promo_revisores
 import storage
 
 router = APIRouter(prefix='/tickets', tags=['tickets'])
@@ -49,13 +51,17 @@ def de_formulario(t: dict) -> bool:
 
 
 def es_revisor(user: dict, t: dict) -> bool:
-    """Promociones: jefe o gerente de esa tienda, o quien administra Promociones.
-    Formularios: quienes guardó el seguimiento al abrirse (y el super admin).
-    Nunca el asignado."""
+    """Quien valida o reabre. Promociones: jefe o gerente de esa tienda, o
+    quien administra Promociones; en las categorías con revisores por categoría,
+    esas personas en lugar del jefe y el gerente. Formularios: quienes guardó
+    el seguimiento al abrirse (y el super admin). Nunca el asignado."""
     if es_asignado(user, t):
         return False
     if de_formulario(t):
         return user.get('id') in revisores_ids(t) or es_super_admin(user)
+    extras = promo_revisores.extras_ids(t.get('tienda'), t.get('categoria'))
+    if extras:
+        return user.get('id') in extras or can_admin_promos(user)
     return (es_revisor_tienda(user) and tienda_promos(user) == t.get('tienda')) or can_admin_promos(user)
 
 
@@ -64,10 +70,13 @@ def revisores_ids(t: dict) -> list:
 
 
 def puede_ver(user: dict, t: dict) -> bool:
-    return es_asignado(user, t) or es_revisor(user, t)
+    # en Promociones el jefe y el gerente de la tienda siempre lo ven, aunque lo valide otra persona
+    return (es_asignado(user, t) or es_revisor(user, t)
+            or (not de_formulario(t) and es_revisor_tienda(user) and tienda_promos(user) == t.get('tienda')))
 
 
 async def _ticket_o_404(ticket_id: str) -> dict:
+    await promo_revisores.cargar()
     t = await db.tickets.find_one({'id': ticket_id}, {'_id': 0})
     if not t:
         raise HTTPException(status_code=404, detail='Seguimiento no encontrado')
@@ -87,7 +96,9 @@ async def _revisores_ids(tienda: str) -> list:
 
 async def _destino_revisores(t: dict) -> list:
     """A quién avisar de lo que hace el asignado."""
-    return revisores_ids(t) if de_formulario(t) else await _revisores_ids(t['tienda'])
+    if de_formulario(t):
+        return revisores_ids(t)
+    return promo_revisores.extras_ids(t['tienda'], t.get('categoria')) or await _revisores_ids(t['tienda'])
 
 
 async def _avisar(uids, tipo: str, msg: str, t: dict, actor: dict):
@@ -235,11 +246,25 @@ def _filtro(user: dict) -> dict:
         ors.append({'origen.tipo': {'$ne': 'formulario'}})
     elif es_revisor_tienda(user):
         ors.append({'tienda': tienda_promos(user), 'origen.tipo': {'$ne': 'formulario'}})
+    for tienda, cats in _pares_cat(user).items():
+        ors.append({'tienda': tienda, 'categoria': {'$in': cats}, 'origen.tipo': {'$ne': 'formulario'}})
     return {'$or': ors}
+
+
+def _pares_cat(user: dict) -> dict:
+    """{tienda: [categorías como regex]} que la persona valida por revisores por categoría."""
+    out = {}
+    for r in promo_revisores.reglas():
+        for tienda, p in (r.get('por_tienda') or {}).items():
+            if p and p.get('id') == user.get('id'):
+                out.setdefault(tienda, []).extend(
+                    re.compile(f'^{re.escape(c)}$', re.IGNORECASE) for c in r.get('categorias') or [])
+    return out
 
 
 @router.get('')
 async def listar(estado: str = None, user=Depends(require_modulo('seguimientos'))):
+    await promo_revisores.cargar()
     q = _filtro(user)
     if estado in ESTADOS:
         q['estado'] = estado
@@ -255,15 +280,24 @@ async def contador(user=Depends(get_current_user)):
     corregidos de su tienda por validar si revisa."""
     if not puede_modulo(user, 'seguimientos'):
         return {'pendientes': 0, 'tiene': False}
+    await promo_revisores.cargar()
     n = await db.tickets.count_documents({'asignado_a.id': user['id'], 'estado': 'abierto'})
-    if can_admin_promos(user) or es_revisor_tienda(user):
+    pares = _pares_cat(user)
+    if can_admin_promos(user) or es_revisor_tienda(user) or pares:
+        # corregidos de Promociones que le toca validar (en las categorías con
+        # revisores por categoría, a esas personas y no al jefe ni al gerente)
         q = {'estado': 'corregido', 'asignado_a.id': {'$ne': user['id']}, 'origen.tipo': {'$ne': 'formulario'}}
         if not can_admin_promos(user):
-            q['tienda'] = tienda_promos(user)
-        n += await db.tickets.count_documents(q)
+            ors = [{'tienda': t, 'categoria': {'$in': cs}} for t, cs in pares.items()]
+            if es_revisor_tienda(user):
+                ors.append({'tienda': tienda_promos(user)})
+            q['$or'] = ors
+        rows = await db.tickets.find(q, {'_id': 0, 'tienda': 1, 'categoria': 1, 'origen': 1, 'asignado_a': 1}).to_list(1000)
+        n += sum(1 for k in rows if es_revisor(user, k))
     n += await db.tickets.count_documents({'estado': 'corregido', 'revisores.id': user['id'], 'asignado_a.id': {'$ne': user['id']}})
     # los de formularios pueden ser de cualquier departamento: quien tenga alguno entra aunque no sea de tienda
-    tiene = bool(await db.tickets.find_one({'$or': [{'asignado_a.id': user['id']}, {'revisores.id': user['id']}]}, {'_id': 1}))
+    tiene = bool(pares) or bool(await db.tickets.find_one(
+        {'$or': [{'asignado_a.id': user['id']}, {'revisores.id': user['id']}]}, {'_id': 1}))
     return {'pendientes': n, 'tiene': tiene}
 
 

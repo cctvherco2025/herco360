@@ -40,6 +40,7 @@ import promo_analisis
 from notifications import create_notification
 import promo_tareas
 import promo_plazos
+import promo_revisores
 import tickets
 import storage
 import formularios_acceso as fa
@@ -177,11 +178,21 @@ def _sees_all_responses(user, form: dict) -> bool:
     return form.get('creator_id') == user.get('id')
 
 
+def _revisa_por_categoria(user, form: dict) -> bool:
+    """Revisa alguna categoría de esta publicación por "revisores por
+    categoría" (p. ej. el Jefe de Negocios): la ve para revisar, no la contesta."""
+    return bool(form.get('flujo_tareas')) and bool(promo_revisores.pares_de(user))
+
+
 def _revisa_tienda(user, form: dict, row: dict) -> bool:
     """Jefe o gerente de tienda: ve las respuestas (y sus fotos) de su tienda
-    en publicaciones con tareas, para revisarlas."""
-    return (bool(form.get('flujo_tareas')) and es_revisor_tienda(user)
-            and (row or {}).get('sucursal') == tienda_promos(user))
+    en publicaciones con tareas, para revisarlas. Quien revisa por categoría
+    (promo_revisores) ve las de esas categorías de su tienda."""
+    if not form.get('flujo_tareas'):
+        return False
+    row = row or {}
+    return ((es_revisor_tienda(user) and row.get('sucursal') == tienda_promos(user))
+            or promo_revisores.le_toca(user, row.get('sucursal'), row.get('categoria')))
 
 
 def _ve_respuesta(user, form: dict, row: dict) -> bool:
@@ -660,6 +671,7 @@ async def list_available(kind: Optional[str] = None, user=Depends(get_current_us
     else:
         await require_formularios_principal_access(user)
     forms = await db.custom_forms.find({}, {'_id': 0}).sort('created_at', -1).to_list(500)
+    await promo_revisores.cargar()
     out = []
     for f in forms:
         f_kind = f.get('kind') or 'generic'
@@ -675,7 +687,8 @@ async def list_available(kind: Optional[str] = None, user=Depends(get_current_us
         nuevo_editable = nuevo and puede_editar
         if f.get('status') == 'borrador' and not (is_creator or nuevo_editable):
             continue
-        if not (is_creator or nuevo_editable or _can_fill(user, f) or (nuevo and fa.ve_formulario(user, f))):
+        if not (is_creator or nuevo_editable or _can_fill(user, f) or (nuevo and fa.ve_formulario(user, f))
+                or _revisa_por_categoria(user, f)):
             continue
         out.append({
             'id': f['id'], 'titulo': f['titulo'], 'descripcion': f.get('descripcion', ''),
@@ -697,8 +710,11 @@ async def list_available(kind: Optional[str] = None, user=Depends(get_current_us
 async def get_form(form_id: str, user=Depends(get_current_user)):
     form = await _get_form_or_404(form_id)
     nuevo = form.get('esquema') == 2
-    if not (fa.ve_formulario(user, form) if nuevo else _can_fill(user, form)):
+    await promo_revisores.cargar()
+    if not (fa.ve_formulario(user, form) if nuevo else (_can_fill(user, form) or _revisa_por_categoria(user, form))):
         raise HTTPException(status_code=403, detail='No tienes acceso a este formulario')
+    if not nuevo:
+        form['puede_llenar'] = _can_fill(user, form)
     if nuevo:
         if not fa.entra_al_constructor(user, form):
             form.pop('borrador', None)  # lo que se está editando no lo ve quien solo llena
@@ -989,7 +1005,10 @@ async def submit_response(
             await db.custom_form_responses.delete_one({'id': anterior, 'form_id': form_id})
         verbo = 'actualizó' if anterior else 'contestó'
         mes = promo_tareas.periodo_label(form.get('periodo'))
-        for r in (await promo_tareas.revisores_por_tienda()).get(sucursal_reportada, []):
+        await promo_revisores.cargar()
+        quienes = (await promo_tareas.revisores_por_tienda()).get(sucursal_reportada, []) \
+            + promo_revisores.extras(sucursal_reportada, categoria)
+        for r in {q['id']: q for q in quienes}.values():
             if r['id'] == user['id']:
                 continue  # una jefa que contesta su propia categoría no se avisa a sí misma
             await create_notification(
@@ -1058,15 +1077,24 @@ async def _guardar_respuesta(form, form_id, user, photos, photo_owner, clean_ent
 @router.get('/{form_id}/respuestas')
 async def list_responses(form_id: str, user=Depends(get_current_user)):
     form = await _get_form_or_404(form_id)
-    if not (_sees_all_responses(user, form) or _can_fill(user, form)):
+    await promo_revisores.cargar()
+    if not (_sees_all_responses(user, form) or _can_fill(user, form) or _revisa_por_categoria(user, form)):
         raise HTTPException(status_code=403, detail='No tienes acceso a este formulario')
     q = {'form_id': form_id}
+    pares = []
     if not _sees_all_responses(user, form):
+        await promo_revisores.cargar()
+        pares = promo_revisores.pares_de(user) if form.get('flujo_tareas') else []
         if form.get('flujo_tareas') and es_revisor_tienda(user):
             q['$or'] = [{'sucursal': tienda_promos(user)}, {'respondent_id': user['id']}]
+        elif pares:
+            q['$or'] = [{'sucursal': {'$in': list({t for t, _ in pares})}}, {'respondent_id': user['id']}]
         else:
             q['respondent_id'] = user['id']
     rows = await db.custom_form_responses.find(q, {'_id': 0, 'entries': 0}).sort('created_at', -1).limit(300).to_list(300)
+    if pares and not es_revisor_tienda(user):
+        rows = [r for r in rows if r.get('respondent_id') == user['id']
+                or (r.get('sucursal'), promo_revisores.norm(r.get('categoria'))) in pares]
     return serialize_doc(rows)
 
 

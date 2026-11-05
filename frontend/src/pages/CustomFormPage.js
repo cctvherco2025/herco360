@@ -3,7 +3,7 @@ import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { ClipboardList, ArrowLeft, Trash2, Pencil, MoreVertical } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { canAdminPromos, esRevisorTienda } from '@/lib/constants';
+import { canAdminPromos, esRevisorTienda, revisaPromos } from '@/lib/constants';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -62,15 +62,17 @@ export default function CustomFormPage() {
   // publicación de Promociones como si la hubiera creado.
   const promoAdmin = schema.kind === 'promociones' && canAdminPromos(user);
   // Promociones con tareas: el jefe o gerente de tienda (y quien administra) revisa.
-  const puedeRevisar = !!schema.flujo_tareas && (esRevisorTienda(user) || promoAdmin);
+  const puedeRevisar = !!schema.flujo_tareas && (esRevisorTienda(user) || promoAdmin || revisaPromos(user).length > 0);
   const nuevoFormato = schema.esquema === 2;
   // Constructor nuevo: lo dice el servidor, según la pestaña Permisos del formulario.
   const mis = schema.mis_permisos || {};
   const canSeeAll = nuevoFormato ? !!mis.resultados : user?.role === 'admin' || (user?.position || '').trim() === 'Director comercial' || schema.creator_id === user?.id || promoAdmin;
   const canManage = nuevoFormato ? !!mis.eliminar : user?.role === 'admin' || schema.creator_id === user?.id || promoAdmin;
   const puedeEditar = nuevoFormato ? !!schema.puede_editar : canManage;
-  const puedeResponder = !nuevoFormato || !!schema.puede_llenar;
-  const pestana = tab || (puedeResponder ? 'responder' : 'historial');
+  // formato de siempre: contesta salvo que el servidor diga que no (quien solo revisa por categoría)
+  const puedeResponder = nuevoFormato ? !!schema.puede_llenar : schema.puede_llenar !== false;
+  const pestanaInicial = puedeResponder ? 'responder' : (puedeRevisar ? 'revision' : 'historial');
+  const pestana = tab || pestanaInicial;
   const editar = nuevoFormato ? `/formularios/v2/${id}/editar` : `/formularios/custom/${id}/editar`;
 
   return (

@@ -102,5 +102,9 @@ async def change_password(data: ChangePasswordInput, user=Depends(get_current_us
 async def me(user=Depends(get_current_user)):
     import acceso
     import mando
-    # lo que puede (perfiles o reglas de antes) y si aprueba o ve a gente a cargo
-    return {**user, 'acceso': acceso.lista(user), 'mando': await mando.resumen(user)}
+    import promo_revisores
+    await promo_revisores.cargar()
+    # lo que puede (perfiles o reglas de antes), si aprueba o ve a gente a cargo,
+    # y qué categorías de Promociones revisa por "revisores por categoría"
+    return {**user, 'acceso': acceso.lista(user), 'mando': await mando.resumen(user),
+            'revisa_promos': promo_revisores.resumen_de(user)}

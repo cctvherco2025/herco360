@@ -130,6 +130,8 @@ async def startup():
         await routes_activos.ensure_indexes()
         await routes_activos.ensure_defaults()
         await mantenimiento.ensure_indexes()
+        import promo_revisores
+        await promo_revisores.cargar(forzar=True)  # revisores por categoría de Promociones, en memoria
     except Exception as e:
         logger.error(f'Seed error: {e}')
     try:

@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 
 from core import db, now_local, PROMO_TIENDAS, JEFE_TIENDA
 from notifications import create_notification
+import promo_revisores
 
 logger = logging.getLogger('promo_plazos')
 
@@ -153,6 +154,7 @@ def _etapa(vence: str, recordar_horas: int, ahora: datetime):
 async def revisar_vencimientos() -> None:
     ahora = now_local()
     admins = None
+    await promo_revisores.cargar()
 
     async def los_admins():
         nonlocal admins
@@ -192,7 +194,9 @@ async def revisar_vencimientos() -> None:
         if not await _reclamar('promo_tareas', t, 'aviso_revision', etapa, 'enviada'):
             continue
         cuando = fecha_corta(t['vence_revision'])
-        revisores = [u for u in await _revisores(t['tienda']) if u != t.get('coordinador_id')]
+        revisores = [u for u in dict.fromkeys(await _revisores(t['tienda'])
+                                              + promo_revisores.extras_ids(t['tienda'], t['categoria']))
+                     if u != t.get('coordinador_id')]
         if etapa == 'recordar':
             await _avisar(revisores, 'promo_recordatorio',
                           f"Revisa {t['categoria']} de {t['tienda']}: vence {cuando}.", t['form_id'], 'promociones')
@@ -213,7 +217,8 @@ async def revisar_vencimientos() -> None:
         # los de formularios llevan sus revisores; los de Promociones, los de la tienda
         de_form = (k.get('origen') or {}).get('tipo') == 'formulario'
         asignado = (k.get('asignado_a') or {}).get('id')
-        revisores = [r['id'] for r in k.get('revisores') or []] if de_form else await _revisores(k['tienda'])
+        revisores = ([r['id'] for r in k.get('revisores') or []] if de_form
+                     else promo_revisores.extras_ids(k['tienda'], k.get('categoria')) or await _revisores(k['tienda']))
         if k['estado'] == 'abierto':
             actor, que = [asignado], 'corregir'
         else:

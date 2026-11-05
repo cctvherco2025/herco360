@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { ArrowLeft, Check, AlertTriangle, Loader2 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { canAdminPromos, tiendaPromos, PROMO_TIENDAS } from '@/lib/constants';
+import { canAdminPromos, tiendaPromos, PROMO_TIENDAS, esRevisorTienda, revisaPromos, revisaCategoria } from '@/lib/constants';
 import { ESTRATEGIA_COLOR } from '@/lib/promoEstrategia';
 import { timeAgoEs } from '@/lib/time';
 import { PlazoChip } from '@/lib/promoPlazos';
@@ -37,22 +37,25 @@ export function EstadoTarea({ estado }) {
 export default function PromoRevision({ schema }) {
   const { user } = useAuth();
   const verTodas = user?.role === 'admin' || canAdminPromos(user);
-  const miTienda = tiendaPromos(user);
+  const miTienda = esRevisorTienda(user) ? tiendaPromos(user) : '';
   const [tareas, setTareas] = useState(null);
   const [abierta, setAbierta] = useState(null);
 
+  // jefe o gerente: su tienda; revisor por categoría: solo sus categorías de sus tiendas
+  const mias = useCallback((t) => t.tienda === miTienda || revisaCategoria(user, t.tienda, t.categoria), [miTienda, user]);
   const load = useCallback(async () => {
     try {
       const { data } = await api.get(`/promo-tareas/form/${schema.id}`);
-      setTareas(verTodas ? data : data.filter((t) => t.tienda === miTienda));
+      setTareas(verTodas ? data : data.filter(mias));
     } catch (e) { toast.error('No se pudieron cargar las categorías'); setTareas([]); }
-  }, [schema.id, verTodas, miTienda]);
+  }, [schema.id, verTodas, mias]);
   useEffect(() => { load(); }, [load]);
 
   if (abierta) return <RevisionTarea id={abierta} onBack={() => { setAbierta(null); load(); }} />;
   if (!tareas) return <p className="text-sm text-muted-foreground text-center py-10">Cargando…</p>;
 
-  const tiendas = verTodas ? Object.values(PROMO_TIENDAS) : [miTienda];
+  const tiendas = verTodas ? Object.values(PROMO_TIENDAS)
+    : [...new Set([miTienda, ...revisaPromos(user).map((r) => r.tienda)].filter(Boolean))];
   return (
     <div className="space-y-4" data-testid="promo-revision">
       {tiendas.map((tienda) => {

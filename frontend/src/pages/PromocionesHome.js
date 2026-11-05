@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Percent, ArrowLeft, Plus, ChevronRight, Calendar, Users as UsersIcon } from 'lucide-react';
+import { Percent, ArrowLeft, Plus, ChevronRight, Calendar, Users as UsersIcon, Settings } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { canManagePromos, canAccessPromocionesMes, canAdminPromos } from '@/lib/constants';
@@ -25,7 +25,7 @@ export function periodoLabel(periodo) {
 
 // Plazos por defecto de cada mes (los copia cada publicación y se pueden
 // ajustar al publicar). Solo quien administra Promociones los cambia.
-function PlazosPorDefecto() {
+export function PlazosPorDefecto() {
   const [plazos, setPlazos] = useState(null);
   const [saving, setSaving] = useState(false);
   useEffect(() => { api.get('/promo-tareas/plazos').then(({ data }) => setPlazos(data)).catch(() => {}); }, []);
@@ -99,14 +99,20 @@ export default function PromocionesHome() {
           </h1>
           <p className="text-muted-foreground text-sm mt-0.5">Seguimiento a la disponibilidad y correcta exhibición de promociones en tienda</p>
         </div>
-        {canCreate && (
-          <Button asChild data-testid="promos-nuevo-button">
-            <Link to="/formularios/promociones/nuevo"><Plus className="h-4 w-4 mr-1.5" /> Nueva publicación</Link>
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {canAdminPromos(user) && (
+            <Button asChild variant="outline" className="rounded-xl" data-testid="promos-config-button">
+              <Link to="/formularios/promociones/configuracion"><Settings className="h-4 w-4 mr-1.5" /> Configuración</Link>
+            </Button>
+          )}
+          {canCreate && (
+            <Button asChild data-testid="promos-nuevo-button">
+              <Link to="/formularios/promociones/nuevo"><Plus className="h-4 w-4 mr-1.5" /> Nueva publicación</Link>
+            </Button>
+          )}
+        </div>
       </div>
 
-      {canAdminPromos(user) && <PlazosPorDefecto />}
 
       {loading && <p className="text-sm text-muted-foreground text-center py-10">Cargando…</p>}
 

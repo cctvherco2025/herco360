@@ -137,8 +137,16 @@ export function esRevisorTienda(user) {
 export function esCoordinadorTienda(user) {
   return !!tiendaPromos(user) && (user?.position || '').trim() === 'Coordinador' && (user?.area || '').trim() === 'Tienda';
 }
+// Revisores por categoría (p. ej. el Jefe de Negocios con Pinturas y
+// Revestimiento): [{tienda, categorias}] que revisa; lo manda /auth/me.
+export const revisaPromos = (user) => (Array.isArray(user?.revisa_promos) ? user.revisa_promos : []);
+const normCat = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
+// ¿Esa categoría de esa tienda la revisa la persona por revisores por categoría?
+export const revisaCategoria = (user, tienda, categoria) => revisaPromos(user)
+  .some((r) => r.tienda === tienda && (r.categorias || []).some((c) => normCat(c) === normCat(categoria)));
 // Formulario → Tickets: quien contesta, quien revisa o quien administra Promociones.
-export const puedeVerTickets = (user) => puede(user, 'seguimientos') && (esCoordinadorTienda(user) || esRevisorTienda(user) || canAdminPromos(user));
+export const puedeVerTickets = (user) => puede(user, 'seguimientos')
+  && (esCoordinadorTienda(user) || esRevisorTienda(user) || canAdminPromos(user) || revisaPromos(user).length > 0);
 
 // ---- Tareas de tienda (módulo aparte de Tickets) ----
 // Supervisor = admin o Director comercial (ven y validan todas las tiendas);
