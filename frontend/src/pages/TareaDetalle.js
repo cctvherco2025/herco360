@@ -35,6 +35,22 @@ async function descargarDoc(url, nombre) {
   } catch (e) { toast.error('No se pudo descargar el documento'); }
 }
 
+// Tarjeta de un documento adjunto (conversación o evidencia): al tocarla se descarga
+function TarjetaDoc({ tareaId, doc }) {
+  return (
+    <button type="button" onClick={() => descargarDoc(`/tareas/${tareaId}/archivo/${doc.id}`, doc.nombre)} data-testid="tarea-doc"
+      className="flex w-full min-w-0 items-center gap-2 rounded-xl border bg-card px-2.5 py-2 text-left hover:bg-muted/60">
+      <FileText className="h-5 w-5 shrink-0 text-[#1e395e] dark:text-[#93c5fd]" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-medium">{doc.nombre}</span>
+        <span className="block text-[11px] text-muted-foreground">{(doc.nombre.split('.').pop() || '').toUpperCase()} · {tamanoDe(doc.tamano || 0)} · Descargar</span>
+      </span>
+    </button>
+  );
+}
+
+const esImagen = (f) => (f.type || '').startsWith('image/');
+
 async function fotosAFormData(fd, files) {
   for (const file of Array.from(files || [])) {
     const { blob } = await compressImage(file);
@@ -172,14 +188,21 @@ export default function TareaDetalle() {
     finally { setOcupado(null); }
   };
 
-  const marcarHecho = (files) => accion('hecho', async () => {
-    const fd = new FormData();
-    fd.append('texto', texto.trim());
-    await fotosAFormData(fd, files);
-    const r = await api.post(`/tareas/${id}/hecho`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-    setTexto('');
-    return r;
-  }, 'Marcada como hecha');
+  // evidencia: fotos (se comprimen) y/o documentos, elegidos en el mismo paso
+  const marcarHecho = (files) => {
+    const lista = Array.from(files || []);
+    const grande = lista.find((f) => !esImagen(f) && f.size > MAX_DOC_MB * 1024 * 1024);
+    if (grande) { toast.error(`${grande.name} supera el máximo de ${MAX_DOC_MB} MB`); return; }
+    return accion('hecho', async () => {
+      const fd = new FormData();
+      fd.append('texto', texto.trim());
+      await fotosAFormData(fd, lista.filter(esImagen));
+      lista.filter((f) => !esImagen(f)).forEach((f) => fd.append('archivos', f, f.name));
+      const r = await api.post(`/tareas/${id}/hecho`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setTexto('');
+      return r;
+    }, 'Marcada como hecha');
+  };
 
   const validar = (aid) => accion(`val-${aid}`, () => {
     const fd = new FormData(); fd.append('asignado_id', aid);
@@ -296,6 +319,11 @@ export default function TareaDetalle() {
                             {it.fotos.map((f) => <AuthedImg key={f.id} url={fotoUrl(f)} className="h-20 w-20 rounded-lg object-cover border cursor-zoom-in" onClick={() => setZoom(fotoUrl(f))} />)}
                           </div>
                         )}
+                        {(it.archivos || []).length > 0 && (
+                          <div className="mt-1.5 space-y-1">
+                            {it.archivos.map((d) => <TarjetaDoc key={d.id} tareaId={t.id} doc={d} />)}
+                          </div>
+                        )}
                         {it.comentario && <p className="text-xs text-muted-foreground mt-1">“{it.comentario}”</p>}
                       </div>
                     ))}
@@ -308,13 +336,13 @@ export default function TareaDetalle() {
 
                 {puedoHacer && (
                   <div className="pt-1">
-                    <input ref={fotoHecho} type="file" accept="image/*" multiple className="hidden"
+                    <input ref={fotoHecho} type="file" accept={`image/*,${ACEPTA_DOCS}`} multiple className="hidden" data-testid="tarea-hecho-input"
                       onChange={(e2) => { if (e2.target.files?.length) marcarHecho(e2.target.files); e2.target.value = ''; }} />
                     <Button size="sm" className="rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-white" disabled={!!ocupado}
                       onClick={() => fotoHecho.current?.click()} data-testid="tarea-hecho">
-                      {ocupado === 'hecho' ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Camera className="h-4 w-4 mr-1.5" /> {a.estado === 'devuelta' ? 'Volver a enviar con foto' : 'Marcar hecho con foto'}</>}
+                      {ocupado === 'hecho' ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Camera className="h-4 w-4 mr-1.5" /> {a.estado === 'devuelta' ? 'Volver a enviar evidencia' : 'Marcar hecho con evidencia'}</>}
                     </Button>
-                    <p className="text-[11px] text-muted-foreground mt-1">Sube al menos una foto de cómo quedó. Puedes escribir un comentario abajo antes de elegir la foto.</p>
+                    <p className="text-[11px] text-muted-foreground mt-1">Sube al menos una foto o un documento (PDF, Word, Excel…) de cómo quedó. Puedes escribir un comentario abajo antes de elegirlos.</p>
                   </div>
                 )}
 
@@ -362,16 +390,7 @@ export default function TareaDetalle() {
                 )}
                 {(m.archivos || []).length > 0 && (
                   <div className="mt-1.5 space-y-1">
-                    {m.archivos.map((a) => (
-                      <button key={a.id} type="button" onClick={() => descargarDoc(`/tareas/${t.id}/archivo/${a.id}`, a.nombre)} data-testid="tarea-doc"
-                        className="flex w-full min-w-0 items-center gap-2 rounded-xl border bg-card px-2.5 py-2 text-left hover:bg-muted/60">
-                        <FileText className="h-5 w-5 shrink-0 text-[#1e395e] dark:text-[#93c5fd]" />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[13px] font-medium">{a.nombre}</span>
-                          <span className="block text-[11px] text-muted-foreground">{(a.nombre.split('.').pop() || '').toUpperCase()} · {tamanoDe(a.tamano || 0)} · Descargar</span>
-                        </span>
-                      </button>
-                    ))}
+                    {m.archivos.map((a) => <TarjetaDoc key={a.id} tareaId={t.id} doc={a} />)}
                   </div>
                 )}
                 <p className="text-[11px] text-muted-foreground mt-0.5">{timeAgoEs(m.at)}</p>

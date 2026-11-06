@@ -3,7 +3,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Home, CalendarDays, Building2, Users, Settings, Plus, X, LogOut, Moon, Sun, Boxes, FileText,
-  Palmtree, Network, Video, ClipboardCheck, ClipboardList, ChevronDown, Percent, Ticket, ListChecks, ShieldCheck, Route as RouteIcon, Tags, Package, Wrench, CalendarRange,
+  Palmtree, Network, Video, ClipboardCheck, ClipboardList, ChevronDown, Percent, Ticket, ListChecks, ShieldCheck, Route as RouteIcon, Tags, Package, Wrench, CalendarRange, Map as MapIcon,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -255,6 +255,12 @@ function SidebarContent({ onNavigate }) {
     const idx = tareas >= 0 ? tareas : navItems.findIndex((n) => n.label === 'Formulario');
     navItems.splice(idx >= 0 ? idx + 1 : navItems.length - 1, 0,
       activosChildren.length === 1 ? activosChildren[0] : { label: 'Activos', icon: Package, testid: 'sidebar-nav-grupo-activos', tour: 'menu-grupo-activos', children: activosChildren });
+  }
+  // Planogramas (se da persona por persona), después de Tareas y Activos
+  if (puede(user, 'planogramas')) {
+    let idx = navItems.findIndex((n) => n.label === 'Activos' || n.to === '/activos' || n.to === '/inventario');
+    if (idx < 0) idx = navItems.findIndex((n) => n.to === '/tareas');
+    navItems.splice(idx >= 0 ? idx + 1 : navItems.length - 1, 0, { to: '/planogramas', label: 'Planogramas', icon: MapIcon, testid: 'sidebar-nav-planogramas' });
   }
   // quien edita la estructura entra a Jerarquía y permisos; los demás, solo al organigrama
   {

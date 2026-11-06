@@ -523,7 +523,10 @@ async def archivo(tarea_id: str, archivo_id: str, user=Depends(require_modulo('t
     t = await _tarea_o_404(tarea_id)
     if not puede_ver(user, t):
         raise HTTPException(status_code=403, detail='No puedes ver esta tarea')
-    p = next((a for m in t.get('mensajes', []) for a in (m.get('archivos') or []) if a['id'] == archivo_id), None)
+    # documentos de la conversación y de la evidencia de cada intento
+    docs = [a for m in t.get('mensajes', []) for a in (m.get('archivos') or [])] + \
+           [a for asig in t.get('asignados', []) for it in (asig.get('intentos') or []) for a in (it.get('archivos') or [])]
+    p = next((a for a in docs if a['id'] == archivo_id), None)
     if not p:
         raise HTTPException(status_code=404, detail='Documento no encontrado')
     try:
@@ -706,8 +709,9 @@ async def eliminar(tarea_id: str, user=Depends(require_modulo('tareas'))):
 # --------------------------------------------------------------------------- #
 @router.post('/{tarea_id}/hecho')
 async def marcar_hecho(tarea_id: str, texto: str = Form(''), fotos: List[UploadFile] = File(default=[]),
-                       user=Depends(require_modulo('tareas'))):
-    """El responsable marca su parte como hecha. Foto de evidencia obligatoria."""
+                       archivos: List[UploadFile] = File(default=[]), user=Depends(require_modulo('tareas'))):
+    """El responsable marca su parte como hecha. Evidencia obligatoria: al
+    menos una foto o un documento."""
     t = await _tarea_o_404(tarea_id)
     mia = mi_asignacion(user, t)
     if not mia:
@@ -717,21 +721,23 @@ async def marcar_hecho(tarea_id: str, texto: str = Form(''), fotos: List[UploadF
     if mia['estado'] not in (EST_PENDIENTE, EST_DEVUELTA):
         raise HTTPException(status_code=409, detail='Tu parte ya está marcada como hecha')
     subidas = await _subir_fotos(t['id'], fotos)
-    if not subidas:
-        raise HTTPException(status_code=400, detail='Sube al menos una foto de cómo quedó')
+    docs = await _subir_archivos(t['id'], archivos)
+    if not subidas and not docs:
+        raise HTTPException(status_code=400, detail='Sube al menos una foto o un documento de cómo quedó')
     idx = next(i for i, a in enumerate(t['asignados']) if a['id'] == user['id'])
     ahora = now_iso()
     comentario = (texto or '').strip()[:2000]
     reintento = t['asignados'][idx]['estado'] == EST_DEVUELTA
     # Cada vez que marca hecho se guarda un "intento" con su foto; así la
     # evidencia anterior (aunque la hayan devuelto) queda en el historial.
-    intento = {'id': new_id(), 'fotos': subidas, 'comentario': comentario, 'at': ahora,
+    intento = {'id': new_id(), 'fotos': subidas, 'archivos': docs, 'comentario': comentario, 'at': ahora,
                'motivo_previo': t['asignados'][idx].get('motivo') if reintento else None}
     msgs = [_sistema(f"{user['name']} {'reenvió su parte corregida' if reintento else 'marcó su parte como hecha'}.")]
     if comentario:
-        msgs.insert(0, _mensaje(user, comentario, 'responsable', subidas))
+        msgs.insert(0, _mensaje(user, comentario, 'responsable', subidas, docs))
     await db.tareas.update_one({'id': t['id']}, {'$set': {
         f'asignados.{idx}.estado': EST_HECHA, f'asignados.{idx}.evidencia': subidas,
+        f'asignados.{idx}.evidencia_archivos': docs,
         f'asignados.{idx}.comentario': comentario, f'asignados.{idx}.hecho_at': ahora,
         f'asignados.{idx}.devuelta_por_name': None, f'asignados.{idx}.devuelta_at': None,
         f'asignados.{idx}.motivo': None, 'updated_at': ahora},

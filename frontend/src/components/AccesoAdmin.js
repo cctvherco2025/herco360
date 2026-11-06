@@ -506,10 +506,7 @@ export function ExcepcionesAcceso({ userId, onCambio, conGuardar, onGuardado }) 
   }, [userId]);
   if (datos === false || catalogo === false) return null;
   if (!datos || !catalogo) return <p className="py-4 text-sm text-muted-foreground">Cargando permisos…</p>;
-  if (datos.fijo) {
-    return <p className="rounded-xl bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">{datos.admin ? 'Es administrador' : 'Es el jefe del departamento'}: tiene acceso total fijo y no usa perfil.</p>;
-  }
-  if (!datos.migrado) return <SinMigrar />;
+  if (!datos.fijo && !datos.migrado) return <SinMigrar />;
 
   const porId = Object.fromEntries(datos.permisos.map((p) => [p.id, p]));
   const valor = (id) => (id in cambios ? cambios[id] : porId[id]?.excepcion ?? null);
@@ -551,6 +548,29 @@ export function ExcepcionesAcceso({ userId, onCambio, conGuardar, onGuardado }) 
     );
   };
   const hayCambios = Object.keys(cambios).length > 0;
+  const botones = conGuardar && hayCambios && (
+    <div className="flex justify-end gap-2 pt-1">
+      <Button variant="outline" className="rounded-xl" onClick={() => setCambios({})} disabled={guardando}>Descartar</Button>
+      <Button className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" onClick={guardar} disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</Button>
+    </div>
+  );
+  // Acceso total fijo: solo se ajusta lo que se da persona por persona (Planogramas)
+  if (datos.fijo) {
+    const nombreDe = (id) => (catalogo.modulos.find((m) => m.id === id) || {}).nombre || id;
+    const porPersona = (datos.por_persona || []).filter((id) => porId[id]);
+    return (
+      <div className="space-y-2" data-testid="excepciones-acceso">
+        <p className="rounded-xl bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">{datos.admin ? 'Es administrador' : 'Es el jefe del departamento'}: tiene acceso total fijo y no usa perfil.</p>
+        {datos.migrado && porPersona.length > 0 && (
+          <div className="rounded-xl border px-3">
+            <p className="pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Se da persona por persona</p>
+            <div className="divide-y">{porPersona.map((id) => fila(id, nombreDe(id), false))}</div>
+          </div>
+        )}
+        {botones}
+      </div>
+    );
+  }
   return (
     <div className="space-y-2" data-testid="excepciones-acceso">
       <p className="text-[12px] text-muted-foreground">Por su cargo y área usa el perfil <b className="text-foreground">{datos.perfil?.nombre || '—'}</b>. Cambia solo lo que sea distinto para esta persona.</p>
@@ -571,12 +591,7 @@ export function ExcepcionesAcceso({ userId, onCambio, conGuardar, onGuardado }) 
           </div>
         );
       })}
-      {conGuardar && hayCambios && (
-        <div className="flex justify-end gap-2 pt-1">
-          <Button variant="outline" className="rounded-xl" onClick={() => setCambios({})} disabled={guardando}>Descartar</Button>
-          <Button className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" onClick={guardar} disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</Button>
-        </div>
-      )}
+      {botones}
     </div>
   );
 }

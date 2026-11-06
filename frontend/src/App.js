@@ -32,6 +32,8 @@ import '@/App.css';
 // Carga diferida (lazyWithRetry: si tras un deploy el chunk viejo ya no existe,
 // recarga una vez en lugar de dejar la pantalla en blanco).
 const ReportesCams = lazyWithRetry(() => import('@/pages/ReportesCams'), 'ReportesCams');
+const Planogramas = lazyWithRetry(() => import('@/pages/Planogramas'), 'Planogramas');
+const PlanogramaVer = lazyWithRetry(() => import('@/pages/Planogramas').then((m) => ({ default: m.PlanogramaVer })), 'PlanogramaVer');
 const Formulario = lazyWithRetry(() => import('@/pages/Formulario'), 'Formulario');
 const RutinaOperativa = lazyWithRetry(() => import('@/pages/RutinaOperativa'), 'RutinaOperativa');
 const RevisionGuardias = lazyWithRetry(() => import('@/pages/RevisionGuardias'), 'RevisionGuardias');
@@ -84,6 +86,8 @@ function App() {
               <Route path="/inventario" element={<ConModulo modulo={'inventario'} nombre="Inventarios Autoservicio"><Inventario /></ConModulo>} />
               <Route path="/reportes" element={<ConModulo modulo={'reportes'} nombre="Reportes"><Reportes /></ConModulo>} />
               <Route path="/reportes-cams" element={<ConModulo modulo={'cams'} nombre="Reportes CAMS"><Suspense fallback={<PageFallback />}><ReportesCams /></Suspense></ConModulo>} />
+              <Route path="/planogramas" element={<ConModulo modulo={'planogramas'} nombre="Planogramas"><Suspense fallback={<PageFallback />}><Planogramas /></Suspense></ConModulo>} />
+              <Route path="/planogramas/:id" element={<ConModulo modulo={'planogramas'} nombre="Planogramas"><Suspense fallback={<PageFallback />}><PlanogramaVer /></Suspense></ConModulo>} />
               <Route path="/formularios" element={<ConModulo modulo={'formularios'} nombre="Formularios"><FormulariosHub /></ConModulo>} />
               <Route path="/formularios/promociones" element={<ConModulo modulo={'promos'} nombre="Promociones del mes"><PromocionesHome /></ConModulo>} />
               <Route path="/formularios/promociones/configuracion" element={<ConModulo modulo={'promos'} nombre="Promociones del mes"><PromocionesConfig /></ConModulo>} />

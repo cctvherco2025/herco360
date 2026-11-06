@@ -18,6 +18,7 @@ import tickets
 import storage
 import reminders
 import tareas
+import planogramas
 import formularios_asignaciones
 import formularios_resultados
 import formularios_v2
@@ -96,6 +97,7 @@ api_router.include_router(routes_groups.router)
 api_router.include_router(promo_tareas.router)
 api_router.include_router(tickets.router)
 api_router.include_router(tareas.router)
+api_router.include_router(planogramas.router)
 
 app.include_router(api_router)
 

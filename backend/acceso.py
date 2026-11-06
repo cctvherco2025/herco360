@@ -56,6 +56,7 @@ MODULOS = [
         ('tareas.eliminar', 'Eliminar', 'admin')]),
     ('general', 'reportes', 'Reportes', True, []),
     ('general', 'cams', 'Reportes CAMS', True, []),
+    ('general', 'planogramas', 'Planogramas', True, []),
     ('formularios', 'flos', 'Evaluación FLOS', True, [
         ('flos.esquema', 'Editar criterios y puntajes', 'admin')]),
     ('formularios', 'rutina', 'Rutina Operativa', True, [
@@ -88,8 +89,11 @@ TODOS = [k for _, m, _, _, ps in MODULOS for k in [m] + [p for p, _, _ in ps]]
 SOLO_RETAIL = {k for _, m, _, sr, ps in MODULOS if sr for k in [m] + [p for p, _, _ in ps]}
 # A los de acceso total fijo estos les salen de su cargo (perfil y excepciones).
 # Gente a cargo: un admin aprueba y ve a su equipo solo si su cargo lo da.
+# Se dan persona por persona: tampoco se encienden solos a los de acceso total
+# fijo (en Personas se les puede dar como a cualquiera).
+POR_PERSONA = {'planogramas'}
 DESDE_CARGO = {'guardias.registrar', 'recorridos.registrar', 'etiquetas.registrar',
-               'equipo', 'equipo.aprobar', 'equipo.ver_todo'}
+               'equipo', 'equipo.aprobar', 'equipo.ver_todo'} | POR_PERSONA
 DESDE_CARGO_JEFE = DESDE_CARGO | {'tareas.eliminar'}
 
 
@@ -541,6 +545,7 @@ async def acceso_de_usuario(uid: str, user=Depends(get_current_user)):
     validos = _validos(departamento_de(target))
     return serialize_doc({
         'fijo': es_fijo(target), 'admin': target.get('role') == 'admin', 'migrado': 'acceso_migrado_at' in target,
+        'por_persona': sorted(k for k in POR_PERSONA if k in validos),
         'perfil': {'id': pid, 'nombre': (perfiles.get(pid) or {}).get('nombre')},
         'permisos': [{'id': k, 'por_perfil': k in base, 'excepcion': extra.get(k), 'efectivo': k in puede}
                      for k in TODOS if k in validos],
@@ -558,7 +563,7 @@ async def guardar_excepciones(uid: str, data: ExcepcionesInput, user=Depends(get
     if 'acceso_migrado_at' not in target:
         raise HTTPException(status_code=409, detail='Esta persona todavía no pasó a los perfiles')
     if es_fijo(target) and any(k not in DESDE_CARGO_JEFE for k in data.excepciones):
-        raise HTTPException(status_code=400, detail='Tiene acceso total fijo: solo se ajusta lo que le sale de su cargo')
+        raise HTTPException(status_code=400, detail='Tiene acceso total fijo: solo se ajusta lo que le sale de su cargo o se da persona por persona')
     validos = _validos(departamento_de(target))
     extra = dict(target.get('acceso_excepciones') or {})
     for k, v in data.excepciones.items():

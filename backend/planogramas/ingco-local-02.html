@@ -1,0 +1,1695 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Planograma 3D · Tienda INGCO Local 02</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1d2430;--mut:#6b7380;--line:#e3e6ea;--bg:#eef0f3;--acc:#1f6feb}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;font-family:Inter,system-ui,sans-serif;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
+#app{display:grid;height:100vh;height:100dvh;grid-template-rows:auto 1fr 44dvh;grid-template-columns:minmax(0,1fr)}
+header{min-width:0;display:flex;flex-direction:column;gap:8px;padding:10px 12px 8px;background:#fff;border-bottom:1px solid var(--line)}
+.ttl{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+h1{font-size:15px;margin:0;font-weight:700;letter-spacing:-.01em}
+.sub{font-size:11.5px;color:var(--mut)}
+.seg{display:flex;background:#f1f3f5;border-radius:10px;padding:3px;gap:2px;overflow-x:auto;scrollbar-width:none}
+.seg::-webkit-scrollbar{display:none}
+.seg button{border:0;background:none;padding:6px 10px;font:500 12.5px Inter,sans-serif;border-radius:8px;color:var(--mut);cursor:pointer;white-space:nowrap}
+.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.1)}
+#stage{position:relative;min-height:0;overflow:hidden}
+#stage>canvas{display:block;width:100%;height:100%;touch-action:none}
+.hint{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);background:rgba(29,36,48,.8);color:#fff;font-size:11.5px;padding:6px 12px;border-radius:20px;pointer-events:none;white-space:nowrap;transition:opacity .4s}
+.layers{position:absolute;left:8px;top:8px;right:112px;display:flex;gap:5px;overflow-x:auto;scrollbar-width:none}
+.layers::-webkit-scrollbar{display:none}
+.layers button{flex:none;border:1px solid var(--line);background:rgba(255,255,255,.92);border-radius:16px;padding:4px 9px;font:500 11.5px Inter;color:var(--mut);cursor:pointer}
+.layers button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+#fullb{position:absolute;right:8px;top:6px;border:0;background:#1f6feb;color:#fff;border-radius:18px;padding:6px 12px;font:600 12px Inter;cursor:pointer;box-shadow:0 2px 8px rgba(31,111,235,.35);display:flex;align-items:center;gap:6px;z-index:5}
+#fullb svg{width:14px;height:14px}
+#fviews{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);max-width:calc(100% - 16px);display:none;box-shadow:0 2px 10px rgba(0,0,0,.15);z-index:5}
+#mini{position:absolute;left:10px;bottom:62px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:7px 11px;font-size:12px;display:none;max-width:70%;box-shadow:0 2px 8px rgba(0,0,0,.08);z-index:5}
+#mini b{display:block;font-size:12.5px}
+body.full #app{grid-template-rows:1fr!important;grid-template-columns:minmax(0,1fr)!important}
+body.full header,body.full #panel{display:none}
+body.full #fviews{display:block}
+body.full .hint{display:none}
+#walkb{position:absolute;right:8px;top:44px;border:0;background:#14806b;color:#fff;border-radius:18px;padding:6px 12px;font:600 12px Inter;cursor:pointer;box-shadow:0 2px 8px rgba(20,128,107,.35);display:flex;align-items:center;gap:6px;z-index:5}
+#walkb svg,#fullb svg{width:14px;height:14px}
+#walkui{display:none}
+body.walk #walkui{display:block}
+body.walk header,body.walk #panel,body.walk .layers,body.walk #fullb,body.walk #walkb,body.walk #fviews,body.walk .hint,body.walk #mini,body.walk #pov{display:none!important}
+.wbtn{border:0;background:rgba(29,36,48,.85);color:#fff;border-radius:18px;padding:7px 12px;font:600 12px Inter;cursor:pointer}
+#wtop{position:absolute;left:8px;top:8px;display:flex;gap:6px;z-index:6}
+#wcart{position:absolute;right:8px;top:8px;z-index:6;background:#d23b3b}
+#joy{position:absolute;left:18px;bottom:18px;width:116px;height:116px;border-radius:50%;background:rgba(255,255,255,.55);border:2px solid rgba(29,36,48,.25);touch-action:none;z-index:6;backdrop-filter:blur(2px)}
+#knob{position:absolute;left:50%;top:50%;width:50px;height:50px;margin:-25px 0 0 -25px;border-radius:50%;background:#1d2430;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+#joy span{position:absolute;left:0;right:0;top:-20px;text-align:center;font:600 10.5px Inter;color:#1d2430;text-shadow:0 0 4px #fff}
+#mmap{position:absolute;right:8px;bottom:8px;width:93px;height:auto;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.15);z-index:6}
+@media(min-width:900px){#mmap{width:124px}}
+#cross{position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px;pointer-events:none;display:none}
+#cross:before,#cross:after{content:'';position:absolute;background:#fff;box-shadow:0 0 2px #000}
+#cross:before{left:6px;top:0;width:2px;height:14px}#cross:after{top:6px;left:0;width:14px;height:2px}
+#wcard{position:absolute;left:50%;bottom:150px;transform:translateX(-50%);background:#fff;border-radius:14px;padding:12px 14px;width:min(320px,calc(100% - 24px));box-shadow:0 6px 24px rgba(0,0,0,.2);display:none;z-index:7;font-size:13px}
+#wcard b{font-size:14.5px;display:block;margin-bottom:2px}
+#wcard.side{left:auto;right:12px;transform:none;bottom:auto;top:52px;max-height:calc(100% - 70px);overflow:auto}
+@media(max-width:600px){#wcard.side{left:8px;right:8px;width:auto;top:48px;max-height:48%}}
+#wcard .act{display:flex;gap:8px;margin-top:10px}
+#wcard .act button{flex:1;border:0;border-radius:9px;padding:9px;font:600 13px Inter;cursor:pointer}
+#wcard .act .pri{background:#1d2430;color:#fff}#wcard .act .sec2{background:#eef0f3;color:#1d2430}
+#wcard .ln{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #f0f2f4;align-items:center}
+#wcard .ln button{border:1px solid #e3e6ea;background:#fff;border-radius:7px;width:26px;height:26px;cursor:pointer;font-weight:700}
+#wtoast{position:absolute;left:50%;top:52px;transform:translateX(-50%);background:rgba(29,36,48,.9);color:#fff;font-size:12.5px;padding:8px 14px;border-radius:12px;max-width:calc(100% - 24px);text-align:center;opacity:0;transition:opacity .3s;pointer-events:none;z-index:7;line-height:1.4}
+#whelp{position:absolute;left:150px;bottom:14px;right:110px;text-align:center;font-size:11px;color:#1d2430;text-shadow:0 0 4px #fff;pointer-events:none;z-index:5}
+@media(hover:none){#whelp{display:none}}
+#isobar{position:absolute;left:8px;top:8px;right:120px;display:none;flex-direction:column;gap:6px;z-index:6}
+body.iso #isobar{display:flex}
+body.iso .layers,body.iso #walkb{display:none!important}
+.ib1{display:flex;gap:6px;align-items:center}
+#isosel{flex:1;min-width:0;max-width:340px;border:1px solid var(--line);background:#fff;border-radius:10px;padding:7px 10px;font:600 13px Inter;color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+#isox{border:0;background:rgba(29,36,48,.88);color:#fff;border-radius:10px;padding:8px 12px;font:600 12px Inter;cursor:pointer;white-space:nowrap}
+#isoviews{align-self:flex-start;max-width:100%;box-shadow:0 1px 4px rgba(0,0,0,.08);background:#fff}
+#pov{position:absolute;left:50%;top:44px;transform:translateX(-50%);background:#c62828;color:#fff;font-size:12px;padding:6px 8px 6px 12px;border-radius:20px;display:none;align-items:center;gap:8px;white-space:nowrap}
+#pov button{border:0;background:#fff;color:#c62828;border-radius:12px;padding:3px 9px;font:600 11.5px Inter;cursor:pointer}
+#panel{background:#fff;overflow:auto;border-top:1px solid var(--line);padding:12px 14px 24px}
+@media(min-width:900px){
+  #app{grid-template-rows:auto 1fr;grid-template-columns:minmax(0,1fr) 390px}
+  header{grid-column:1/3;flex-direction:row;align-items:center;justify-content:space-between}
+  #panel{grid-row:2;grid-column:2;border-top:0;border-left:1px solid var(--line)}
+}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px}
+.kpi{background:#f6f7f9;border-radius:10px;padding:8px 9px}
+.kpi b{display:block;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.kpi span{font-size:10.5px;color:var(--mut)}
+.tabs{display:flex;gap:16px;border-bottom:1px solid var(--line);margin-bottom:10px}
+.tabs button{border:0;background:none;padding:8px 0;font:600 13px Inter,sans-serif;color:var(--mut);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer}
+.tabs button.on{color:var(--ink);border-color:var(--ink)}
+.sec{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:16px 0 6px}
+.row{display:grid;grid-template-columns:10px 1fr auto;gap:8px;align-items:center;padding:8px 2px;border-bottom:1px solid #f0f2f4;cursor:pointer;font-size:12.5px}
+.row:hover{background:#fafbfc}
+.row i{width:10px;height:10px;border-radius:3px}
+.row small{display:block;color:var(--mut);font-size:11px;margin-top:1px}
+.row .r{text-align:right;font-variant-numeric:tabular-nums;color:var(--mut);font-size:11.5px}
+.lv{margin-bottom:9px}
+.lv .top{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;gap:8px}
+.lv .top span{font-variant-numeric:tabular-nums;color:var(--mut)}
+.bar{height:7px;background:#eef0f3;border-radius:5px;overflow:hidden;display:flex}
+.bar i{display:block;height:100%}
+.over{color:#c62828!important;font-weight:600}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:0}
+.ph{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+.ph i{width:38px;height:38px;border-radius:10px;flex:none}
+.ph b{display:block;font-size:15px;line-height:1.25}
+.ph span{font-size:12px;color:var(--mut)}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fact{background:#f6f7f9;border-radius:10px;padding:8px 10px}
+.fact span{display:block;font-size:10.5px;color:var(--mut);margin-bottom:2px}
+.fact b{font-size:13.5px;font-variant-numeric:tabular-nums}
+.step{display:flex;align-items:center;gap:8px}
+.step button{width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:#fff;font:600 16px Inter;cursor:pointer;line-height:1}
+.warn{margin-top:10px;background:#fdecea;color:#b71c1c;font-size:12px;padding:8px 10px;border-radius:8px}
+.note{margin-top:12px;font-size:11.5px;color:var(--mut);line-height:1.5}
+.list{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:16px;padding:5px 10px;font:500 12px Inter;cursor:pointer;color:var(--ink)}
+.btn{border:0;background:var(--ink);color:#fff;border-radius:9px;padding:8px 12px;font:600 12.5px Inter;cursor:pointer;margin-top:10px}
+.back{border:0;background:none;color:var(--acc);font:600 12.5px Inter;padding:0;margin-bottom:10px;cursor:pointer}
+.empty{text-align:center;color:var(--mut);font-size:13px;padding:22px 10px;line-height:1.5}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div>
+      <div class="ttl"><h1>Tienda INGCO · Local 02</h1></div>
+      <div class="sub">Planograma 3D según planos · 250 m² · productos y precios INGCO de Herco</div>
+    </div>
+    <div class="seg" id="views">
+      <button data-v="general" class="on">General</button>
+      <button data-v="mueble">Ver góndola</button>
+      <button data-v="planta">Planta</button>
+      <button data-v="entrada">Entrada</button>
+      <button data-v="pasillo">Pasillos</button>
+      <button data-v="cajas">Cajas</button>
+      <button data-v="maquinas">Máquinas</button>
+      <button data-v="bodega">Bodega</button>
+      <button data-v="mezz">Mezzanine</button>
+    </div>
+  </header>
+  <div id="stage">
+    <div class="layers" id="layers"></div>
+    <button id="fullb" title="Ver en pantalla completa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span>Ampliar</span></button>
+    <button id="walkb" title="Recorrer la tienda como cliente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4" r="2"/><path d="M9 21l2-6 3 3v6M6 12l3-4 4 1 3 4M11 15l-1-5"/></svg><span>Modo cliente</span></button>
+    <div id="walkui">
+      <div id="wtop"><button class="wbtn" id="wexit">✕ Salir</button><button class="wbtn" id="wcam">Vista: 3ª persona</button></div>
+      <button class="wbtn" id="wcart">Canasta · 0</button>
+      <div id="joy"><span>Caminar</span><div id="knob"></div></div>
+      <canvas id="mmap" width="124" height="186"></canvas>
+      <div id="cross"></div><div id="wcard"></div><div id="wtoast"></div>
+      <div id="whelp">W A S D o flechas: caminar · Shift: correr · arrastra: mirar · clic en un producto: tomarlo</div>
+    </div>
+    <div id="isobar"><div class="ib1"><select id="isosel" aria-label="Elegir mueble"></select><button id="isox">✕ Ver tienda</button></div><div class="seg" id="isoviews"></div></div>
+    <div id="fviews"></div>
+    <div id="mini"></div>
+    <div id="pov"><span id="povt"></span><button id="povx">Salir</button></div>
+    <div class="hint" id="hint">Gira, acerca y toca cualquier cosa para ver su ficha</div>
+  </div>
+  <aside id="panel"></aside>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
+const V3=THREE.Vector3;
+const MZ=3.06, SLAB=0.2;
+
+/* =================== CATEGORÍAS Y CATÁLOGO (ejemplo) =================== */
+const CAT={
+ inal:['Taladros y atornilladores inalámbricos','#e09a1f'],inalg:['Esmeriladoras inalámbricas','#c77c0e'],comp:['Compresores de aire','#1f8a9a'],motos:['Motosierras y jardín a motor','#4f8a2e'],estac:['Sierras estacionarias','#3a9a5c'], bat:['Baterías y cargadores 20V','#d68910'], elec:['Esmeriladoras y herramientas eléctricas','#2f6fb5'],
+ corte:['Sierras, discos y lijado','#3a9a5c'], manual:['Herramientas manuales','#c0392b'], sets:['Juegos y cajas de herramientas','#8a3b5c'],
+ acc:['Brocas, discos y accesorios','#5d6b7a'], med:['Medición','#7b5cc4'], vit:['Vitrina: medición de precisión','#7b5cc4'],
+ electr:['Material eléctrico','#b8900f'], seg:['Seguridad industrial y candados','#e46b2a'], plom:['Plomería y bombas','#1f8a9a'],
+ jard:['Jardinería','#4f8a2e'], maqb:['Máquinas, hidrolavado y soldadura','#b5651d'], maq:['Generadores y máquinas','#b5651d'],
+ pint:['Pintura, engrapado y silicones','#c2417a'],alba:['Albañilería y tablayeso','#a0522d'], esc:['Escaleras','#7d8a96'], promo:['Promoción: combos INGCO','#1d2430'],
+ oferta:['Ofertas del mes','#c62828'], stock:['Inventario de bodega','#a07a48'], taller:['Taller y garantías','#6b7380'],impulso:['Compra por impulso','#8e4ec6'],
+};
+// [tipo b=caja k=estuche p=blíster, nombre, detalle, ancho, alto, fondo (m), precio L]
+// [tipo b=caja k=estuche p=blíster, nombre, detalle, ancho, alto, fondo (m), precio L, código INGCO (si viene de Herco)]
+const CATALOG={
+ inal:[['b','Taladro atornillador 12V ⅜" + batería','CDLI12428',.22,.25,.08,519,'CDLI12428'],['b','Taladro atornillador 12V ⅜" + batería','CDLI12456',.22,.25,.08,489.5,'CDLI12456'],
+  ['k','Taladro atornillador 12V ⅜" + batería (estuche)','CDLI12206',.32,.28,.1,798,'CDLI12206'],['b','Atornillador 4V 4 Nm mango ajustable','CSDLI04425',.2,.22,.06,437,'CSDLI04425'],
+  ['b','Atornillador 8V 6 Nm mango ajustable','CSDLI08025',.22,.24,.07,710,'CSDLI08025'],['b','Atornillador 4V 4 Nm','CSDLI0458',.16,.2,.06,287.5,'CSDLI0458'],
+  ['k','Atornillador de impacto brushless 285 Nm + 2 baterías','UCIRLI2028',.42,.32,.12,2676.5,'UCIRLI2028'],['k','Llave de impacto ½" + 2 baterías 2.0 Ah','UCIWLI20236',.42,.32,.12,2384.5,'UCIWLI20236'],
+  ['k','Combo atornillador de impacto + taladro ½" 20V','UCKLI20277',.5,.32,.14,2920.5,'UCKLI20277'],
+  ['b','Rotomartillo inalámbrico SDS Plus 20V 2.0 J ⅞" (sin batería)','CRHLI21228',.34,.26,.1,1608,'CRHLI21228'],['b','Rotomartillo inalámbrico SDS Plus 20V 2.0 J 1" (sin batería)','CRHLI20228',.34,.26,.1,2126.5,'CRHLI20228'],
+  ['b','Rotomartillo inalámbrico SDS Plus 20V 2.5 J 15/16" (sin batería)','CRHLI20248',.34,.26,.1,1656,'CRHLI20248'],['k','Rotomartillo inalámbrico SDS Plus 20V 2.5 J 1" + 2 baterías 4.0 Ah','UCRHLI262085',.48,.33,.14,3966,'UCRHLI262085'],
+  ['p','Puntas Phillips PH2×25 mm (2 pzs)','SDB61PH252',.08,.16,.02,11.4,'SDB61PH252'],['p','Puntas doble Phillips PH2×65 mm (10 pzs)','SDBIM21PH233',.1,.2,.025,85.4,'SDBIM21PH233'],
+  ['p','Extensión magnética ¼" (2 pzs)','ABH20601',.1,.2,.03,58.8,'ABH20601'],['p','Adaptador pistola de impacto ½" a ¼" hex','ABH60501',.09,.18,.04,56.4,'ABH60501']],
+ inalg:[['k','Esmeriladora inalámbrica brushless 4½" 20V + batería 4.0 Ah','UCAGLI261521',.42,.3,.14,1520,'UCAGLI261521'],['b','Esmeriladora inalámbrica brushless 4½" 20V (sin batería)','UCAGLI211156',.34,.12,.14,1344.5,'UCAGLI211156'],
+  ['k','Esmeriladora inalámbrica brushless 4½" 20V + batería 4.0 Ah','UCAGLI271531',.42,.3,.14,1915,'UCAGLI271531'],['k','Esmeriladora inalámbrica brushless 4½" 42V + batería 2.5 Ah','UCAGLI4128112',.45,.32,.15,3954.5,'UCAGLI4128112'],
+  ['k','Esmeriladora inalámbrica brushless 9" 42V + 2 baterías 4.0 Ah','UCAGLI4260182',.6,.32,.2,6699.5,'UCAGLI4260182'],['b','Esmeriladora recta (motortool) inalámbrica 20V','CDGLI2001',.34,.1,.08,1141,'CDGLI2001'],
+  ['k','Combo esmeriladora 4½" + taladro 66 Nm + 2 baterías','UCKLI20273',.5,.32,.14,3526.5,'UCKLI20273']],
+ bat:[['b','Batería ion-litio 20V 5.0 Ah','FBLI20031',.13,.09,.09,965,'FBLI20031'],['b','Combo batería 7.5 Ah + cargador','UFBCPK1417',.28,.15,.14,1911,'UFBCPK1417'],
+  ['b','Combo 2 baterías 4.0 Ah + cargador','UFBCPK2013',.3,.16,.15,2246.5,'UFBCPK2013'],['b','Cargador para batería 20V 2 A','UFCLI2001',.2,.1,.14,234.5,'UFCLI2001'],
+  ['b','Cargador USB tipo A 5V 2.0 A','UFCLI120502',.07,.1,.04,67.8,'UFCLI120502']],
+ elec:[['b','Esmeriladora angular 4½" 750 W','UAG75028',.32,.12,.13,867.5,'UAG75028'],['b','Esmeriladora angular 5" 1100 W','UAG110028',.34,.13,.14,959,'UAG110028'],
+  ['b','Esmeriladora angular 5" 900 W velocidad variable','UAG900285',.34,.13,.14,1032,'UAG900285'],['b','Esmeriladora angular 7" 2000 W','UAG200018',.5,.16,.18,2057,'UAG200018'],
+  ['b','Esmeriladora angular 9" 2400 W','UAG24008',.55,.17,.24,2323.5,'UAG24008'],['k','Mini esmeriladora recta (motortool) 130 W + accesorios','UMG13328',.3,.2,.08,601.5,'UMG13328'],
+  ['b','Cepillo eléctrico para madera 550 W','UPL5508',.3,.18,.16,1123.5,'UPL5508'],
+  ['b','Rotomartillo SDS Plus 800 W 1"','URGH9028',.4,.26,.11,1731,'URGH9028'],['k','Rotomartillo SDS Max 1200 W 1⅝" 2-10 J','URH1200428',.5,.32,.15,5558.5,'URH1200428'],
+  ['b','Taladro percutor 750 W','½"',.3,.25,.1,1390],['b','Pistola de calor 2000 W','2 temperaturas',.27,.24,.09,790],
+  ['p','Llave mandril para taladro ½"','CK1301',.08,.18,.02,21.3,'CK1301'],['p','Discos de corte metal','4½"',.13,.17,.02,45],['p','Brocas para concreto','5 pzs',.12,.22,.03,210],['p','Carbones de repuesto','par',.08,.14,.02,85]],
+ corte:[['b','Sierra circular 7¼" 1600 W','UCS18568',.36,.3,.3,1838,'UCS18568'],['b','Sierra circular inalámbrica 7¼" 20V (sin batería)','CSLI1851',.36,.3,.3,2123,'CSLI1851'],
+  ['b','Sierra circular inalámbrica 5½" 20V (sin batería)','CSLI1402',.3,.26,.26,1548.5,'CSLI1402'],['k','Combo sierra circular + clavadora inalámbrica + 2 baterías 5.0 Ah','UCOSLI240866',.55,.33,.2,5032,'UCOSLI240866'],
+  ['b','Sierra caladora 570 W','UJS57028',.26,.22,.09,755,'UJS57028'],['b','Sierra caladora 800 W','UJS80028',.28,.23,.1,1347.5,'UJS80028'],['b','Sierra caladora inalámbrica 20V (sin batería)','CJSLI8501',.28,.24,.1,1537,'CJSLI8501'],
+  ['k','Sierra ranuradora para concreto 5" 1500 W','UWLC15008',.45,.3,.2,3200,'UWLC15008'],['b','Lijadora de palma orbital 240 W','UPS2416',.18,.2,.15,870.5,'UPS2416'],
+  ['b','Disco de sierra para madera 10" 60D','TSB125423',.27,.3,.01,272.5,'TSB125423'],['b','Disco de sierra para madera 12" 60D','TSB130523',.32,.34,.01,449,'TSB130523'],
+  ['b','Disco de sierra para aluminio 10" 100D','TSB3254210',.27,.3,.01,454,'TSB3254210'],
+  ['p','Disco de sierra para madera 7¼" 60D','TSB118513',.2,.25,.01,167,'TSB118513'],['p','Juego 3 discos de sierra 7¼" (24, 40, 60D)','TSB51852153',.21,.26,.02,349.5,'TSB51852153'],
+  ['p','Juego 2 discos de sierra 5½" 24D','TSB1403',.16,.22,.015,154.5,'TSB1403'],['p','Hojas sierra sable madera 6" (2 pzs)','SSB644D',.06,.24,.01,32.4,'SSB644D'],
+  ['p','Hojas sierra sable madera 9" (5 pzs)','RSB1111DF',.08,.27,.015,159,'RSB1111DF'],['p','Hojas sierra sable metal 6" (2 pzs)','SSB922EF',.06,.24,.01,62.3,'SSB922EF'],
+  ['p','Hojas para caladora tipo T madera (5 pzs)','JSBT111C',.06,.18,.01,21.8,'JSBT111C'],['p','Cuchillas para cepillo de madera (2 pzs)','EPB820121',.09,.2,.02,60.6,'EPB820121']],
+ manual:[['p','Llave ajustable 12" mango de hule','HADW131128',.1,.27,.03,243,'HADW131128'],['p','Llave mixta con ratchet 13 mm','HCSPAR131',.06,.24,.02,58.7,'HCSPAR131'],
+  ['p','Llave mixta 15 mm','HCSPA151',.06,.25,.02,32.4,'HCSPA151'],['p','Juego 6 llaves mixtas 8-17 mm','HKSPA1068',.18,.26,.03,144,'HKSPA1068'],
+  ['p','Juego 2 desarmadores 6×38 mm','HKSDS2228',.1,.18,.04,41.4,'HKSDS2228'],['p','Desarmador plano 5.5×100 mm','HSDSL5100',.06,.26,.03,22.4,'HSDSL5100'],
+  ['p','Juego 6 desarmadores de impacto','HSGTDC180601',.18,.27,.04,138.5,'HSGTDC180601'],['p','Juego 24 pzs desarmador/puntas con ratch','HKSDB0248',.16,.27,.05,131,'HKSDB0248'],
+  ['p','Martillo de hule negro 8 oz','HRUH8808',.1,.27,.04,55.3,'HRUH8808'],['p','Martillo de hule blanco 8 oz','HRUH8908',.1,.27,.04,72.2,'HRUH8908'],
+  ['p','Martillo de bola 48 oz','HBPH88048',.13,.27,.05,216.5,'HBPH88048'],['p','Alicate de hacendado 10"','HFP2508',.1,.27,.03,158.5,'HFP2508'],
+  ['p','Prensa de resorte 4"','HQSC0204',.1,.18,.03,17.9,'HQSC0204'],['p','Cuchillas para navaja 19×61 mm (10 pzs)','HUKB61001',.08,.15,.015,11.5,'HUKB61001'],
+  ['p','Cubo corto 6 puntas ½" × 14 mm','HHAST12141',.07,.16,.04,23.2,'HHAST12141'],['p','Cortador de vidrio 178 mm','HGCT03',.07,.25,.02,59.3,'HGCT03']],
+ sets:[['k','Juego 55 pzs desarmador/puntas con ratch','HKSDB0558',.2,.3,.06,248.5,'HKSDB0558'],['k','Juego 17 cubos ½" (10-24 mm)','HKTS12171',.12,.3,.06,631.5,'HKTS12171'],
+  ['b','Caja plástica para herramienta 14"','PBX1402',.36,.17,.19,153,'PBX1402'],['b','Caja plástica para herramienta 20"','PBX2002',.5,.24,.26,350,'PBX2002'],
+  ['b','Organizador plástico apilable 15"','PBX1511',.37,.065,.29,118,'PBX1511'],['b','Combo mochila + chaleco + bolso + caja','COS230914',.5,.45,.3,2053.5,'COS230914'],
+  ['b','Serrucho de costilla 12" + caja inglete','HMBSK30082',.42,.12,.1,153.5,'HMBSK30082'],['b','Cortaperno 18"','HBC0818',.48,.08,.14,282,'HBC0818'],
+  ['b','Compás para cortar círculos en vidrio 60 cm','HGCT16001',.3,.12,.08,185.5,'HGCT16001']],
+ acc:[['p','Extractor de tornillos 3-25 mm (6 pzs)','ASE106',.11,.22,.03,116.5,'ASE106'],['p','Brocas tipo sierra ¾"-1⅜" + mandril (7 pzs)','AKH0071',.14,.27,.06,315.5,'AKH0071'],
+  ['p','Brocas avellanadoras HSS (3 pzs)','DBCS0031',.11,.2,.03,88.9,'DBCS0031'],['p','Accesorios para enceradora 6" (12 pzs)','APG15012',.18,.22,.05,268.5,'APG15012'],
+  ['p','Broca sierra bimetálica 2"','HSB10511',.1,.16,.06,121.5,'HSB10511'],['p','Broca sierra bimetálica 1⅜"','HSB10351',.09,.15,.05,82.1,'HSB10351'],
+  ['p','Broca Forstner 35 mm','ADCS3501',.07,.2,.04,84.8,'ADCS3501'],['p','Brocas escalonadas HSS 4-35 mm (5 pzs)','AKSDS2051',.15,.24,.04,597,'AKSDS2051'],
+  ['p','Disco diamantado turbo 7"','DMD031801HT',.2,.24,.01,249.5,'DMD031801HT'],['p','Broca sierra bimetálica 1⅛"','HSB10291',.08,.15,.05,67.4,'HSB10291'],['p','Broca sierra bimetálica 1¾"','HSB10441',.09,.16,.05,88.2,'HSB10441'],
+  ['p','Mandril 7/16" para brocas sierra','HSA02',.07,.2,.04,123,'HSA02'],['p','Broca sierra 2⅛" + mandril + broca paleta','AKHS302',.12,.24,.05,55.3,'AKHS302'],['k','Juego 12 pzs brocas sierra + mandril (maletín)','AKH0121',.36,.27,.09,1384.5,'AKH0121'],['k','Juego 16 brocas metal/madera/concreto','UAKDL11606',.2,.12,.04,271.5,'UAKDL11606']],
+ alba:[['p','Espátula tapizadora 12" para tablayeso','HPUT78300',.3,.16,.03,82.6,'HPUT78300'],['p','Espátula flexible 5"','HPUT08125',.13,.26,.03,48.7,'HPUT08125'],
+  ['p','Espátula flexible 6"','HPUT08150',.15,.27,.03,55.5,'HPUT08150'],['p','Cuchara Filadelfia 10"','HBT910',.13,.27,.06,230.5,'HBT910'],
+  ['p','Cuchara Filadelfia 9"','HBT909',.12,.27,.06,203.5,'HBT909'],['p','Cuchara centroamericana 9"','HBT918',.12,.27,.06,51.6,'HBT918'],
+  ['p','Cincel punta para concreto ¾"×12"','HCC0841218',.06,.27,.03,66.4,'HCC0841218'],['p','Cincel plano 1"×12" con protector','HCCL832519',.07,.27,.04,92.7,'HCCL832519']],
+ med:[['p','Cinta métrica','5 m',.1,.16,.05,140],['p','Cinta métrica','8 m',.11,.18,.05,210],['p','Nivel torpedo','9"',.08,.25,.03,150],['p','Escuadra','12"',.17,.27,.02,160],['p','Lápiz de carpintero','12 u',.08,.2,.02,60],
+  ['b','Nivel de aluminio 60 cm','HSL08060',.6,.06,.025,196,'HSL08060'],['b','Nivel de aluminio 80 cm','HSL08080',.8,.06,.025,226,'HSL08080'],['b','Nivel magnético 80 cm','HSL28080',.8,.06,.025,207,'HSL28080']],
+ vit:[['b','Medidor láser','40 m',.07,.14,.05,1290],['b','Medidor láser','60 m',.07,.15,.05,1890],['b','Nivel láser de líneas','verde',.14,.16,.09,2290],['b','Multímetro digital','600 V',.1,.19,.06,690],['b','Pinza amperimétrica','400 A',.09,.24,.05,890],['b','Detector de metales','pared',.1,.2,.06,990]],
+ electr:[['p','Juego 6 desarmadores aislados 1000V','HKISD0608',.16,.27,.04,189,'HKISD0608'],['p','Cinta aislante','10 u',.1,.14,.03,25],['p','Probador de voltaje','AC',.06,.2,.03,110],['p','Pelacables automático','8"',.1,.24,.03,240],['p','Cautín','60 W',.08,.26,.04,190],
+  ['b','Mini linterna recargable 450 lm','HCFL1865051',.2,.08,.08,597.5,'HCFL1865051'],['b','Extensión eléctrica','10 m',.25,.25,.08,390],['b','Reflector LED','50 W',.25,.2,.06,590],['b','Regleta multitoma','6 tomas',.36,.07,.06,260]],
+ seg:[['p','Lente de seguridad gris','HSG06',.1,.2,.04,33.2,'HSG06'],['p','Candado de latón 60 mm','DBPL0602',.11,.18,.04,235.5,'DBPL0602'],
+  ['p','Guantes de trabajo','par',.12,.25,.02,75],['p','Mascarilla','N95',.12,.18,.03,45],['p','Tapones auditivos','par',.08,.14,.03,35],
+  ['b','Casco de seguridad azul + barboquejo','HSH803',.28,.16,.22,95.4,'HSH803'],['b','Careta de protección transparente','HFSPC32',.24,.28,.14,123,'HFSPC32'],
+  ['b','Zapato de seguridad tipo burro #40','SSH04SB.40',.32,.14,.12,723.5,'SSH04SB.40'],['b','Chaleco reflectivo','talla única',.25,.3,.03,120]],
+ motos:[['b','Motosierra gasolina 18" 46cc 1.8 kW','GCS5451811',.75,.3,.25,3444.5,'GCS5451811'],['b','Motosierra gasolina 24" 62cc 2.6 kW','GCS5622611',.9,.32,.27,5420,'GCS5622611'],
+  ['b','Motosierra inalámbrica 16" 40V (sin batería)','CGSLI40168',.7,.26,.22,3212.5,'CGSLI40168'],['b','Motosierra inalámbrica 8" 20V (sin batería)','CGSLI2088',.45,.22,.15,1565,'CGSLI2088'],
+  ['b','Podadora 3 en 1 gasolina 2.2 HP 52cc','GMT55231',.85,.3,.26,6389.5,'GMT55231'],['b','Espada para motosierra 24"','AGSB52401',.68,.08,.04,626.5,'AGSB52401'],
+  ['b','Espada para motosierra inalámbrica 12"','AGSB51201',.38,.08,.04,230.5,'AGSB51201'],['b','Espada para motosierra inalámbrica 8"','AGSB50801',.28,.08,.04,157,'AGSB50801'],
+  ['b','Cadena para motosierra inalámbrica 12"','AGSC51201',.14,.22,.04,255.5,'AGSC51201']],
+ jard:[['p','Mini pala para jardinería','HFTT858',.09,.27,.04,69.7,'HFTT858'],['p','Carretes con hilo para orilladora (4 pzs)','ALS1602',.1,.27,.05,166,'ALS1602'],
+  ['p','Tijera de podar','8"',.1,.24,.04,190],['p','Pistola de riego','7 funciones',.12,.22,.06,120],
+  ['b','Hilo redondo 2.0 mm para desbrozadora','ALS2001',.22,.22,.06,212,'ALS2001'],['b','Manguera reforzada','15 m',.35,.35,.12,590],['b','Aspersor de impacto','metal',.18,.12,.18,190]],
+ maqb:[['b','Gata hidráulica de botella 20 ton','HBJ2002',.25,.4,.2,1204.5,'HBJ2002'],['b','Manguera alta presión para hidrolavadora','AHPH5028',.35,.35,.1,255,'AHPH5028'],
+  ['b','Dispensador de shampoo para hidrolavadora','AMFP4002',.12,.25,.1,120.5,'AMFP4002'],['b','Porta electrodo 500 A','WAH5008',.25,.08,.06,151,'WAH5008'],
+  ['b','Escuadras magnéticas para soldar (6 pzs)','AMWH6001',.2,.25,.04,164.5,'AMWH6001'],
+  ['b','Caja de control bomba sumergible 1.5 HP','UDWP11001-SB',.25,.3,.15,441.5,'UDWP11001-SB'],['b','Llave Stilson 8"','HPW0808',.22,.06,.05,92.7,'HPW0808'],
+['b','Hidrolavadora 2320 PSI 2000 W','UHPWR20018',.34,.6,.3,3031,'UHPWR20018'],
+  ['b','Hidrolavadora 2030 PSI 1600 W','UHPWR16008',.3,.55,.28,2396.5,'UHPWR16008'],['b','Hidrolavadora 1900 PSI 1400 W','UHPWR14008',.28,.52,.26,2031,'UHPWR14008'],
+  ['b','Hidrolavadora 1450 PSI 1500 W','UHPWR15028',.4,.3,.25,3229,'UHPWR15028'],['b','Bomba jet 1 HP con tanque hidroneumático 24 L','UJPT075068',.5,.45,.3,4560,'UJPT075068'],
+  ['b','Manguera alta presión roscada para hidrolavadora','UHPWR15028-SP-2',.3,.3,.08,553,'UHPWR15028-SP-2'],['b','Pistola con lanza conexión rápida','AMSG028',.4,.12,.08,374,'AMSG028'],
+  ['b','Destapador de cañería tipo manguera 7.5 m','AHPH7511',.28,.28,.07,328,'AHPH7511'],['b','Boquilla giratoria 360°','AMSG360',.12,.2,.07,133,'AMSG360'],['b','Cepillo para limpieza de rines','AMWB1781',.12,.35,.08,141.5,'AMWB1781'],['b','Combo 5 accesorios para compresor','AKT0053-1',.35,.25,.12,630.5,'AKT0053-1'],
+  ['b','Manguera espiral para compresor 5/8" × 5 m','AH1051.1',.25,.25,.08,123.5,'AH1051.1'],['b','Soldadora inverter','200 A',.42,.3,.2,4590]],
+ pint:[['b','Engrapadora con regulador 4-14 mm','HSG14018',.2,.16,.05,151,'HSG14018'],
+  ['b','Pistola de pintar eléctrica','450 W',.3,.32,.2,1190],['b','Pistola de pintar neumática','HVLP',.25,.3,.12,590],['b','Pistola de silicón eléctrica','40 W',.18,.22,.05,220],['b','Compresor portátil 12V','para llantas',.22,.18,.14,690],['b','Barras de silicón','12 u',.08,.2,.04,45]],
+ promo:[['k','Combo esmeriladora 4½" + taladro 66 Nm + 2 baterías','UCKLI20273',.5,.33,.14,3526.5,'UCKLI20273'],['b','Combo mochila + chaleco + bolso + caja','COS230914',.5,.42,.3,2053.5,'COS230914'],['b','Combo 2 baterías 4.0 Ah + cargador','UFBCPK2013',.3,.16,.15,2246.5,'UFBCPK2013']],
+ oferta:[['b','Taladro percutor 750 W','½"',.3,.25,.1,1190],['b','Esmeril angular 750 W','4½"',.32,.12,.13,849],['b','Pistola de calor 2000 W','2 temperaturas',.27,.24,.09,690],['b','Lijadora de palma orbital 240 W','UPS2416',.18,.2,.15,870.5,'UPS2416']],
+ stock:[['b','Inventario: taladros','caja master',.5,.35,.4,0],['b','Inventario: esmeriles','caja master',.45,.3,.35,0],['b','Inventario: discos','caja master',.3,.2,.3,0],['b','Inventario: cajas de herramientas','caja master',.5,.3,.3,0],['b','Inventario: generadores','caja',.6,.55,.45,0]],
+ impulso:[['p','Puntas Phillips PH2×25 mm (2 pzs)','SDB61PH252',.08,.16,.02,11.4,'SDB61PH252'],['p','Cuchillas para navaja 19×61 mm (10 pzs)','HUKB61001',.08,.15,.015,11.5,'HUKB61001'],
+  ['p','Prensa de resorte 4"','HQSC0204',.1,.18,.03,17.9,'HQSC0204'],['p','Llave mandril para taladro ½"','CK1301',.08,.18,.02,21.3,'CK1301'],['p','Hojas para caladora tipo T (5 pzs)','JSBT111C',.06,.18,.01,21.8,'JSBT111C'],
+  ['p','Lente de seguridad gris','HSG06',.1,.2,.04,33.2,'HSG06'],['p','Cinta aislante','10 u',.1,.14,.03,25],['b','Cargador USB tipo A 5V 2.0 A','UFCLI120502',.07,.1,.04,67.8,'UFCLI120502'],
+  ['b','Mini linterna recargable 450 lm','HCFL1865051',.2,.08,.08,597.5,'HCFL1865051']],
+ taller:[['b','Herramienta en reparación','orden de servicio',.35,.25,.12,0],['b','Repuestos: carbones','surtido',.2,.12,.15,0],['b','Caja de garantías','documentos',.4,.3,.3,0]],
+};
+// Máquinas: [código, nombre, modelo 3D, precio L, en bodega, escala]
+const MCAT=[
+ ['UGE8002','Generador gasolina 800 W (650 W nominal) 2 tiempos','gen2t',3399,4,1],['UGE15005','Generador gasolina 1400 W (1200 W nominal)','gen',5923.5,3,.78],
+ ['UGEI35006','Generador inverter gasolina 3200 W (3000 W nominal)','inv',17299,2,1],['UGE30005','Generador gasolina 3000 W (2600 W nominal)','gen',9314,3,.9],
+ ['UGE30005-1','Generador gasolina 3000 W (2800 W nominal)','gen',10959,2,.9],['UGE40006','Generador gasolina 4650 W (3500 W nominal)','gen',11902.5,2,.97],
+ ['UGE40006ES','Generador gasolina 4650 W con batería','genw',14029.5,2,.97],['UGE55003','Generador gasolina 6500 W (5000 W nominal)','genw',19059.5,2,1.03],
+ ['UGE80006','Generador gasolina 8000 W (6500 W nominal)','genw',20474,1,1.06],['UGE100006','Generador gasolina 10000 W (8500 W nominal)','genw',25542.5,1,1.1],
+ ['UGDW65001','Generador/soldadora diésel 4600 W 180 A','genweld',38579,1,1],['UGSE50001','Generador silencioso diésel 5500 W (5000 W nominal)','silent',31100,0,.95],
+ ['UGSE70001-1','Generador silencioso diésel 7000 W con ATS','silent',49836.5,0,1.08],
+ ['UBMS18001','Sierra ingleteadora 10" 1800 W (oferta, antes L 4,968)','miter',2495,2,1],['UBMS18007','Sierra ingleteadora 10" 1800 W','miter',3438,2,1],['UTS150078','Sierra de mesa 10" 1500 W','tablesaw',5903.5,1,1],
+ ['GHPW2103','Hidrolavadora gasolina 3450 PSI 7 HP','washg',11541,1,1],['UHPWR25008','Hidrolavadora 2465 PSI 2000 W','wash',5685.5,3,1],
+ ['UAC20246','Compresor de aire 2 HP 24 L','compv',3897,3,.85],['UAC225506','Compresor de aire 2.5 HP 50 L','compv',4006,2,1],['UAC25506','Compresor de aire 2.5 HP 50 L','compv',4975,2,1],
+ ['CACLI2003','Compresor inalámbrico 40V 6 L (sin batería)','compc',4621.5,2,1],['UAC1200508','Compresor de banda 2 HP 50 L','compb',9625.5,1,.85],['UAC1301008','Compresor de banda 3 HP 100 L','compb',11795,1,1.1],
+];
+// Posiciones en planta: [código, mueble, x, y, hacia dónde mira]
+const MPOS=[
+ ['UGE8002','M1',11.12,12.35,'W'],['UGE15005','M1',11.12,13.35,'W'],['UGEI35006','M1',11.12,14.35,'W'],['UGE30005','M1',11.12,15.35,'W'],
+ ['UGE30005-1','M1',11.62,12.35,'E'],['UGE40006','M1',11.62,13.35,'E'],['UGE40006ES','M1',11.62,14.35,'E'],['UGE55003','M1',11.62,15.35,'E'],
+ ['UBMS18001','T1',10.75,9.75,'S'],['UBMS18007','T1',11.25,9.75,'S'],['UTS150078','T1',11.82,9.95,'S'],
+ ['UAC20246','T2',10.82,7.65,'S'],['UAC225506','T2',11.72,7.65,'S'],['UAC25506','T2',10.82,8.12,'N'],['CACLI2003','T2',11.72,8.12,'N'],
+ ['UGE80006','BM',12.95,16.8,'W'],['UGE100006','BM',12.95,17.85,'W'],['UGDW65001','BM',12.95,18.95,'W'],['UGSE50001','BM',12.95,20.15,'W'],
+ ['UGSE70001-1','BM',11.95,20.5,'S'],['GHPW2103','BM',11.65,17.05,'S'],['UHPWR25008','BM',12.3,17.05,'S'],['UAC1200508','BM',10.85,17.35,'E'],['UAC1301008','BM',10.85,18.95,'E'],
+];
+const AGOTADOS=[['Generador gasolina 22000 W (18000 W nominal)','UGE200006ES',87700],['Taladro atornillador 20V ⅜" (sin batería)','CDLI200515',604.5],
+ ['Esmeriladora angular 4½" 1100 W','UAG1100383',979.5],['Esmeriladora angular 4½" 900 W','UAG9002851',907],['Esmeriladora inalámbrica brushless 4½" 20V + batería 4.0 Ah','UCAGLI211541',2129],
+ ['Motosierra inalámbrica 8" 20V + 2 baterías','UCGSLI20882',2410],['Motosierra gasolina 20" 50cc 2.0 kW','GCS5502011',3611],['Motosierra gasolina 24" 62cc 2.4 kW','GCS5602411',5134.5],
+ ['Motosierra inalámbrica 5" 20V (sin batería)','CGSLI2056',1167],['Sierra circular 7¼" 1400 W','UCS18538',1650.5],['Sierra ingleteadora telescópica 10" 1800 W','UBM2S180017',5106.5],
+ ['Cadena para motosierra 18"','AGSC51801',360.5],['Disco de sierra madera 7¼" 40D','TSB118515',147],
+ ['Rotomartillo inalámbrico SDS Plus 20V 2.5 J 1" + 2 baterías','UCRHLI202287',1995],['Rotomartillo inalámbrico SDS Plus 20V 2.5 J 1" + 2 baterías','UCRHLI202682',1950],
+ ['Rotomartillo SDS Plus 1050 W 1"','URH10506',1769],['Rotomartillo SDS Plus 1500 W 1¼" 5.5 J','URH150038',2290],['Rotomartillo inalámbrico SDS Plus 20V 4.5 J + 2 baterías','UCRHLI202862',0],
+ ['Manguera alta presión para hidrolavadora','GHPW2103-SP-27',897],['Pistola para hidrolavadora','UHPWR15028-SP-1',280.5]];
+const LADDERS=[['Escalera tijera','5 escalones',1.5,2190],['Escalera tijera','6 escalones',1.8,2590],['Escalera multipropósito','4 × 4',1.45,3990],['Escalera de extensión','24 escalones',2.05,5490]];
+
+/* =================== MUEBLES (coordenadas de planos, m) =================== */
+// rect=[x0,y0,x1,y1] en planta (x este, y norte desde el eje 5/10); face = hacia dónde mira el frente
+const FX=[];
+const GY=[9.1,6.68,4.27,1.85];
+const GC=[{peg:'inal',sh:'inal',sh2:'inalg',end:'inal',end2:'inalg'},{peg:'elec',sh:'elec',end:'elec'},{peg:'corte',sh:'corte',end:'corte'},{peg:'manual',sh:'sets',end:'sets'}];
+GY.forEach((yc,i)=>{
+ const n=i+1,y0=yc-.475,y1=yc+.475,z=`Góndola ${n}`,c=GC[i];
+ FX.push({id:`G${n}W`,zone:z,name:`Góndola ${n} · cabecera oeste`,cat:c.end,kind:'shelf',rect:[2.25,y0,2.7,y1],face:'W',H:1.5,levels:[.12,.6,1.05]});
+ FX.push({id:`G${n}PN`,zone:z,name:`Góndola ${n} · ganchos cara norte`,cat:c.peg,kind:'peg',rect:[2.7,yc,5.5,y1],face:'N',H:1.8});
+ FX.push({id:`G${n}PS`,zone:z,name:`Góndola ${n} · ganchos cara sur`,cat:c.peg,kind:'peg',rect:[2.7,y0,5.5,yc],face:'S',H:1.8});
+ FX.push({id:`G${n}SN`,zone:z,name:`Góndola ${n} · repisas cara norte`,cat:c.sh,kind:'shelf',rect:[5.5,yc,8.23,y1],face:'N',H:1.8,levels:[.12,.5,.88,1.26]});
+ FX.push({id:`G${n}SS`,zone:z,name:`Góndola ${n} · repisas cara sur`,cat:c.sh2||c.sh,kind:'shelf',rect:[5.5,y0,8.23,yc],face:'S',H:1.8,levels:[.12,.5,.88,1.26]});
+ FX.push({id:`G${n}E`,zone:z,name:`Góndola ${n} · cabecera este`,cat:c.end2||c.end,kind:'shelf',rect:[8.23,y0,8.68,y1],face:'E',H:1.5,levels:[.12,.6,1.05]});
+});
+const WL=[.12,.52,.92,1.32,1.72];
+FX.push(
+ {id:'W1',zone:'Pared izquierda',name:'Pared izquierda · módulo 1',cat:'acc',kind:'peg',rect:[.12,.2,.62,2.85],face:'E',H:2.2},
+ {id:'W2',zone:'Pared izquierda',name:'Pared izquierda · módulo 2',cat:'alba',kind:'peg',rect:[.12,2.85,.62,5.55],face:'E',H:2.2},
+ {id:'W3',zone:'Pared izquierda',name:'Pared izquierda · módulo 3',cat:'seg',kind:'shelf',rect:[.12,5.55,.62,8.25],face:'E',H:2.2,levels:WL},
+ {id:'W4',zone:'Pared izquierda',name:'Pared izquierda · módulo 4',cat:'jard',kind:'peg',rect:[.12,8.25,.62,10.94],face:'E',H:2.2},
+ {id:'N1',zone:'Pared del fondo',name:'Pared del fondo · módulo 1',cat:'med',kind:'peg',rect:[.62,10.94,3.25,11.44],face:'S',H:2.2},
+ {id:'N2',zone:'Pared del fondo',name:'Pared del fondo · módulo 2',cat:'electr',kind:'peg',rect:[3.25,10.94,5.9,11.44],face:'S',H:2.2},
+ {id:'N3',zone:'Pared del fondo',name:'Gabinete de almacenamiento',cat:null,kind:'cabinet',rect:[5.9,10.94,7.95,11.44],face:'S',H:2.2},
+ {id:'E1',zone:'Pared derecha',name:'Pared derecha · detrás de cajas',cat:'bat',kind:'shelf',rect:[13.66,.2,14.16,2.8],face:'W',H:2.2,levels:WL},
+ {id:'E2',zone:'Pared derecha',name:'Pared derecha · módulo 2',cat:'seg',kind:'peg',rect:[13.66,2.8,14.16,5.5],face:'W',H:2.2},
+ {id:'E3',zone:'Pared derecha',name:'Pared derecha · motosierras',cat:'motos',kind:'shelf',rect:[13.66,5.5,14.16,8.2],face:'W',H:2.2,levels:[.12,.6,1.08,1.56]},
+ {id:'E4',zone:'Pared derecha',name:'Pared derecha · hidrolavado y bombas',cat:'maqb',kind:'shelf',rect:[13.66,8.2,14.16,11.0],face:'W',H:2.2,levels:[.12,.78,1.25,1.7]},
+ {id:'E5',zone:'Pared derecha',name:'Pared derecha · escaleras',cat:'esc',kind:'ladders',rect:[13.66,11.0,14.16,13.7],face:'W',H:2.2},
+ {id:'E6',zone:'Pared derecha',name:'Gabinete de almacenamiento',cat:null,kind:'cabinet',rect:[13.66,13.7,14.16,15.8],face:'W',H:2.2},
+ {id:'L1',zone:'Pared junto a escalera',name:'Pared junto a escalera · módulo',cat:'pint',kind:'shelf',rect:[8.6,11.44,9.1,14.0],face:'E',H:2.2,levels:WL},
+ {id:'L2',zone:'Pared junto a escalera',name:'Gabinete de almacenamiento',cat:null,kind:'cabinet',rect:[8.6,14.0,9.1,15.0],face:'E',H:2.2},
+ {id:'C0',zone:'Islas',name:'Exhibidor de impulso junto a cajas',cat:'impulso',kind:'peg',rect:[11.73,.42,12.28,.98],face:'W',H:1.6},
+ {id:'T1',zone:'Islas',name:'Tarima de sierras estacionarias',cat:'estac',kind:'machines',rect:[10.36,9.48,12.18,10.43],face:'S',H:.9},
+ {id:'T2',zone:'Islas',name:'Tarima de compresores',cat:'comp',kind:'machines',rect:[10.36,7.4,12.18,8.35],face:'S',H:.9},
+ {id:'V1',zone:'Islas',name:'Vitrina de exhibición',cat:'vit',kind:'vitrine',rect:[10.75,4.23,11.75,6.22],face:'W',H:1.05,levels:[.15,.5,.82]},
+ {id:'M1',zone:'Islas',name:'Isla de generadores',cat:'maq',kind:'machines',rect:[10.87,11.85,11.87,15.85],face:'W',H:1.2},
+ {id:'BM',zone:'Bodega',name:'Bodega · máquinas grandes en exhibición',cat:'maq',kind:'floor',rect:[10.4,16.4,13.55,21.0],face:'W',H:1.0},
+ {id:'B1',zone:'Bodega',name:'Bodega · estante central',cat:'stock',kind:'rack',rect:[9.85,17.1,10.3,20.4],face:'E',H:2.4,levels:[.1,.85,1.6]},
+ {id:'B2',zone:'Bodega',name:'Bodega · estante pared derecha',cat:'stock',kind:'rack',rect:[13.66,16.45,14.16,21.15],face:'W',H:2.4,levels:[.1,.85,1.6]},
+ {id:'B3',zone:'Bodega',name:'Bodega · estante pared norte',cat:'stock',kind:'rack',rect:[11.5,21.15,13.4,21.65],face:'S',H:2.4,levels:[.1,.85,1.6]},
+ {id:'Z1',zone:'Mezzanine',name:'Mezzanine · estante taller',cat:'taller',kind:'rack',rect:[13.6,16.4,14.1,20.1],face:'W',H:2.0,levels:[.1,.75,1.4],base:MZ},
+ {id:'Z2',zone:'Mezzanine',name:'Mezzanine · mueble bajo',cat:'taller',kind:'rack',rect:[11.2,16.4,13.1,16.85],face:'N',H:1.0,levels:[.1,.52],base:MZ},
+);
+const fxById=id=>FX.find(f=>f.id===id);
+
+/* equipos según planos */
+const CAMS=[
+ ['C1','bala',.75,10.75,3.5,[.15,-1],'Esquina noroeste · pasillo de pared izquierda'],
+ ['C2','bala',.75,.3,3.5,[1,.2],'Esquina suroeste · frente de tienda'],
+ ['C3','bala',9.24,10.15,3.5,[-1,0],'Pasillo norte (pared del fondo – G1)'],
+ ['C4','bala',9.24,7.75,3.5,[-1,0],'Pasillo G1 – G2'],
+ ['C5','bala',9.24,5.35,3.5,[-1,0],'Pasillo G2 – G3'],
+ ['C6','bala',9.24,2.95,3.5,[-1,0],'Pasillo G3 – G4'],
+ ['C7','bala',11.06,3.2,3.5,[0,1],'Pasillo central hacia máquinas'],
+ ['C8','bala',11.06,3.2,3.5,[-.25,-1],'Entrada y puerta de vidrio'],
+ ['C9','domo2',12.6,2.75,3.0,[-.3,-.2],'Caja 1'],
+ ['C10','domo2',12.6,1.35,3.0,[-.3,-.2],'Caja 2'],
+ ['C11','domo',11.4,16.3,2.84,[0,-1],'Borde del mezzanine · isla de máquinas'],
+ ['C12','domo',13.55,21.25,2.84,[-.7,-1],'Bodega bajo mezzanine'],
+ ['C13','domo',13.6,17.0,MZ+2.6,[-1,.8],'Mezzanine · área de taller'],
+ ['C14','domo',13.2,21.2,MZ+2.6,[-.6,-1],'Mezzanine · oficina'],
+];
+const CAMT={bala:['Cámara tipo bala','#1f6feb'],domo2:['Cámara domo 2 MP','#e5484d'],domo:['Cámara tipo domo','#8e4ec6']};
+const ACS=[['AC1',60000,11.15,11.96],['AC2',60000,11.15,3.88],['AC3',36000,4.15,8.0],['AC4',36000,4.15,3.0]];
+const LAMPS=[];
+[3.93,7.2].forEach(x=>[10.25,7.82,5.43,3.0,.55].forEach(y=>LAMPS.push([x,y,0])));
+[9.5,6.75,4.25,1.62].forEach(y=>LAMPS.push([1.36,y,1]));
+[10.49,12.85].forEach(x=>[15.4,12.7,9.96,7.22,4.36,1.62].forEach(y=>LAMPS.push([x,y,1])));
+const PANELS=[[11.06,19.33],[13.06,19.33],[11.06,16.95],[13.06,16.95],[9.15,16.95]];
+
+/* =================== UTILIDADES =================== */
+const money=v=>'L '+v.toLocaleString('es-HN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const moneyK=v=>v>=1e6?'L '+(v/1e6).toFixed(2)+' M':v>=1000?'L '+(v/1000).toFixed(0)+' k':'L '+Math.round(v);
+const GF=.004,GP=.03,MG=.03;
+if(!CanvasRenderingContext2D.prototype.roundRect)CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h){this.rect(x,y,w,h);};
+function canvasTex(w,h,draw){const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=8;return t;}
+function fit(x,txt,cx,cy,max,size,weight=800){let s=size;do{x.font=`${weight} ${s}px Inter, sans-serif`;s-=2}while(x.measureText(txt).width>max&&s>8);x.fillText(txt,cx,cy);}
+function wrap(x,txt,cx,cy,maxW,maxH,size,weight=700){
+  let s=size,lines;
+  for(;s>8;s-=2){x.font=`${weight} ${s}px Inter, sans-serif`;lines=[];let cur='';
+    for(const w of txt.split(' ')){const t=cur?cur+' '+w:w;if(x.measureText(t).width>maxW&&cur){lines.push(cur);cur=w}else cur=t}
+    lines.push(cur);if(lines.length*s*1.12<=maxH&&lines.every(l=>x.measureText(l).width<=maxW))break;}
+  const lh=s*1.12,y0=cy-(lines.length-1)*lh/2;lines.forEach((l,i)=>x.fillText(l,cx,y0+i*lh));
+}
+function faceOf(f){const[x0,y0,x1,y1]=f.rect;let c,n,L,D;
+ switch(f.face){case'N':n={x:0,y:1};c={x:(x0+x1)/2,y:y1};L=x1-x0;D=y1-y0;break;
+  case'S':n={x:0,y:-1};c={x:(x0+x1)/2,y:y0};L=x1-x0;D=y1-y0;break;
+  case'E':n={x:1,y:0};c={x:x1,y:(y0+y1)/2};L=y1-y0;D=x1-x0;break;
+  default:n={x:-1,y:0};c={x:x0,y:(y0+y1)/2};L=y1-y0;D=x1-x0;}
+ return{c,n,u:{x:-n.y,y:n.x},L,D,th:Math.atan2(n.x,-n.y),base:f.base||0};}
+const wp=(F,a,b,y)=>new V3(F.c.x+F.u.x*a-F.n.x*b,F.base+y,-(F.c.y+F.u.y*a-F.n.y*b));
+const P3=(x,y,h=0)=>new V3(x,h,-y);
+
+/* =================== ESCENA =================== */
+const stage=document.getElementById('stage');
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;
+stage.prepend(renderer.domElement);window.__r=renderer;
+const scene=new THREE.Scene();scene.background=new THREE.Color('#eef0f3');
+const camera=new THREE.PerspectiveCamera(40,1,.05,300);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;controls.minDistance=.3;controls.maxDistance=70;controls.maxPolarAngle=Math.PI/2-.02;
+scene.add(new THREE.HemisphereLight('#ffffff','#b9bec6',1.0));
+const sun=new THREE.DirectionalLight('#ffffff',1.35);sun.position.set(18,30,8);sun.target.position.set(7,0,-11);scene.add(sun.target);
+sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-17,right:17,top:17,bottom:-17,near:5,far:80});sun.shadow.bias=-.0004;scene.add(sun);
+const fill=new THREE.DirectionalLight('#dfe8ff',.45);fill.position.set(-10,12,10);scene.add(fill);
+
+const L={}; ['struct','prod','mezz','walls','wallsFull','cams','cover','ac','lamps','labels','misc','people','signs','dims','vm','cotas'].forEach(k=>{L[k]=new THREE.Group();scene.add(L[k]);});
+const std=(c,o={})=>new THREE.MeshStandardMaterial({color:c,roughness:.6,...o});
+const M={metal:std('#eef0f2',{metalness:.15,roughness:.5}),dark:std('#2b3038'),grey:std('#8f98a3',{metalness:.4,roughness:.4}),wood:std('#c9a77a',{roughness:.8}),
+ glass:new THREE.MeshStandardMaterial({color:'#cfe4f2',transparent:true,opacity:.22,roughness:.05,metalness:.1,depthWrite:false}),
+ wall:std('#f4f1ea',{roughness:.95}),white:std('#ffffff'),black:std('#1c1f24'),orange:std('#d9822b'),blue:std('#2d5ea8')};
+function mesh(geo,mat,pos,parent,sel,cast=true){const o=new THREE.Mesh(geo,mat);o.position.copy(pos);o.castShadow=cast;o.receiveShadow=true;if(sel)o.userData.sel=sel;parent.add(o);return o;}
+function bx(w,h,d,mat,x,y,z,parent,sel){return mesh(new THREE.BoxGeometry(w,h,d),mat,new V3(x,y,z),parent,sel);}
+// caja en coordenadas de planta: x0..x1, y0..y1, h0..h1
+function pbox(x0,y0,x1,y1,h0,h1,mat,parent,sel){return bx(x1-x0,h1-h0,y1-y0,mat,(x0+x1)/2,(h0+h1)/2,-(y0+y1)/2,parent,sel);}
+
+/* piso en L y paredes */
+const tile=canvasTex(128,128,(x,w,h)=>{x.fillStyle='#e9e7e2';x.fillRect(0,0,w,h);x.strokeStyle='#d6d3cc';x.lineWidth=3;x.strokeRect(0,0,w,h);});
+tile.wrapS=tile.wrapT=THREE.RepeatWrapping;tile.repeat.set(1/.6,1/.6);
+const shp=new THREE.Shape([[0,0],[14.16,0],[14.16,21.65],[8.44,21.65],[8.44,11.44],[0,11.44]].map(p=>new THREE.Vector2(...p)));
+const floor=new THREE.Mesh(new THREE.ShapeGeometry(shp),std('#ffffff',{map:tile,roughness:.9}));floor.rotation.x=-Math.PI/2;floor.position.y=.002;floor.receiveShadow=true;scene.add(floor);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(200,200),std('#d9dce0',{roughness:1}));ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+const walk=new THREE.Mesh(new THREE.PlaneGeometry(14.6,2.5),std('#c9ccd1',{roughness:1}));walk.rotation.x=-Math.PI/2;walk.position.set(7.08,.004,1.25);walk.receiveShadow=true;scene.add(walk);
+const WT=.15,WCUT=2.6,WFULL=6;
+// [x0,y0,x1,y1, desplazamiento hacia afuera]
+[[14.16,0,14.16,21.65,1],[8.44,21.65,14.16,21.65,1],[8.44,11.44,8.44,21.65,-1],[0,11.44,8.44,11.44,1],[0,0,0,11.44,-1]].forEach(([x0,y0,x1,y1,o])=>{const vert=x0===x1,len=vert?y1-y0:x1-x0;
+  const m=vert?bx(WT,1,len+WT,M.wall,x0+o*WT/2,.5,-(y0+y1)/2,L.walls):bx(len+WT,1,WT,M.wall,(x0+x1)/2,.5,-(y0+o*WT/2),L.walls);m.userData.wall=1;});
+// fachada de vidrio (eje 10) con puerta de 2.00 m
+const S=L.walls;
+[[0,9.45],[11.45,14.16]].forEach(([a,b])=>{const g=bx(b-a,1,.03,M.glass,(a+b)/2,.5,0,S);g.castShadow=false;g.userData.wall=1;g.userData.glass=1;
+  for(let x=a;x<=b+.01;x+=Math.max(1,(b-a)/Math.ceil((b-a)/1.6))){const mm=bx(.05,1,.06,M.dark,Math.min(x,b),.5,0,S);mm.userData.wall=1;}});
+const doorL=bx(.98,2.3,.04,M.glass,9.95,1.15,0,L.misc,'e:puerta');doorL.castShadow=false;const doorR=bx(.98,2.3,.04,M.glass,10.95,1.15,0,L.misc,'e:puerta');doorR.castShadow=false;
+[9.45,10.45,11.45].forEach(x=>bx(.05,2.35,.06,M.dark,x,1.175,0,L.misc,'e:puerta'));bx(2.05,.06,.06,M.dark,10.45,2.33,0,L.misc,'e:puerta');
+bx(.03,.3,.03,M.grey,10.38,1.1,.04,L.misc);bx(.03,.3,.03,M.grey,10.52,1.1,.04,L.misc);
+// banda alta y rótulo (solo con paredes completas)
+const band=bx(14.31,WFULL-3.2,WT,M.wall,7.08,3.2+(WFULL-3.2)/2,WT/2,L.wallsFull);
+const fsTex=canvasTex(1024,200,(x,w,h)=>{x.fillStyle='#1d2430';x.fillRect(0,0,w,h);x.fillStyle='#fff';x.textAlign='center';x.textBaseline='middle';fit(x,'INGCO-STORE',w/2,h/2+4,w-80,120,800);});
+const fsign=new THREE.Mesh(new THREE.BoxGeometry(5.2,1,.12),[M.dark,M.dark,M.dark,M.dark,std('#fff',{map:fsTex}),M.dark]);fsign.position.set(10.45,4.3,.2);fsign.userData.sel='e:rotulo';L.wallsFull.add(fsign);
+function setWalls(full){const h=full?WFULL:WCUT;L.walls.children.forEach(o=>{if(!o.userData.wall)return;o.scale.y=o.userData.glass?Math.min(h,3.2):h;o.position.y=o.scale.y/2;});L.wallsFull.visible=full;}
+
+/* medidas de las paredes por la cara externa (paredes de WT = 15 cm hacia afuera;
+   la fachada se mide en la línea del vidrio) */
+{
+  const XO=-WT,XE=14.16+WT,XB=8.44-WT,YN1=11.44+WT,YN2=21.65+WT,OFF=.75,EXT=.2,HY=.03;
+  // [x0,y0,x1,y1, normal hacia afuera, nombre]
+  const COTAS=[
+    [XO,0,XE,0,[0,-1],'Fachada'],
+    [XE,0,XE,YN2,[1,0],'Pared este'],
+    [XB,YN2,XE,YN2,[0,1],'Pared norte (bodega)'],
+    [XB,YN1,XB,YN2,[-1,0],'Pared oeste (bodega)'],
+    [XO,YN1,XB,YN1,[0,1],'Pared norte (sala)'],
+    [XO,0,XO,YN1,[-1,0],'Pared oeste'],
+  ];
+  const cm=new THREE.MeshBasicMaterial({color:'#c62828'});
+  const raya=(x0,y0,x1,y1,w=.035)=>{const dx=x1-x0,dy=y1-y0,len=Math.hypot(dx,dy);
+    const m=new THREE.Mesh(new THREE.BoxGeometry(len,.012,w),cm);m.position.set((x0+x1)/2,HY,-(y0+y1)/2);m.rotation.y=Math.atan2(dy,dx);L.cotas.add(m);};
+  const rotulo=(txt,sub,x,y)=>{const tx=canvasTex(512,170,(c,w,h)=>{c.fillStyle='#fff';c.beginPath();c.roundRect(6,6,w-12,h-12,34);c.fill();c.strokeStyle='#c62828';c.lineWidth=7;c.stroke();
+      c.textAlign='center';c.textBaseline='middle';c.fillStyle='#c62828';fit(c,txt,w/2,h*.4,w-40,96,800);c.fillStyle='#4b5563';fit(c,sub,w/2,h*.77,w-40,34,600);});
+    const s=new THREE.Sprite(new THREE.SpriteMaterial({map:tx,depthTest:false}));s.scale.set(2.7,.9,1);s.position.set(x,.35,-y);s.renderOrder=12;s.userData.rotuloCota=1;L.cotas.add(s);};
+  COTAS.forEach(([x0,y0,x1,y1,[nx,ny],nom])=>{
+    const ax=x0+nx*OFF,ay=y0+ny*OFF,bx2=x1+nx*OFF,by=y1+ny*OFF;
+    raya(ax,ay,bx2,by);                                     // línea de cota
+    raya(x0+nx*.05,y0+ny*.05,x0+nx*(OFF+EXT),y0+ny*(OFF+EXT),.025); // líneas de extensión
+    raya(x1+nx*.05,y1+ny*.05,x1+nx*(OFF+EXT),y1+ny*(OFF+EXT),.025);
+    const tx=-ny,ty=nx,t=.12;                               // marcas a 45° en los extremos
+    [[ax,ay],[bx2,by]].forEach(([px,py])=>raya(px-(tx+nx)*t,py-(ty+ny)*t,px+(tx+nx)*t,py+(ty+ny)*t,.03));
+    const len=Math.hypot(x1-x0,y1-y0);
+    rotulo(len.toFixed(2)+' m',nom,(ax+bx2)/2+nx*(nx?1.5:.6),(ay+by)/2+ny*(ny?.6:0));
+  });
+}
+
+/* =================== TEXTURAS Y PLANTILLAS DE PRODUCTO =================== */
+const texCache={},tplCache={};
+function itemTex(ck,it){
+  const key=ck+'|'+it[1]+'|'+it[2];if(texCache[key])return texCache[key];
+  const[t,name,sub,w,h]=it,code=it[7],col=CAT[ck][1],Y='#f2a900';
+  const cw=256,ch=Math.round(Math.min(768,Math.max(96,256*h/w)));
+  return texCache[key]=canvasTex(cw,ch,(x,W,H)=>{
+    x.textAlign='center';x.textBaseline='middle';
+    if(t==='p'){
+      const g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,'#f6b51e');g.addColorStop(1,'#ef8f0f');x.fillStyle=g;x.fillRect(0,0,W,H);
+      x.fillStyle='#1d1f22';x.fillRect(0,0,W,H*.17);x.fillStyle='#ef8f0f';x.beginPath();x.ellipse(W/2,H*.06,W*.13,H*.022,0,0,7);x.fill();
+      x.fillStyle='#fff';fit(x,code||sub,W/2,H*.13,W*.86,Math.min(34,H*.05),800);
+      x.fillStyle='rgba(255,255,255,.85)';x.beginPath();x.roundRect(W*.07,H*.22,W*.86,H*.48,16);x.fill();
+      x.fillStyle='#1d1f22';x.fillRect(0,H*.73,W,H*.27);x.fillStyle='#fff';wrap(x,name,W/2,H*.83,W*.88,H*.15,36,700);
+      x.fillStyle=Y;fit(x,code?'':sub,W/2,H*.95,W*.8,Math.min(26,H*.04),700);
+    }else{
+      const dark=t==='k';x.fillStyle=dark?'#2b2f36':Y;x.fillRect(0,0,W,H);
+      x.fillStyle=dark?Y:'#1d1f22';x.fillRect(0,0,W,H*.15);x.fillStyle=dark?'#1d1f22':Y;fit(x,CAT[ck][0].toUpperCase(),W/2,H*.075,W*.9,Math.min(26,H*.09),800);
+      x.fillStyle='rgba(255,255,255,.96)';x.fillRect(W*.05,H*.22,W*.9,H*.5);
+      x.fillStyle='#1d1f22';wrap(x,name,W/2,H*.47,W*.84,H*.42,46,800);
+      x.fillStyle=dark?'#fff':'#1d1f22';fit(x,code||sub,W/2,H*.85,W*.86,Math.min(40,H*.11),800);
+      const gr=x.createLinearGradient(0,0,W,0);gr.addColorStop(0,'rgba(0,0,0,.14)');gr.addColorStop(.5,'rgba(255,255,255,.05)');gr.addColorStop(1,'rgba(0,0,0,.14)');x.fillStyle=gr;x.fillRect(0,0,W,H);
+    }
+  });
+}
+function tplFor(ck,it){
+  const key=ck+'|'+it.join('|');if(tplCache[key])return tplCache[key];
+  const[t,,,w,h,d]=it,col=CAT[ck][1],tex=itemTex(ck,it),mats=[],parts=[];
+  const mk=o=>{const m=new THREE.MeshStandardMaterial(o);mats.push(m);return m;};
+  if(t==='p'){const fr=mk({map:tex,roughness:.35,metalness:.05}),bk=mk({color:'#f4f5f6'});parts.push({geo:new THREE.BoxGeometry(w,h,d),mat:[bk,bk,bk,bk,fr,bk],oy:0});}
+  else if(t==='k'){const fr=mk({map:tex,roughness:.5}),sd=mk({color:'#2b2f36',roughness:.5});parts.push({geo:new THREE.BoxGeometry(w,h,d),mat:[sd,sd,sd,sd,fr,sd],oy:0});parts.push({geo:new THREE.BoxGeometry(w*.35,.025,.025),mat:sd,oy:h/2+.012});}
+  else{const fr=mk({map:tex,roughness:.6}),sd=mk({color:'#f2a900',roughness:.6});parts.push({geo:new THREE.BoxGeometry(w,h,d),mat:[sd,sd,sd,sd,fr,sd],oy:0});}
+  return tplCache[key]={parts,mats};
+}
+
+/* =================== MODELOS 3D DE PRODUCTOS =================== */
+const MM={D:std('#2a2d33',{roughness:.55}),M:std('#b9bec5',{metalness:.75,roughness:.3}),K:std('#17191c',{roughness:.5}),W:std('#f5f6f7',{roughness:.6}),
+ Y:std('#f2c230',{roughness:.5}),G:new THREE.MeshStandardMaterial({color:'#9fe0b4',transparent:true,opacity:.75,roughness:.1}),
+ T:new THREE.MeshStandardMaterial({color:'#ffffff',transparent:true,opacity:.16,roughness:.05,metalness:.1,depthWrite:false}),B:std('#c9a06a',{roughness:.9}),S:std('#10161d',{roughness:.2,emissive:'#1b3a2a',emissiveIntensity:.6})};
+const INGCO='#ffc21f';
+const VCOL={U:'#2f6fd6',O:'#f07a1a',L:'#b9a9e6',A:'#3bb3a6',Gd:'#d4a73a',R:'#d23b3b',Br:'#4a3a30',D:'#2a2d33',M:'#c4c9cf',K:'#1c1e22',W:'#f5f6f7',Y:'#f2c230',G:'#9fe0b4',B:'#c9a06a',S:'#16302a'};
+const VCMAT=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.42,metalness:.22});
+const catMat={},cMat=ck=>catMat[ck]||(catMat[ck]=std(CAT[ck][1],{roughness:.45}));
+const PX=(g,m,p=[0,0,0],r=[0,0,0])=>{g.rotateX(r[0]);g.rotateY(r[1]);g.rotateZ(r[2]);g.translate(p[0],p[1],p[2]);return{g,m};};
+const BX=(w,h,d,m,p,r)=>PX(new THREE.BoxGeometry(w,h,d),m,p,r);
+const CY=(r1,r2,l,m,ax,p,r,seg=18)=>{const g=new THREE.CylinderGeometry(r1,r2,l,seg);if(ax==='x')g.rotateZ(Math.PI/2);else if(ax==='z')g.rotateX(Math.PI/2);return PX(g,m,p,r);};
+const SP=(rad,m,p,sc=[1,1,1],half=false)=>{const g=new THREE.SphereGeometry(rad,16,10,0,Math.PI*2,0,half?Math.PI/2:Math.PI);g.scale(sc[0],sc[1],sc[2]);return PX(g,m,p);};
+const TO=(R,t,m,p,r)=>PX(new THREE.TorusGeometry(R,t,8,24),m,p,r);
+const CODEKIND={UHPWR20018:'wash',UHPWR16008:'wash',UHPWR14008:'wash',UHPWR15028:'washc',UJPT075068:'jetpump','UHPWR15028-SP-2':'hosereel',AHPH7511:'hosereel',AMSG028:'lance',URGH9028:'hammerc',URH1200428:'hammerc',CRHLI21228:'hammer',CRHLI20228:'hammer',CRHLI20248:'hammer',UCRHLI262085:'hammer',UCS18568:'circ',CSLI1851:'circc',CSLI1402:'circc',UCOSLI240866:'circc',UJS57028:'jig',UJS80028:'jig',CJSLI8501:'jig',UWLC15008:'chaser',GCS5451811:'chainsaw',GCS5622611:'chainsaw',CGSLI40168:'chainsawc',CGSLI2088:'chainsawm',AGSB52401:'bar',AGSB51201:'bar',AGSB50801:'bar',TSB125423:'bigblade',TSB130523:'bigblade',TSB3254210:'bigblade',CDLI12456:'drill',CDLI12206:'drill',CDLI12428:'drill',CSDLI04425:'pen',CSDLI08025:'pen',CSDLI0458:'pen',UCIRLI2028:'impact',UCIWLI20236:'impact',UCKLI20277:'impact',
+ UCKLI20273:'grinderc',UCAGLI211156:'grinderc',UCAGLI261521:'grinderc',UCAGLI271531:'grinderc',UCAGLI4128112:'grinderc',UCAGLI4260182:'grinderbc',CDGLI2001:'dieg',UMG13328:'diegc',
+ UAG75028:'grinder',UAG110028:'grinder',UAG900285:'grinder',UAG200018:'grinderb',UAG24008:'grinderb',UPL5508:'planer',UPS2416:'sander',FBLI20031:'battery',UFBCPK1417:'battery',UFBCPK2013:'battery',
+ UFCLI2001:'charger',HSH803:'helmetb',HFSPC32:'faceshield','SSH04SB.40':'boots','UDWP11001-SB':'controlbox',HPW0808:'pipewrench',HBJ2002:'jack',AHPH5028:'hosereel',AMFP4002:'bottle',
+ HSG14018:'stapler',PBX1402:'toolbox',PBX2002:'toolbox',PBX1511:'organizer',COS230914:'bag',HMBSK30082:'saw',HBC0818:'boltcutter',HCFL1865051:'flashlight',HSL08060:'longlevel',HSL08080:'longlevel',
+ HSL28080:'longlevel',ALS2001:'spool',UHPWR25008:'wash','AH1051.1':'coilhose','AKT0053-1':'airkit',WAH5008:'electrode',AMWH6001:'magsq'};
+const FLATCODE={TSB118513:'blade',TSB51852153:'blade',TSB1403:'blade',SSB644D:'blades',RSB1111DF:'blades',SSB922EF:'blades',JSBT111C:'blades',HSB10291:'holesaw1',HSB10441:'holesaw1',HSA02:'forstner',AKHS302:'holesaw1',CK1301:'chuckkey',HADW131128:'adj',HCSPAR131:'wrench',HCSPA151:'wrench',HKSPA1068:'wrenchset',HKSDS2228:'stubby',HSDSL5100:'screw',HSGTDC180601:'screwset',HKSDB0248:'screwset',
+ HKISD0608:'screwsetr',HRUH8808:'mallet',HRUH8908:'malletw',HBPH88048:'ballpein',HFP2508:'pliers',HQSC0204:'clamp',HUKB61001:'blades',HHAST12141:'sockets',HGCT03:'glasscutter',ASE106:'extractor',
+ AKH0071:'holesaw',DBCS0031:'countersink',APG15012:'pads',HSB10511:'holesaw1',HSB10351:'holesaw1',ADCS3501:'forstner',AKSDS2051:'stepdrill',DMD031801HT:'diamond',HPUT78300:'wideputty',
+ HPUT08125:'putty',HPUT08150:'putty',HBT910:'trowel',HBT909:'trowel',HBT918:'trowel',HCC0841218:'chisel',HCCL832519:'chisel',HSG06:'glassesd',DBPL0602:'padlock',HFTT858:'gtrowel',ALS1602:'spools',
+ SDB61PH252:'bits2',SDBIM21PH233:'bits',ABH20601:'bits2',ABH60501:'sockets',EPB820121:'blades'};
+function toolKind(n){n=n.toLowerCase();const r=[['taladro inalámbrico','drill'],['taladro percutor','drillc'],['atornillador de impacto','impact'],['rotomartillo inalámbrico','hammer'],['rotomartillo sds 800','hammerc'],
+ ['esmeril inalámbrico','grinderc'],['esmeril angular 2200','grinderb'],['esmeril angular','grinder'],['sierra circular inalámbrica','circc'],['sierra circular','circ'],['sierra caladora','jig'],
+ ['lijadora orbital','sander'],['lijadora de banda','belt'],['sierra sable','recip'],['multiherramienta','multi'],['rebajadora','router'],['pistola de calor','heat'],['kit 2 baterías','battery'],
+ ['batería','battery'],['cargador','charger'],['bomba periférica','pump'],['bomba centrífuga','pump'],['bomba sumergible','subpump'],['casco','helmet'],['nivel de aluminio','longlevel'],
+ ['caja de herramientas plástica','toolbox'],['extensión','reel'],['reflector','flood'],['medidor láser','laser'],['multímetro','multimeter'],['pinza amperimétrica','clamp'],['nivel láser','linelaser'],['detector','laser']];
+ const f=r.find(([k])=>n.includes(k));return f?f[1]:null;}
+function flatKind(n){n=n.toLowerCase();const r=[['alicate','pliers'],['pinza','pliers'],['pelacables','pliers'],['ponchadora','pliers'],['destornillador','screw'],['probador','screw'],['llave combinada','wrench'],
+ ['llave ajustable','adj'],['llave de mandril','allen'],['llaves allen','allen'],['adaptador','sockets'],['dados','sockets'],['martillo','hammer'],['cuchilla','knife'],['cinta métrica','tape'],['nivel torpedo','level'],
+ ['escuadra','square'],['brocas sds','sds'],['brocas','bits'],['juego de puntas','bits'],['disco flap','flap'],['disco diamantado','diamond'],['disco sierra','blade'],['disco','disc'],['copas','holesaw'],
+ ['cepillo','brush'],['lijas','sheets'],['hojas','blades'],['carbones','carbons'],['cinta aislante','rolls'],['guantes','glove'],['lentes','glasses'],['mascarilla','mask'],['tapones','plugs'],['lápiz','pens'],['cautín','solder']];
+ const f=r.find(([k])=>n.includes(k));return f?f[1]:'generic';}
+function toolParts(k){const A=[],a=x=>A.push(x);
+  switch(k){
+  case'drill':case'drillc':case'impact':case'hammer':case'hammerc':case'heat':{
+    const L=k==='impact'?.13:k.startsWith('hammer')?.25:k==='heat'?.2:.18,y=.2,fx=L-.05;
+    a(CY(.036,.036,L,'C','x',[L/2-.05,y,0]));a(CY(.0368,.0368,.016,'D','x',[-.032,y,0]));a(CY(.033,.029,.022,'D','x',[-.058,y,0]));
+    if(k==='heat'){a(CY(.027,.024,.09,'M','x',[fx+.045,y,0]));a(CY(.02,.02,.01,'K','x',[fx+.092,y,0]));}
+    else if(k==='impact'){a(CY(.019,.021,.04,'K','x',[fx+.02,y,0]));a(CY(.006,.006,.03,'M','x',[fx+.055,y,0],[0,0,0],6));}
+    else if(k.startsWith('hammer')){a(CY(.027,.031,.06,'D','x',[fx+.03,y,0]));a(CY(.0065,.0065,.13,'M','x',[fx+.125,y,0]));a(CY(.014,.014,.11,'D','z',[fx-.03,y,.07]));}
+    else{a(CY(.018,.025,.05,'K','x',[fx+.025,y,0]));a(CY(.0045,.0045,.075,'M','x',[fx+.088,y,0]));}
+    a(BX(.046,.135,.04,'D',[-.005,.1,0],[0,0,-.2]));a(BX(.03,.06,.041,'C',[-.012,.07,0],[0,0,-.2]));a(BX(.012,.03,.018,'K',[.03,.155,0]));
+    if(k==='drill'||k==='impact'||k==='hammer'){a(BX(.1,.065,.078,'K',[-.012,.032,0]));a(BX(.102,.012,.08,'C',[-.012,.058,0]));}
+    else{a(BX(.065,.028,.052,'D',[-.015,.03,0]));a(CY(.006,.006,.07,'K','x',[-.08,.03,0]));}
+    break;}
+  case'grinder':case'grinderb':case'grinderc':{const z=k==='grinderb'?1.4:1;
+    a(CY(.033*z,.031*z,.2*z,'C','x',[-.02*z,.05*z,0]));a(CY(.0345*z,.0345*z,.06*z,'D','x',[-.09*z,.05*z,0]));
+    a(BX(.06*z,.05*z,.056*z,'M',[.11*z,.055*z,0]));a(CY(.0575*z,.0575*z,.006,'K','y',[.12*z,.02*z,0],[0,0,0],28));a(CY(.012*z,.012*z,.008,'M','y',[.12*z,.022*z,0]));
+    a(CY(.062*z,.062*z,.02,'D','y',[.098*z,.034*z,0],[0,0,0],28));a(CY(.012,.012,.09*z,'D','z',[.11*z,.055*z,.07*z]));a(BX(.035*z,.008,.016,'K',[-.02*z,.085*z,0]));
+    if(k==='grinderc'){a(BX(.08,.06,.075,'K',[-.16,.05,0]));a(BX(.082,.012,.077,'C',[-.16,.07,0]));}else a(CY(.006,.006,.07,'K','x',[-.16*z,.05*z,0]));
+    if(k==='grinderb')a(BX(.035,.035,.11,'D',[-.2,.08,0]));break;}
+  case'circ':case'circc':
+    a(BX(.3,.008,.2,'M',[0,.004,0]));a(CY(.104,.104,.003,'M','z',[0,.11,-.03],[0,0,0],36));a(CY(.1,.1,.045,'C','z',[0,.11,-.03],[0,0,0],28));
+    a(CY(.045,.045,.09,'C','z',[.02,.13,.06]));a(CY(.046,.046,.02,'D','z',[.02,.13,.11]));
+    a(BX(.15,.03,.03,'D',[-.03,.25,-.03]));a(BX(.025,.07,.03,'D',[-.1,.205,-.03]));a(BX(.025,.06,.03,'D',[.04,.21,-.03]));a(SP(.022,'D',[.11,.17,-.03]));
+    if(k==='circc')a(BX(.1,.065,.078,'K',[-.06,.29,-.03]));else a(CY(.006,.006,.07,'K','x',[-.14,.25,-.03]));break;
+  case'jig':a(BX(.2,.008,.08,'M',[0,.004,0]));a(BX(.17,.09,.055,'C',[0,.055,0]));a(BX(.17,.03,.045,'D',[-.005,.175,0]));a(BX(.025,.065,.045,'D',[-.075,.13,0]));a(BX(.03,.065,.05,'C',[.07,.13,0]));
+    a(BX(.004,.07,.002,'M',[.092,.03,0]));a(CY(.006,.006,.05,'K','x',[-.11,.17,0]));break;
+  case'sander':a(BX(.115,.025,.115,'K',[0,.0125,0]));a(BX(.1,.08,.1,'C',[0,.065,0]));a(SP(.045,'D',[0,.105,0],[1,.7,1]));a(CY(.022,.022,.06,'K','x',[-.08,.06,0]));break;
+  case'belt':a(BX(.26,.05,.075,'K',[0,.03,0]));a(CY(.028,.028,.08,'M','z',[.13,.03,0]));a(CY(.028,.028,.08,'M','z',[-.13,.03,0]));a(BX(.22,.07,.07,'C',[0,.09,0]));a(SP(.03,'D',[.11,.14,0]));a(BX(.08,.03,.035,'D',[-.08,.15,0]));a(BX(.02,.04,.035,'D',[-.12,.13,0]));break;
+  case'recip':a(CY(.04,.036,.28,'C','x',[0,.06,0]));a(CY(.041,.041,.08,'D','x',[-.06,.06,0]));a(BX(.08,.1,.04,'D',[-.17,.07,0]));a(BX(.02,.045,.045,'M',[.15,.05,0]));a(BX(.13,.022,.002,'M',[.22,.045,0]));a(CY(.006,.006,.05,'K','x',[-.23,.05,0]));break;
+  case'multi':a(CY(.027,.025,.22,'C','x',[0,.035,0]));a(CY(.028,.028,.06,'D','x',[-.08,.035,0]));a(BX(.04,.04,.05,'M',[.13,.035,0]));a(BX(.05,.004,.032,'M',[.17,.012,0]));a(CY(.006,.006,.05,'K','x',[-.14,.035,0]));break;
+  case'router':a(CY(.07,.07,.012,'M','y',[0,.006,0],[0,0,0],28));a(CY(.065,.065,.02,'K','y',[0,.02,0]));a(CY(.045,.045,.14,'C','y',[0,.1,0]));a(CY(.046,.04,.03,'D','y',[0,.185,0]));
+    a(SP(.025,'D',[.09,.06,0]));a(SP(.025,'D',[-.09,.06,0]));a(BX(.008,.06,.008,'M',[.06,.05,0]));a(BX(.008,.06,.008,'M',[-.06,.05,0]));break;
+  case'battery':a(BX(.11,.06,.08,'K',[0,.03,0]));a(BX(.112,.012,.082,'C',[0,.045,0]));a(BX(.05,.02,.06,'K',[0,.07,0]));a(BX(.02,.006,.015,'W',[.035,.062,.03]));break;
+  case'charger':a(BX(.17,.05,.12,'K',[0,.025,0]));a(BX(.07,.03,.08,'C',[0,.065,0]));a(BX(.012,.005,.005,'Y',[.05,.051,.05]));a(CY(.005,.005,.06,'K','x',[-.11,.02,0]));break;
+  case'pump':a(BX(.2,.015,.1,'D',[0,.0075,0]));a(CY(.055,.055,.14,'C','x',[-.035,.07,0]));a(CY(.05,.05,.02,'D','x',[-.11,.07,0]));a(CY(.06,.06,.05,'M','x',[.06,.07,0]));a(CY(.016,.016,.05,'M','y',[.06,.14,0]));a(CY(.016,.016,.05,'M','x',[.11,.07,0]));a(BX(.06,.04,.05,'K',[-.04,.14,0]));break;
+  case'subpump':a(CY(.07,.07,.24,'C','y',[0,.14,0]));a(CY(.072,.072,.03,'K','y',[0,.02,0]));a(TO(.04,.008,'K',[0,.29,0]));a(CY(.015,.015,.06,'M','x',[.08,.22,0]));break;
+  case'helmet':a(SP(.12,'Y',[0,0,0],[1,.85,1.2],true));a(CY(.13,.13,.006,'Y','y',[0,.003,.03],[0,0,0],24));a(BX(.02,.06,.24,'Y',[0,.08,0],[0,0,0]));break;
+  case'longlevel':a(BX(.62,.06,.025,'M',[0,.03,0]));a(BX(.04,.025,.027,'G',[0,.035,0]));a(BX(.03,.025,.027,'G',[.22,.035,0]));a(BX(.02,.062,.027,'K',[.3,.031,0]));a(BX(.02,.062,.027,'K',[-.3,.031,0]));break;
+  case'toolbox':a(BX(.46,.17,.24,'K',[0,.085,0]));a(BX(.47,.045,.25,'C',[0,.19,0]));a(BX(.26,.025,.03,'K',[0,.235,0]));a(BX(.025,.04,.02,'Y',[.15,.17,.126]));a(BX(.025,.04,.02,'Y',[-.15,.17,.126]));break;
+  case'reel':a(CY(.1,.1,.012,'C','z',[0,.12,.03]));a(CY(.1,.1,.012,'C','z',[0,.12,-.03]));a(CY(.06,.06,.05,'K','z',[0,.12,0]));a(BX(.02,.24,.012,'D',[-.11,.12,0]));a(BX(.02,.24,.012,'D',[.11,.12,0]));a(BX(.24,.02,.07,'D',[0,.01,0]));break;
+  case'flood':a(BX(.22,.17,.04,'K',[0,.11,0]));a(BX(.19,.14,.004,'W',[0,.11,.021]));a(BX(.02,.12,.02,'K',[-.12,.07,-.01]));a(BX(.02,.12,.02,'K',[.12,.07,-.01]));a(BX(.26,.015,.06,'K',[0,.008,-.01]));break;
+  case'laser':a(BX(.06,.12,.03,'C',[0,.06,0]));a(BX(.045,.035,.004,'S',[0,.09,.016]));a(BX(.03,.025,.004,'K',[0,.04,.016]));break;
+  case'multimeter':a(BX(.09,.17,.04,'C',[0,.085,0]));a(BX(.07,.045,.004,'S',[0,.135,.021]));a(CY(.02,.02,.008,'K','z',[0,.07,.022]));[[-.025,.025],[0,.025],[.025,.025]].forEach(([x,y])=>a(CY(.005,.005,.006,'K','z',[x,y,.021])));break;
+  case'clamp':a(BX(.07,.15,.035,'C',[0,.075,0]));a(TO(.04,.012,'K',[0,.19,0]));a(BX(.05,.035,.004,'S',[0,.11,.018]));break;
+  case'linelaser':a(BX(.1,.1,.08,'C',[0,.05,0]));a(BX(.06,.04,.082,'K',[0,.06,0]));a(CY(.03,.03,.012,'K','y',[0,.106,0]));break;
+  case'chainsaw':case'chainsawc':case'chainsawm':{const z=k==='chainsawm'?.55:1;a(BX(.22*z,.17*z,.13*z,k==='chainsaw'?'C':'C',[0,.1*z,0]));if(k!=='chainsaw')a(BX(.08*z,.07*z,.08*z,'K',[-.08*z,.17*z,0]));
+    a(BX(.12*z,.04*z,.04*z,'K',[-.17*z,.11*z,0]));a(TO(.07*z,.012,'K',[.02*z,.2*z,0],[0,Math.PI/2,0]));a(BX(.42*z,.045*z,.008,'M',[.32*z,.09*z,0]));a(BX(.43*z,.055*z,.004,'K',[.32*z,.09*z,0]));
+    if(k==='chainsaw')a(CY(.03,.03,.02,'K','z',[-.06,.08,.07]));break;}
+  case'bar':a(BX(.6,.06,.008,'M',[0,.03,0]));a(BX(.15,.05,.01,'C',[-.2,.03,0]));break;
+  case'bigblade':a(CY(.13,.13,.003,'M','z',[0,.14,0],[0,0,0],40));a(CY(.06,.06,.0035,'C','z',[0,.14,0],[0,0,0],24));a(CY(.012,.012,.004,'K','z',[0,.14,0]));break;
+  case'chaser':a(CY(.04,.036,.24,'C','x',[-.04,.09,0]));a(CY(.08,.08,.06,'M','z',[.12,.08,0],[0,0,0],24));a(BX(.14,.02,.12,'D',[.12,.01,0]));a(CY(.012,.012,.1,'D','z',[.08,.15,.08]));a(CY(.006,.006,.07,'K','x',[-.19,.09,0]));break;
+  case'washc':a(BX(.32,.18,.2,'C',[0,.11,0]));a(BX(.34,.04,.22,'K',[0,.02,0]));a(BX(.26,.03,.04,'C',[0,.24,0]));a(BX(.03,.06,.04,'C',[.12,.21,0]));a(BX(.03,.06,.04,'C',[-.12,.21,0]));a(BX(.02,.02,.005,'R',[-.08,.15,.1]));break;
+  case'jetpump':a(CY(.13,.13,.4,'C','x',[0,.15,0],[0,0,0],24));a(BX(.3,.04,.2,'C',[0,.02,0]));a(CY(.07,.07,.2,'C','x',[.02,.33,0]));a(CY(.07,.07,.06,'D','x',[-.12,.33,0]));a(BX(.06,.06,.06,'K',[.05,.42,0]));a(CY(.02,.02,.12,'M','y',[.17,.33,0]));break;
+  case'lance':a(BX(.12,.03,.025,'K',[-.1,.03,0]));a(BX(.03,.08,.025,'C',[-.13,-.01,0],[0,0,.3]));a(CY(.008,.008,.25,'K','x',[.08,.035,0]));break;
+  case'pen':a(CY(.019,.019,.12,'C','y',[0,.06,0]));a(CY(.0195,.0195,.06,'D','y',[0,.04,0]));a(CY(.017,.017,.1,'C','x',[.05,.13,0]));a(CY(.004,.004,.035,'M','x',[.115,.13,0],[0,0,0],6));break;
+  case'dieg':case'diegc':a(CY(.025,.022,.24,'C','x',[0,.03,0]));a(CY(.026,.026,.08,'D','x',[-.04,.03,0]));a(CY(.011,.008,.03,'M','x',[.135,.03,0]));a(CY(.003,.003,.05,'M','x',[.175,.03,0],[0,0,0],6));
+    if(k==='dieg')a(BX(.08,.06,.075,'K',[-.16,.035,0]));else a(CY(.005,.005,.07,'K','x',[-.155,.03,0]));break;
+  case'grinderbc':a(CY(.04,.036,.3,'C','x',[-.03,.07,0]));a(BX(.08,.07,.075,'M',[.15,.075,0]));a(CY(.115,.115,.006,'K','y',[.16,.02,0],[0,0,0],32));a(CY(.12,.12,.024,'D','y',[.13,.04,0],[0,0,0],32));
+    a(CY(.014,.014,.12,'D','z',[.15,.075,.09]));a(BX(.1,.07,.08,'K',[-.23,.07,0]));a(BX(.1,.012,.082,'C',[-.23,.09,0]));break;
+  case'planer':a(BX(.28,.02,.09,'M',[0,.01,0]));a(BX(.26,.1,.085,'C',[0,.07,0]));a(BX(.14,.028,.045,'K',[-.04,.17,0]));a(BX(.025,.06,.045,'K',[-.11,.13,0]));a(BX(.025,.06,.045,'C',[.03,.13,0]));
+    a(CY(.028,.028,.05,'K','y',[.11,.14,0]));a(CY(.02,.02,.04,'D','z',[.0,.06,.06]));a(CY(.005,.005,.06,'K','x',[-.16,.17,0]));break;
+  case'jack':a(BX(.16,.03,.12,'C',[0,.015,0]));a(CY(.045,.05,.2,'C','y',[0,.13,0]));a(CY(.022,.022,.08,'M','y',[0,.27,0]));a(CY(.03,.03,.015,'K','y',[0,.315,0]));a(CY(.012,.012,.05,'C','y',[.06,.06,0]));
+    a(CY(.008,.008,.2,'C','x',[0,.02,.075]));a(CY(.008,.008,.2,'C','x',[0,.02,.09]));break;
+  case'stapler':a(BX(.18,.04,.035,'C',[0,.02,0]));a(BX(.2,.02,.03,'M',[.01,.12,0],[0,0,.15]));a(BX(.045,.12,.04,'K',[-.08,.06,0]));a(BX(.03,.03,.03,'M',[-.08,.14,0]));break;
+  case'flashlight':a(CY(.018,.018,.14,'K','x',[0,.025,0]));a(CY(.025,.019,.04,'K','x',[.085,.025,0]));a(CY(.022,.022,.005,'W','x',[.106,.025,0]));a(CY(.019,.019,.008,'O','x',[.02,.025,0]));break;
+  case'boots':a(BX(.3,.03,.11,'K',[0,.015,0]));a(BX(.18,.12,.1,'K',[-.05,.09,0]));a(SP(.055,'K',[.08,.04,0],[1.3,.8,1],true));a(BX(.05,.11,.07,'Y',[-.02,.1,.01]));a(BX(.3,.012,.112,'D',[0,.032,0]));break;
+  case'faceshield':a(TO(.1,.012,'O',[0,.25,0],[Math.PI/2,0,0]));a(BX(.2,.2,.004,'G',[0,.12,.1]));a(BX(.22,.04,.05,'O',[0,.23,.08]));break;
+  case'controlbox':a(BX(.14,.2,.09,'L',[0,.1,0]));a(BX(.1,.08,.005,'O',[0,.14,.046]));a(BX(.02,.03,.01,'R',[-.04,.08,.047]));for(let i=0;i<5;i++)a(BX(.1,.006,.004,'D',[0,.04+i*.012,.046]));a(CY(.005,.005,.12,'K','y',[.05,.25,0]));break;
+  case'hosereel':for(let i=0;i<3;i++)a(TO(.12-i*.01,.008,'K',[0,.13,i*.012-.012]));a(CY(.012,.012,.05,'M','x',[.13,.13,0]));break;
+  case'coilhose':for(let i=0;i<8;i++)a(TO(.08,.006,'Y',[0,.09,i*.012-.042]));a(CY(.008,.008,.05,'M','x',[.1,.09,0]));break;
+  case'airkit':a(BX(.12,.1,.08,'K',[0,.05,0]));a(CY(.04,.04,.1,'C','y',[.08,.12,0]));a(BX(.03,.1,.025,'C',[-.07,.1,0],[0,0,.3]));a(TO(.05,.005,'Y',[.0,.05,.05]));break;
+  case'bottle':a(CY(.045,.045,.14,'W','y',[0,.07,0]));a(CY(.025,.025,.04,'K','y',[0,.16,0]));a(BX(.1,.025,.025,'K',[.02,.19,0]));a(BX(.06,.06,.002,'O',[0,.07,.046]));break;
+  case'organizer':a(BX(.37,.05,.29,'O',[0,.025,0]));a(BX(.37,.015,.29,'T',[0,.058,0]));for(let i=1;i<4;i++)a(BX(.004,.045,.27,'O',[-.185+i*.0925,.03,0]));a(BX(.1,.02,.03,'K',[0,.07,.15]));break;
+  case'bag':a(BX(.26,.36,.14,'K',[-.12,.18,-.05]));a(BX(.24,.08,.02,'Y',[-.12,.22,.03]));a(BX(.3,.2,.18,'D',[.12,.1,.05]));a(BX(.3,.03,.185,'Y',[.12,.16,.05]));a(BX(.14,.03,.03,'K',[.12,.23,.05]));break;
+  case'saw':a(BX(.32,.02,.1,'C',[0,.01,0]));a(BX(.32,.08,.012,'C',[0,.05,.045]));a(BX(.32,.08,.012,'C',[0,.05,-.045]));a(BX(.33,.07,.002,'M',[.03,.09,0]));a(BX(.07,.08,.025,'K',[-.17,.1,0]));break;
+  case'boltcutter':a(BX(.34,.025,.025,'C',[-.08,.02,.03],[0,.08,0]));a(BX(.34,.025,.025,'C',[-.08,.02,-.03],[0,-.08,0]));a(BX(.1,.03,.05,'M',[.17,.02,0]));a(BX(.12,.03,.03,'K',[-.2,.02,.04],[0,.08,0]));a(BX(.12,.03,.03,'K',[-.2,.02,-.04],[0,-.08,0]));break;
+  case'pipewrench':a(BX(.17,.02,.03,'C',[-.02,.01,0]));a(BX(.05,.03,.035,'M',[.09,.015,0]));a(BX(.06,.022,.03,'K',[-.09,.011,0]));break;
+  case'spool':a(CY(.1,.1,.05,'W','z',[0,.1,0],[0,0,0],24));a(CY(.03,.03,.052,'K','z',[0,.1,0]));break;
+  case'electrode':a(CY(.018,.018,.14,'K','x',[-.04,.02,0]));a(BX(.08,.012,.03,'O',[.07,.03,0],[0,0,.15]));a(BX(.08,.012,.03,'O',[.07,.012,0]));break;
+  case'magsq':for(let i=0;i<3;i++)a(CY(.06,.06,.012,'O','z',[-.07+i*.07,.06,0],[0,0,0],3));break;
+  case'helmetb':a(SP(.12,'U',[0,0,0],[1,.85,1.2],true));a(CY(.13,.13,.006,'U','y',[0,.003,.03],[0,0,0],24));a(BX(.02,.06,.24,'U',[0,.08,0]));break;
+  case'wash':a(BX(.3,.42,.26,'C',[0,.29,0]));a(BX(.32,.08,.3,'K',[0,.04,0]));a(CY(.07,.07,.03,'K','x',[.17,.07,-.08]));a(CY(.07,.07,.03,'K','x',[-.17,.07,-.08]));
+    a(CY(.09,.09,.06,'K','z',[0,.38,.16]));a(CY(.012,.012,.3,'D','y',[.12,.6,-.1]));a(CY(.012,.012,.3,'D','y',[-.12,.6,-.1]));a(CY(.012,.012,.26,'D','x',[0,.75,-.1]));a(BX(.05,.2,.04,'C',[.18,.35,.05]));break;
+  default:return null;}
+  return A;}
+function flatParts(k){const A=[],a=x=>A.push(x);
+  switch(k){
+  case'pliers':a(BX(.018,.12,.012,'C',[-.015,-.04,0],[0,0,.1]));a(BX(.018,.12,.012,'C',[.015,-.04,0],[0,0,-.1]));a(BX(.013,.06,.01,'M',[-.006,.055,0],[0,0,-.06]));a(BX(.013,.06,.01,'M',[.006,.055,0],[0,0,.06]));a(CY(.01,.01,.016,'M','z',[0,.025,0]));break;
+  case'screw':a(CY(.016,.014,.09,'C','y',[0,-.06,0]));a(CY(.017,.017,.02,'D','y',[0,-.1,0]));a(CY(.0035,.0035,.12,'M','y',[0,.045,0]));a(BX(.008,.012,.002,'M',[0,.108,0]));break;
+  case'wrench':a(BX(.013,.15,.004,'M',[0,0,0]));a(TO(.014,.005,'M',[0,.085,0]));a(TO(.012,.005,'M',[0,-.085,0]));break;
+  case'adj':a(BX(.02,.15,.008,'M',[0,-.02,0]));a(BX(.024,.08,.012,'C',[0,-.06,0]));a(BX(.045,.035,.01,'M',[0,.07,0]));a(BX(.014,.022,.012,'K',[.006,.09,0]));a(CY(.006,.006,.012,'Y','z',[0,.045,0]));break;
+  case'hammer':a(BX(.022,.24,.018,'D',[0,-.02,0]));a(BX(.025,.1,.021,'C',[0,-.09,0]));a(BX(.11,.028,.026,'M',[0,.11,0]));a(BX(.035,.02,.022,'M',[-.07,.1,0],[0,0,.4]));break;
+  case'knife':a(BX(.026,.12,.014,'C',[0,0,0]));a(BX(.018,.025,.003,'M',[0,.072,0]));a(BX(.01,.03,.016,'K',[0,.02,0]));break;
+  case'tape':a(CY(.035,.035,.032,'C','z',[0,0,0],[0,0,0],24));a(CY(.025,.025,.034,'D','z',[0,0,0]));a(BX(.02,.022,.03,'Y',[.035,-.022,0]));a(BX(.004,.014,.03,'M',[.047,-.022,0]));break;
+  case'level':a(BX(.032,.2,.016,'C',[0,0,0]));a(BX(.016,.035,.018,'G',[0,0,0]));a(BX(.034,.012,.018,'K',[0,.094,0]));a(BX(.034,.012,.018,'K',[0,-.094,0]));break;
+  case'square':a(BX(.016,.24,.004,'M',[0,0,0]));a(BX(.11,.016,.006,'K',[.047,-.112,0]));break;
+  case'allen':for(let i=0;i<5;i++){const l=.05+i*.012,t=.004+i*.0008;a(BX(t,l,t,'K',[-.03+i*.015,-l/2+.04,0]));a(BX(.02,t,t,'K',[-.03+i*.015+.009,.04,0]));}break;
+  case'bits':for(let i=0;i<6;i++){const l=.05+i*.014,r=.002+i*.0007;a(CY(r,r,l,'M','y',[-.045+i*.018,-.03+l/2,0],[0,0,0],8));a(CY(r*.6,r,.006,'M','y',[-.045+i*.018,-.03+l+.003,0],[0,0,0],8));}a(BX(.12,.014,.014,'K',[0,-.035,0]));break;
+  case'sds':a(CY(.005,.005,.17,'M','y',[0,.02,0],[0,0,0],8));a(CY(.006,.006,.05,'M','y',[0,-.085,0],[0,0,0],8));a(CY(.001,.007,.015,'M','y',[0,.112,0],[0,0,0],8));break;
+  case'sockets':for(let i=0;i<4;i++)a(CY(.011+i*.002,.011+i*.002,.035,'M','y',[0,.06-i*.042,0],[0,0,0],6));break;
+  case'disc':a(CY(.058,.058,.003,'K','z',[0,0,0],[0,0,0],32));a(CY(.03,.03,.0036,'C','z',[0,0,0],[0,0,0],24));a(CY(.011,.011,.004,'M','z',[0,0,0]));break;
+  case'flap':a(CY(.058,.058,.008,'B','z',[0,0,0],[0,0,0],32));a(CY(.026,.026,.009,'K','z',[0,0,0]));break;
+  case'diamond':a(CY(.058,.058,.003,'M','z',[0,0,0],[0,0,0],32));a(TO(.055,.004,'K',[0,0,0]));a(CY(.011,.011,.004,'K','z',[0,0,0]));break;
+  case'blade':a(CY(.1,.1,.002,'M','z',[0,0,0],[0,0,0],24));a(CY(.05,.05,.0025,'C','z',[0,0,0],[0,0,0],24));a(CY(.012,.012,.003,'K','z',[0,0,0]));break;
+  case'holesaw':[[.028,-.045],[.022,-.003],[.017,.034],[.013,.062]].forEach(([r,y])=>a(CY(r,r,.022,'M','z',[0,y,0],[0,0,0],20)));break;
+  case'brush':a(CY(.035,.03,.03,'M','z',[0,0,0],[0,0,0],24));a(CY(.015,.015,.035,'K','z',[0,0,0]));break;
+  case'sheets':for(let i=0;i<4;i++)a(BX(.1,.15,.002,'B',[i*.003,-i*.003,i*.002]));break;
+  case'blades':for(let i=0;i<5;i++)a(BX(.008,.08+i*.01,.002,'M',[-.03+i*.015,0,0]));break;
+  case'carbons':a(BX(.012,.02,.008,'K',[-.012,0,0]));a(BX(.012,.02,.008,'K',[.012,0,0]));a(CY(.001,.001,.03,'M','y',[-.012,.025,0]));a(CY(.001,.001,.03,'M','y',[.012,.025,0]));break;
+  case'rolls':a(TO(.022,.011,'K',[0,.028,0]));a(TO(.022,.011,'K',[0,-.03,0]));break;
+  case'glove':a(BX(.07,.08,.012,'Y',[0,-.03,0]));for(let i=0;i<4;i++)a(BX(.014,i===1||i===2?.06:.05,.012,'Y',[-.026+i*.0175,.04,0]));a(BX(.014,.04,.012,'Y',[.046,-.012,0],[0,0,-.6]));a(BX(.074,.02,.014,'D',[0,-.075,0]));break;
+  case'glasses':a(CY(.022,.022,.004,'G','z',[-.026,0,0],[0,0,0],20));a(CY(.022,.022,.004,'G','z',[.026,0,0],[0,0,0],20));a(BX(.012,.004,.004,'K',[0,.012,0]));a(BX(.004,.08,.004,'K',[-.05,-.03,0]));a(BX(.004,.08,.004,'K',[.05,-.03,0]));break;
+  case'mask':a(SP(.045,'W',[0,0,0],[1,1,.6],true));a(CY(.009,.009,.004,'Y','z',[0,-.005,.027]));break;
+  case'plugs':a(CY(.006,.009,.022,'Y','y',[-.012,0,0]));a(CY(.006,.009,.022,'Y','y',[.012,0,0]));a(TO(.025,.0015,'Y',[0,-.025,0]));break;
+  case'pens':for(let i=0;i<4;i++)a(BX(.008,.14,.005,'Y',[-.015+i*.01,0,0]));break;
+  case'solder':a(CY(.012,.012,.09,'C','y',[0,-.05,0]));a(CY(.004,.002,.1,'M','y',[0,.045,0]));break;
+  case'chuckkey':a(CY(.006,.006,.1,'K','x',[0,.06,0]));a(CY(.005,.005,.1,'K','y',[0,.01,0]));a(CY(.015,.015,.02,'K','y',[0,-.05,0],[0,0,0],12));break;
+  case'wrenchset':for(let i=0;i<6;i++){const l=.12+i*.012;a(BX(.009,l,.003,'M',[-.05+i*.02,0,0]));a(TO(.009+i*.0008,.003,'M',[-.05+i*.02,l/2,0]));}break;
+  case'stubby':[-.025,.025].forEach(x=>{a(CY(.017,.015,.05,'C','y',[x,-.015,0]));a(CY(.018,.018,.012,'D','y',[x,-.04,0]));a(CY(.0035,.0035,.04,'M','y',[x,.03,0]));});break;
+  case'screwset':case'screwsetr':for(let i=0;i<6;i++){const l=.06+(i%3)*.02;a(CY(.012,.011,.07,k==='screwsetr'?'R':'C','y',[-.06+i*.024,-.04,0]));a(CY(.003,.003,l,'M','y',[-.06+i*.024,l/2-.005,0]));}break;
+  case'mallet':case'malletw':a(BX(.02,.2,.018,'C',[0,-.04,0]));a(BX(.022,.08,.02,'K',[0,-.1,0]));a(CY(.03,.03,.08,k==='malletw'?'W':'K','x',[0,.08,0]));break;
+  case'ballpein':a(BX(.022,.22,.018,'C',[0,-.03,0]));a(BX(.024,.09,.02,'K',[0,-.1,0]));a(CY(.02,.02,.08,'M','x',[0,.09,0]));a(SP(.02,'M',[-.045,.09,0]));break;
+  case'clamp':a(BX(.018,.12,.012,'K',[-.02,-.02,0],[0,0,.25]));a(BX(.018,.12,.012,'K',[.02,-.02,0],[0,0,-.25]));a(BX(.02,.02,.014,'O',[0,.06,0]));break;
+  case'glasscutter':a(CY(.007,.007,.14,'K','y',[0,-.02,0]));a(CY(.008,.008,.03,'Y','y',[0,.06,0]));a(BX(.012,.02,.004,'M',[0,.085,0]));break;
+  case'extractor':for(let i=0;i<6;i++){const r=.003+i*.0015,l=.05+i*.008;a(CY(r*.4,r,l,'M','y',[-.05+i*.02,.01,0],[0,0,0],8));}break;
+  case'countersink':for(let i=0;i<3;i++){a(CY(.003,.008+i*.003,.018,'M','y',[-.035+i*.035,.03,0],[0,0,0],8));a(CY(.003,.003,.04,'M','y',[-.035+i*.035,0,0],[0,0,0],6));}break;
+  case'pads':[['O',.03],['W',.0],['A',-.03]].forEach(([m,y],i)=>a(CY(.05,.05,.012,m,'z',[(i-1)*.025,y,i*.004],[0,0,0],24)));break;
+  case'holesaw1':a(CY(.035,.035,.04,'O','z',[0,0,0],[0,0,0],24));a(CY(.008,.008,.06,'M','z',[0,0,-.01]));break;
+  case'forstner':a(CY(.018,.018,.01,'M','y',[0,.04,0],[0,0,0],16));a(CY(.004,.004,.08,'M','y',[0,-.005,0],[0,0,0],6));break;
+  case'stepdrill':for(let i=0;i<5;i++){for(let j=0;j<4;j++)a(CY(.004+j*.002+i*.0007,.005+j*.002+i*.0007,.012,'Gd','y',[-.06+i*.03,.04-j*.012,0],[0,0,0],10));a(CY(.003,.003,.04,'M','y',[-.06+i*.03,-.03,0],[0,0,0],6));}break;
+  case'wideputty':a(BX(.28,.06,.002,'M',[0,-.02,0]));a(BX(.1,.02,.01,'C',[0,.015,0]));a(BX(.03,.06,.02,'K',[0,.05,0]));break;
+  case'putty':a(BX(.11,.09,.002,'M',[0,.04,0]));a(BX(.03,.02,.01,'C',[0,-.01,0]));a(BX(.024,.1,.02,'K',[0,-.07,0]));break;
+  case'trowel':a(CY(.07,.07,.002,'M','z',[0,.04,0],[0,0,Math.PI],3));a(BX(.006,.04,.006,'M',[0,-.04,.01]));a(BX(.022,.09,.022,'K',[0,-.1,.015]));a(BX(.024,.025,.024,'C',[0,-.06,.015]));break;
+  case'gtrowel':a(SP(.04,'K',[0,.04,0],[1,1.4,.2],true));a(BX(.008,.04,.006,'M',[0,-.02,0]));a(BX(.022,.09,.02,'C',[0,-.08,0]));break;
+  case'chisel':a(CY(.009,.009,.18,'K','y',[0,.03,0],[0,0,0],8));a(CY(.001,.009,.03,'K','y',[0,.135,0],[0,0,0],8));a(CY(.016,.016,.07,'O','y',[0,-.07,0]));a(CY(.03,.03,.006,'O','y',[0,-.03,0]));break;
+  case'glassesd':a(CY(.022,.022,.004,'K','z',[-.026,0,0],[0,0,0],20));a(CY(.022,.022,.004,'K','z',[.026,0,0],[0,0,0],20));a(BX(.1,.006,.005,'K',[0,.02,0]));a(BX(.004,.08,.004,'K',[-.05,-.03,0]));a(BX(.004,.08,.004,'K',[.05,-.03,0]));break;
+  case'padlock':a(BX(.06,.055,.025,'Gd',[0,-.02,0]));a(TO(.022,.005,'M',[0,.015,0],[0,0,0]));break;
+  case'spools':for(let i=0;i<4;i++){a(CY(.035,.035,.012,'R','z',[0,.06-i*.04,0],[0,0,0],20));a(CY(.01,.01,.014,'K','z',[0,.06-i*.04,0]));}break;
+  case'bits2':[-.015,.015].forEach(x=>{a(CY(.004,.004,.05,'M','y',[x,0,0],[0,0,0],6));a(CY(.006,.006,.02,'K','y',[x,-.02,0],[0,0,0],6));});break;
+  default:a(BX(.05,.08,.02,'K',[0,0,0]));}
+  return A;}
+function bboxOf(parts){const b=new THREE.Box3();parts.forEach(q=>{q.g.computeBoundingBox();b.union(q.g.boundingBox);});return b;}
+function fitInto(parts,W,H,D){const b=bboxOf(parts),sz=b.getSize(new V3()),c=b.getCenter(new V3()),k=Math.min(W/sz.x,H/sz.y,D/sz.z);
+  parts.forEach(q=>{q.g.translate(-c.x,-c.y,-c.z);q.g.scale(k,k,k);});return sz.multiplyScalar(k);}
+const mdlCache={};
+function modelFor(p){
+  const key=p.cat+'|'+p.it.join('|');if(key in mdlCache)return mdlCache[key];
+  let parts;
+  if(p.t==='p'){
+    const{w,h,d}=p;parts=flatParts((p.code&&FLATCODE[p.code])||flatKind(p.n));const sz=fitInto(parts,w*.8,h*.42,Math.max(.006,Math.min(d-.008,.04)));
+    parts.forEach(q=>q.g.translate(0,h*.03,d/2-.003-sz.z/2));
+    parts.push({g:new THREE.BoxGeometry(w,h,.003).translate(0,0,-d/2+.0015),m:'W'},{g:new THREE.PlaneGeometry(w,h).translate(0,0,-d/2+.0032),m:'F'},
+      );
+  }else{
+    const k=(p.code&&CODEKIND[p.code])||toolKind(p.n);if(!k)return mdlCache[key]=null;parts=toolParts(k);if(!parts)return mdlCache[key]=null;
+    const sz=fitInto(parts,p.w*.96,p.h*.96,p.d*.96);parts.forEach(q=>q.g.translate(0,-p.h/2+sz.y/2,p.d/2-sz.z/2-.004));
+  }
+  // colores por vértice: 1 material para todo el modelo (pocas llamadas de dibujo)
+  const cc=new THREE.Color();
+  parts.forEach(q=>{const n=q.g.attributes.position.count,arr=new Float32Array(n*3);cc.set(q.m==='C'?INGCO:VCOL[q.m]||'#ffffff');cc.convertSRGBToLinear();
+    for(let i=0;i<n;i++){arr[i*3]=cc.r;arr[i*3+1]=cc.g;arr[i*3+2]=cc.b;}q.g.setAttribute('color',new THREE.BufferAttribute(arr,3));});
+  const vparts=parts.filter(q=>q.m!=='F'),fparts=parts.filter(q=>q.m==='F');
+  const list=[mergeGeometries(vparts.map(q=>q.g))];if(fparts.length)list.push(mergeGeometries(fparts.map(q=>q.g)));
+  const geo=mergeGeometries(list,true);
+  const mats=[VCMAT];if(fparts.length)mats.push(new THREE.MeshStandardMaterial({map:itemTex(p.cat,p.it),roughness:.4}));
+  return mdlCache[key]={geo,mats};
+}
+
+function machineParts(k){const A=[],a=x=>A.push(x);
+  const frame=(W,D,H)=>{[-1,1].forEach(i=>[-1,1].forEach(j=>a(CY(.013,.013,H-.04,'K','y',[i*W/2,H/2,j*D/2]))));
+    [-1,1].forEach(j=>{a(CY(.013,.013,W,'K','x',[0,H-.03,j*D/2]));a(CY(.013,.013,W,'K','x',[0,.03,j*D/2]));});[-1,1].forEach(i=>{a(CY(.013,.013,D,'K','z',[i*W/2,H-.03,0]));a(CY(.013,.013,D,'K','z',[i*W/2,.03,0]));});};
+  switch(k){
+  case'gen':case'genw':frame(.62,.44,.55);a(BX(.42,.12,.34,'C',[.04,.44,0]));a(CY(.03,.03,.02,'K','y',[.14,.51,0]));a(BX(.25,.24,.28,'D',[-.15,.18,0]));a(CY(.09,.09,.04,'C','x',[-.29,.2,0]));
+    a(CY(.12,.12,.22,'C','x',[.16,.18,0]));a(CY(.1,.1,.03,'K','x',[.28,.18,0]));a(BX(.2,.12,.015,'K',[.14,.3,.2]));a(BX(.03,.03,.006,'W',[.09,.3,.21]));a(BX(.03,.03,.006,'W',[.18,.3,.21]));
+    if(k==='genw'){a(CY(.08,.08,.05,'K','z',[.26,.08,.25]));a(CY(.08,.08,.05,'K','z',[.26,.08,-.25]));a(CY(.012,.012,.14,'K','x',[-.38,.45,.18]));a(CY(.012,.012,.14,'K','x',[-.38,.45,-.18]));a(BX(.12,.06,.1,'K',[-.05,.08,-.12]));}break;
+  case'gen2t':a(BX(.38,.25,.28,'C',[0,.16,0]));a(BX(.38,.04,.28,'K',[0,.02,0]));a(BX(.03,.12,.03,'K',[.14,.33,0]));a(BX(.03,.12,.03,'K',[-.14,.33,0]));a(BX(.31,.03,.04,'K',[0,.39,0]));
+    a(BX(.18,.1,.01,'K',[.05,.16,.141]));a(CY(.05,.05,.03,'K','x',[-.2,.15,0]));break;
+  case'inv':a(BX(.48,.34,.27,'C',[0,.21,0]));a(BX(.5,.06,.29,'Br',[0,.03,0]));a(BX(.02,.36,.29,'Br',[.25,.2,0]));a(BX(.02,.36,.29,'Br',[-.25,.2,0]));a(BX(.34,.04,.07,'Br',[0,.42,0]));
+    a(BX(.04,.06,.07,'Br',[.15,.39,0]));a(BX(.04,.06,.07,'Br',[-.15,.39,0]));a(BX(.16,.14,.01,'K',[.1,.2,.136]));a(BX(.03,.03,.006,'W',[.07,.18,.142]));a(BX(.03,.03,.006,'W',[.13,.18,.142]));break;
+  case'genweld':frame(.84,.56,.64);a(BX(.34,.32,.36,'K',[-.18,.22,0]));a(CY(.15,.15,.3,'C','x',[.2,.24,0]));a(BX(.5,.12,.4,'C',[0,.54,0]));a(BX(.3,.2,.015,'K',[.2,.38,.27]));
+    [.12,.2,.28].forEach(x=>a(CY(.02,.02,.01,'R','z',[x,.4,.28])));a(CY(.1,.1,.06,'K','z',[.3,.1,.32]));a(CY(.1,.1,.06,'K','z',[.3,.1,-.32]));a(CY(.012,.012,.16,'Y','x',[-.5,.5,.2]));a(CY(.012,.012,.16,'Y','x',[-.5,.5,-.2]));break;
+  case'silent':a(BX(.95,.6,.55,'C',[0,.37,0]));a(BX(.97,.07,.57,'K',[0,.035,0]));a(BX(.26,.22,.015,'K',[.3,.47,.283]));a(BX(.005,.45,.01,'K',[0,.37,.28]));
+    for(let i=0;i<4;i++)a(BX(.22,.012,.01,'K',[-.25,.3+i*.05,.28]));a(CY(.02,.02,.08,'M','y',[-.35,.71,0]));a(TO(.03,.008,'K',[0,.69,0]));[[.03,.15],[.1,.15]].forEach(([y,x])=>{});
+    [[.2,.5],[.3,.5],[.4,.5]].forEach(([x,y])=>a(BX(.04,.04,.006,'W',[x,y,.29])));break;
+  case'compv':{const L=.6,r=.17;a(CY(r,r,L,'C','x',[0,.22,0],[0,0,0],24));a(SP(r,'C',[L/2,.22,0],[.35,1,1]));a(SP(r,'C',[-L/2,.22,0],[.35,1,1]));
+    a(BX(.04,.06,.04,'K',[L/2-.06,.03,.1]));a(BX(.04,.06,.04,'K',[L/2-.06,.03,-.1]));a(CY(.07,.07,.04,'K','z',[-L/2+.08,.07,.15]));a(CY(.07,.07,.04,'K','z',[-L/2+.08,.07,-.15]));
+    a(BX(.3,.2,.2,'K',[-.05,.48,0]));a(CY(.07,.07,.12,'M','x',[-.25,.45,0]));a(BX(.07,.08,.06,'K',[.17,.45,0]));a(CY(.025,.025,.01,'W','z',[.17,.42,.035]));
+    a(CY(.015,.015,.25,'C','y',[L/2-.02,.5,0]));a(CY(.015,.015,.12,'C','z',[L/2-.02,.63,0]));break;}
+  case'compb':{const L=1.0,r=.2;a(CY(r,r,L,'C','x',[0,.27,0],[0,0,0],24));a(SP(r,'C',[L/2,.27,0],[.35,1,1]));a(SP(r,'C',[-L/2,.27,0],[.35,1,1]));
+    [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([i,j])=>a(CY(.065,.065,.04,'K','z',[i*(L/2-.12),.065,j*.19])));
+    a(BX(.22,.14,.16,'M',[.08,.54,0]));a(CY(.055,.055,.12,'M','y',[.03,.67,0]));a(CY(.055,.055,.12,'M','y',[.13,.67,0]));a(CY(.065,.065,.02,'K','y',[.03,.74,0]));a(CY(.065,.065,.02,'K','y',[.13,.74,0]));
+    a(CY(.1,.1,.24,'K','x',[-.26,.56,0]));a(BX(.42,.1,.04,'C',[-.08,.58,.15]));a(BX(.07,.08,.06,'K',[.32,.52,0]));a(CY(.025,.025,.01,'W','z',[.32,.5,.035]));
+    a(CY(.015,.015,.3,'C','x',[L/2+.12,.55,.15]));a(CY(.015,.015,.3,'C','x',[L/2+.12,.55,-.15]));a(CY(.015,.015,.3,'C','z',[L/2+.27,.55,0]));break;}
+  case'compc':a(CY(.09,.09,.42,'C','x',[0,.1,.075],[0,0,0],20));a(CY(.09,.09,.42,'C','x',[0,.1,-.075],[0,0,0],20));a(BX(.32,.14,.22,'Br',[0,.25,0]));
+    a(CY(.025,.025,.01,'W','z',[-.06,.25,.111]));a(CY(.025,.025,.01,'W','z',[.02,.25,.111]));a(CY(.012,.012,.3,'C','x',[0,.42,0]));a(CY(.012,.012,.12,'C','y',[.15,.36,0]));a(CY(.012,.012,.12,'C','y',[-.15,.36,0]));
+    a(BX(.08,.05,.08,'K',[.2,.3,0]));a(CY(.02,.02,.03,'R','z',[.1,.25,.12]));break;
+  case'washg':[-1,1].forEach(i=>a(CY(.014,.014,.95,'K','y',[i*.2,.5,-.18],[-.1,0,0])));a(CY(.014,.014,.4,'K','x',[0,.96,-.22]));a(BX(.44,.03,.4,'K',[0,.1,0]));
+    a(BX(.3,.25,.26,'D',[0,.3,.03]));a(CY(.1,.1,.16,'C','x',[0,.5,.03]));a(BX(.18,.1,.16,'C',[0,.62,.03]));a(BX(.14,.1,.12,'M',[0,.2,-.1]));
+    [-1,1].forEach(i=>a(CY(.09,.09,.05,'K','x',[i*.24,.09,-.18])));a(BX(.3,.16,.02,'C',[0,.8,-.2]));break;
+  case'miter':a(BX(.5,.04,.42,'D',[0,.02,0]));a(CY(.15,.15,.03,'M','y',[0,.05,.02],[0,0,0],32));a(BX(.45,.04,.06,'M',[0,.1,-.12]));a(BX(.08,.06,.12,'C',[0,.07,.22]));
+    a(BX(.06,.18,.06,'D',[0,.16,-.17]));a(CY(.13,.13,.06,'C','x',[0,.3,-.02],[0,0,0],28));a(CY(.12,.12,.004,'M','x',[-.04,.3,-.02],[0,0,0],28));a(CY(.05,.05,.14,'D','x',[.1,.32,-.04]));
+    a(BX(.04,.04,.2,'K',[0,.42,.06],[-.4,0,0]));a(BX(.6,.012,.05,'K',[0,.11,-.16]));break;
+  case'tablesaw':[[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([i,j])=>a(BX(.03,.62,.03,'M',[i*.26,.31,j*.22],[j*.08,0,-i*.08])));a(BX(.6,.18,.5,'C',[0,.7,0]));a(BX(.66,.02,.56,'M',[0,.8,0]));
+    a(CY(.1,.1,.003,'M','x',[0,.83,0],[0,0,0],28));a(BX(.02,.06,.12,'C',[0,.85,-.05]));a(BX(.03,.04,.5,'K',[.22,.83,0]));a(BX(.08,.06,.04,'K',[0,.68,.27]));break;
+  default:a(BX(.5,.5,.4,'C',[0,.25,0]));}
+  return A;}
+function machineMesh(k,sc){
+  const parts=k==='wash'?toolParts('wash'):machineParts(k),cc=new THREE.Color();
+  parts.forEach(q=>{const n=q.g.attributes.position.count,arr=new Float32Array(n*3);cc.set(q.m==='C'?INGCO:VCOL[q.m]||'#ffffff');cc.convertSRGBToLinear();for(let i=0;i<n;i++){arr[i*3]=cc.r;arr[i*3+1]=cc.g;arr[i*3+2]=cc.b;}q.g.setAttribute('color',new THREE.BufferAttribute(arr,3));});
+  const m=new THREE.Mesh(mergeGeometries(parts.map(q=>q.g)),VCMAT);m.scale.setScalar(sc);m.castShadow=true;m.receiveShadow=true;return m;
+}
+const MFOOT=[];
+
+/* =================== DISTRIBUCIÓN (planograma) =================== */
+let PRODS=[];
+function slotsFor(f){
+  const F=f.F;
+  if(f.kind==='peg'){
+    const hooks=f.H>2?[2.06,1.76,1.46,1.16,.86]:[1.66,1.36,1.06,.76];
+    return [{y:.12,clear:hooks[hooks.length-1]-.3-.14,peg:false},...hooks.map(y=>({y,clear:.27,peg:true}))];
+  }
+  return f.levels.map((y,i)=>{const nx=f.levels[i+1];return{y,clear:(nx!==undefined?nx-y-.035:f.H-y-.02)-.01,peg:false};});
+}
+function initFixture(f){
+  f.F=faceOf(f);
+  if(!['shelf','peg','table','vitrine','rack'].includes(f.kind))return;
+  const cat=CATALOG[f.cat],sl=f.slots=slotsFor(f);sl.forEach(s=>s.items=[]);
+  // Visual merchandising: ojos (1.1-1.6 m) = mayor valor/destacados; manos (0.6-1.1) = complemento; piso = voluminoso; arriba = liviano/accesorio
+  const zoneOf=s=>{const yc=s.peg?s.y-.15:s.y+Math.min(.2,s.clear/2);return yc<.55?0:yc<1.1?1:yc<1.65?2:3;};
+  const prices=cat.map(it=>it[6]).sort((a,b)=>a-b),pq=v=>prices.length>1?prices.indexOf(v)/(prices.length-1):1;
+  const target=it=>{const vol=it[3]*it[4]*it[5];if(it[0]!=='p'&&(vol>.02||it[4]>.33))return 0;const q=pq(it[6]);if(it[0]==='k'||q>=.6)return 2;return q<.25?3:1;};
+  const used=s=>s.items.reduce((q,p)=>q+p.w,0)+s.items.length*GP;
+  const items=cat.map(it=>it).sort((a,b)=>(b[3]*b[4]*b[5])-(a[3]*a[4]*a[5]));
+  items.forEach((it,idx)=>{
+    const want=it[0]==='p';
+    const cands=sl.filter(s=>s.peg===want&&it[4]<=s.clear&&it[5]<=(s.peg?.25:f.F.D-.02));
+    if(!cands.length)return;
+    const tz=target(it),sc=s=>Math.abs(zoneOf(s)-tz)*1.0+(used(s)+it[3])/f.F.L*1.6+((used(s)+it[3]+2*MG)>f.F.L?5:0);
+    const s=cands.reduce((a,b)=>sc(a)<=sc(b)?a:b);
+    const p={id:f.id+'-'+idx,fx:f.id,cat:f.cat,it,t:it[0],n:it[1],sub:it[2],w:it[3],h:it[4],d:it[5],pr:it[6],code:it[7]||null,slot:sl.indexOf(s)};
+    p.fd=s.peg?Math.min(6,Math.max(1,Math.floor(.22/(p.d+.004)))):Math.max(1,Math.floor((f.F.D-.03)/(p.d+.005)));
+    p.st=s.peg?1:Math.max(1,Math.min(p.t==='b'?3:2,Math.floor((s.clear+.003)/(p.h+.003))));
+    p.vm=['Piso · voluminoso','Altura de manos · complemento','Altura de ojos · destacado','Parte alta · accesorio'][zoneOf(s)];
+    s.items.push(p);PRODS.push(p);
+  });
+  // orden horizontal: del más económico (izquierda) al de mayor valor (derecha), siguiendo la lectura del cliente
+  sl.forEach(s=>s.items.sort((a,b)=>a.pr-b.pr));
+  sl.forEach(s=>{const n=s.items.length;if(!n)return;const share=(f.F.L-2*MG-(n-1)*GP)/n;
+    s.items.forEach(p=>{p.f=Math.max(1,Math.min(s.peg?12:10,Math.floor((share+GF)/(p.w+GF))));});
+    // que nada se pase del largo del mueble
+    let guard=0;while(slotUsed(s)>f.F.L&&guard++<200){const big=s.items.filter(p=>p.f>1).sort((a,b)=>lin(b)-lin(a))[0];
+      if(big)big.f--;else{const drop=s.items.pop();PRODS.splice(PRODS.indexOf(drop),1);}}
+    // si sobra espacio, repartirlo
+    let added=true;while(added){added=false;for(const p of [...s.items].sort((a,b)=>a.w-b.w)){if(p.f<(s.peg?12:10)&&slotUsed(s)+p.w+GF<=f.F.L){p.f++;added=true;}}}
+  });
+}
+const lin=p=>p.f*p.w+(p.f-1)*GF;
+const units=p=>p.f*p.fd*p.st;
+const slotUsed=s=>s.items.reduce((a,p)=>a+lin(p),0)+Math.max(0,s.items.length-1)*GP+2*MG;
+const fxProds=f=>PRODS.filter(p=>p.fx===f.id);
+
+/* estructura instanciada */
+const unitGeo=new THREE.BoxGeometry(1,1,1),structMat=new THREE.MeshStandardMaterial({color:'#fff',roughness:.55,metalness:.12});
+let SB;
+function sbox(f,a,b,y,su,sy,sn,col){SB.push({p:wp(f.F,a,b,y),th:f.F.th,s:[su,sy,sn],col,fid:f.id});}
+const lighten=(c,k)=>'#'+new THREE.Color(c).lerp(new THREE.Color('#fff'),k).getHexString();
+function buildStructure(f){
+  const F=f.F,{L:Ln,D}=F,H=f.H,col=f.cat?CAT[f.cat][1]:'#888';
+  if(f.kind==='shelf'||f.kind==='peg'){
+    sbox(f,-Ln/2+.015,D/2,H/2,.03,H,D,'#3a414b');sbox(f,Ln/2-.015,D/2,H/2,.03,H,D,'#3a414b');
+    sbox(f,0,D-.008,H/2+.05,Ln-.03,H-.1,.015,f.kind==='peg'?'#c3c8ce':'#e3e6ea');
+    sbox(f,0,D/2,.06,Ln-.03,.12,D-.01,'#4a525d');
+    sbox(f,0,D/2,H+.01,Ln,.02,D,'#3a414b');
+    f.slots.forEach((s,i)=>{if(s.peg)return;if(i>0)sbox(f,0,(D-.02)/2,s.y-.012,Ln-.04,.024,D-.02,'#f3f4f6');sbox(f,0,-.006,s.y-.02,Ln-.04,.04,.012,lighten(col,.25));});
+  }else if(f.kind==='table'){
+    const y=f.levels[0];sbox(f,0,D/2,y-.025,Ln,.05,D,'#c9a77a');
+    [[-1,1],[1,1],[-1,-1],[1,-1]].forEach(([i,j])=>sbox(f,i*(Ln/2-.05),D/2+j*(D/2-.05),(y-.05)/2,.05,y-.05,.05,'#3a414b'));
+    sbox(f,0,-.01,y-.04,Ln,.08,.02,col);
+  }else if(f.kind==='vitrine'){
+    sbox(f,0,D/2,.075,Ln,.15,D,'#2b3038');
+    [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([i,j])=>sbox(f,i*(Ln/2-.01),D/2+j*(D/2-.01),(H+.15)/2,.02,H-.15,.02,'#9aa3ad'));
+    sbox(f,0,D/2,H+.01,Ln,.02,D,'#9aa3ad');
+  }else if(f.kind==='rack'){
+    [-1,1].forEach(i=>[.03,D-.03].forEach(b=>sbox(f,i*(Ln/2-.03),b,H/2,.05,H,.05,'#d9822b')));
+    f.slots.forEach(s=>{sbox(f,0,.025,s.y-.04,Ln,.08,.05,'#2d5ea8');sbox(f,0,D-.025,s.y-.04,Ln,.08,.05,'#2d5ea8');sbox(f,0,D/2,s.y-.01,Ln-.06,.02,D-.05,'#b9bfc6');});
+  }else if(f.kind==='cabinet'){
+    sbox(f,0,D/2,H/2,Ln-.02,H,D-.02,'#a7afb8');sbox(f,0,-.002,H/2,.008,H-.1,.01,'#5c646e');
+    [-.05,.05].forEach(a=>sbox(f,a,-.015,H*.5,.02,.18,.02,'#2b3038'));
+    for(let a=-Ln/2+.6;a<Ln/2-.3;a+=.9){if(Math.abs(a)<.2)continue;sbox(f,a,-.002,H/2,.006,H-.1,.01,'#5c646e');}
+  }else if(f.kind==='ladders'){
+    sbox(f,0,D-.01,1.9,Ln,.04,.02,'#3a414b');sbox(f,0,D-.01,.95,Ln,.04,.02,'#3a414b');
+  }else if(f.kind==='machines'){
+    sbox(f,0,D/2,.075,Ln,.15,D,'#3a414b');sbox(f,0,-.003,.075,Ln,.15,.006,col);
+  }
+}
+function headerSign(f){
+  if(!f.cat||f.kind==='floor'||f.kind==='machines')return;
+  const F=f.F,w=Math.min(F.L-.04,2.6),h=.2;
+  const hot=/^G\dE$/.test(f.id),imp=f.cat==='impulso';
+  const tex=canvasTex(1024,Math.round(1024*h/w),(x,W,H)=>{x.fillStyle=hot?'#c62828':imp?'#8e4ec6':CAT[f.cat][1];x.fillRect(0,0,W,H);x.fillStyle='#fff';x.textAlign='center';x.textBaseline='middle';fit(x,hot?'★ DESTACADOS · '+CAT[f.cat][0].toUpperCase():CAT[f.cat][0].toUpperCase(),W/2,H/2+2,W-40,Math.min(90,H*.62),800);});
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,.02),[M.dark,M.dark,M.dark,M.dark,std('#fff',{map:tex}),M.dark]);
+  const top=f.kind==='table'?f.H+.25:f.kind==='vitrine'?f.H+.3:f.H+.13;
+  m.position.copy(wp(F,0,.03,top));m.rotation.y=F.th;m.userData.sel='f:'+f.id;m.userData.fid=f.id;m.castShadow=true;L.signs.add(m);
+}
+
+/* máquinas */
+function machine(kind,col){
+  const g=new THREE.Group(),c=std(col,{roughness:.45}),blk=M.black,gr=M.grey;
+  const add=(geo,mat,x,y,z,rx=0,rz=0)=>{const o=new THREE.Mesh(geo,mat);o.position.set(x,y,z);o.rotation.set(rx,0,rz);o.castShadow=true;o.receiveShadow=true;g.add(o);return o;};
+  const frame=(w,h,d)=>{[[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([i,j])=>add(new THREE.CylinderGeometry(.015,.015,h,8),blk,i*w/2,h/2,j*d/2));[-1,1].forEach(j=>{add(new THREE.BoxGeometry(w,.03,.03),blk,0,h,j*d/2);add(new THREE.BoxGeometry(w,.03,.03),blk,0,.02,j*d/2);});[-1,1].forEach(i=>add(new THREE.BoxGeometry(.03,.03,d),blk,i*w/2,h,0));};
+  if(kind==='gen'||kind==='gens'){const s=kind==='gen'?1:.82;frame(.6*s,.55*s,.72*s);
+    add(new THREE.BoxGeometry(.5*s,.14*s,.42*s),c,0,.5*s,-.08*s);add(new THREE.CylinderGeometry(.04*s,.04*s,.03,12),blk,.12*s,.585*s,-.08*s);
+    add(new THREE.BoxGeometry(.3*s,.28*s,.28*s),gr,-.1*s,.2*s,-.1*s);add(new THREE.CylinderGeometry(.13*s,.13*s,.26*s,18),c,.14*s,.2*s,-.05*s,0,Math.PI/2);
+    add(new THREE.BoxGeometry(.38*s,.2*s,.02),blk,0,.25*s,.36*s);[-.1,0,.1].forEach(x=>add(new THREE.BoxGeometry(.05,.05,.02),std('#c9ced4'),x*s,.25*s,.375*s));}
+  else if(kind==='comp'){add(new THREE.CylinderGeometry(.17,.17,.6,22),c,0,.24,0,Math.PI/2);[-1,1].forEach(i=>add(new THREE.SphereGeometry(.17,18,10),c,0,.24,i*.3));
+    add(new THREE.BoxGeometry(.24,.18,.26),blk,0,.5,-.05);add(new THREE.CylinderGeometry(.08,.08,.2,14),gr,0,.5,.15,Math.PI/2);
+    add(new THREE.CylinderGeometry(.04,.04,.02,14),std('#fff'),.1,.44,.2,Math.PI/2);[-1,1].forEach(i=>add(new THREE.CylinderGeometry(.07,.07,.04,16),blk,i*.16,.07,-.3,0,Math.PI/2));
+    add(new THREE.BoxGeometry(.04,.04,.12),blk,0,.08,.32);}
+  else if(kind==='wash'){add(new THREE.BoxGeometry(.34,.5,.3),c,0,.35,0);add(new THREE.BoxGeometry(.3,.1,.26),blk,0,.08,0);
+    [-1,1].forEach(i=>{add(new THREE.CylinderGeometry(.08,.08,.04,18),blk,i*.19,.08,-.08,0,Math.PI/2);add(new THREE.CylinderGeometry(.012,.012,.42,8),gr,i*.13,.81,-.12);});
+    add(new THREE.CylinderGeometry(.012,.012,.28,8),gr,0,1.02,-.12,0,Math.PI/2);add(new THREE.CylinderGeometry(.09,.09,.06,18),blk,0,.42,.18,Math.PI/2);
+    add(new THREE.BoxGeometry(.04,.3,.04),blk,.12,.55,.17);}
+  else if(kind==='weld'){add(new THREE.BoxGeometry(.4,.28,.2),c,0,.14+.06,0);add(new THREE.BoxGeometry(.38,.2,.01),blk,0,.2,.105);
+    add(new THREE.CylinderGeometry(.025,.025,.01,14),std('#fff'),-.08,.22,.112,Math.PI/2);add(new THREE.BoxGeometry(.06,.03,.012),std('#2ee07a',{emissive:'#2ee07a',emissiveIntensity:.6}),.08,.24,.112);
+    add(new THREE.BoxGeometry(.3,.03,.03),blk,0,.38,0);add(new THREE.BoxGeometry(.4,.06,.2),blk,0,.03,0);
+    add(new THREE.TorusGeometry(.08,.012,8,24),blk,-.3,.12,.05,Math.PI/2);}
+  else if(kind==='pump'){frame(.5,.42,.4);add(new THREE.BoxGeometry(.26,.22,.22),gr,-.08,.2,0);add(new THREE.BoxGeometry(.22,.1,.18),c,-.08,.36,0);
+    add(new THREE.CylinderGeometry(.11,.11,.1,20),c,.15,.18,0,0,Math.PI/2);add(new THREE.CylinderGeometry(.04,.04,.12,12),blk,.15,.33,0);add(new THREE.CylinderGeometry(.04,.04,.12,12),blk,.25,.18,0,0,Math.PI/2);}
+  return g;
+}
+function person(o={}){
+  const g=new THREE.Group(),staff=o.collar!==false;
+  const shirt=std(o.shirt||'#f07a1a',{roughness:.75}),pant=std(o.pants||'#16181c',{roughness:.8}),blk=std('#16181c',{roughness:.8}),
+    skin=std(o.skin||'#c68b62',{roughness:.7}),hair=std(o.hair||'#1e1611',{roughness:.9}),shoe=std(o.shoes||'#16181c',{roughness:.7});
+  const add=(par,geo,mat,x,y,z,rx=0,rz=0,sx=1,sz=1)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.rotation.set(rx,0,rz);m.scale.set(sx,1,sz);m.castShadow=true;par.add(m);return m;};
+  const legs=[],arms=[];
+  [-1,1].forEach(i=>{const lg=new THREE.Group();lg.position.set(i*.09,.87,0);g.add(lg);legs.push(lg);
+    add(lg,new THREE.BoxGeometry(.1,.07,.24),shoe,0,-.835,.04);add(lg,new THREE.CylinderGeometry(.065,.055,.8,12),pant,0,-.4,0);});
+  add(g,new THREE.CylinderGeometry(.165,.16,.16,16),pant,0,.88,0,0,0,1,.7);
+  add(g,new THREE.CylinderGeometry(.19,.165,.5,18),shirt,0,1.17,0,0,0,1,.68);
+  add(g,new THREE.SphereGeometry(.19,18,10,0,Math.PI*2,0,Math.PI/2),shirt,0,1.42,0,0,0,1,.68).scale.y=.55;
+  add(g,new THREE.CylinderGeometry(.165,.17,.04,16),staff?blk:std('#5a3b22'),0,.95,0,0,0,1,.7);
+  if(staff){add(g,new THREE.TorusGeometry(.07,.03,8,20),blk,0,1.53,0,Math.PI/2,0,1,.8);add(g,new THREE.BoxGeometry(.2,.035,.02),blk,0,1.5,.07);
+    add(g,new THREE.BoxGeometry(.035,.12,.01),blk,0,1.42,.128);[1.445,1.4].forEach(y=>add(g,new THREE.SphereGeometry(.007,6,4),std('#f4f4f4'),0,y,.135));
+    add(g,new THREE.BoxGeometry(.07,.04,.008),std('#ffffff'),.09,1.33,.125);}
+  [-1,1].forEach(i=>{const fwd=o.armsForward?-.5:-.08;
+    const arm=new THREE.Group();arm.position.set(i*.215,1.44,0);arm.rotation.set(fwd,0,i*.08);arm.userData.base=fwd;g.add(arm);arms.push(arm);
+    add(arm,new THREE.CylinderGeometry(.06,.055,.22,12),shirt,0,-.1,0);
+    if(staff)add(arm,new THREE.CylinderGeometry(.057,.057,.025,12),blk,0,-.21,0);
+    add(arm,new THREE.CylinderGeometry(.042,.036,.42,10),skin,0,-.43,0);add(arm,new THREE.SphereGeometry(.045,10,8),skin,0,-.66,0);
+    if(o.tablet&&i===1)add(arm,new THREE.BoxGeometry(.2,.01,.14),std('#1c1f24'),-.06,-.68,.05,.5);
+    if(o.basket&&i===1){const bk=new THREE.Group();bk.position.set(.02,-.83,0);arm.add(bk);const red=std('#d23b3b',{roughness:.5});
+      add(bk,new THREE.BoxGeometry(.34,.16,.22),red,0,-.06,0);add(bk,new THREE.BoxGeometry(.3,.01,.18),std('#9e2525'),0,.02,0);
+      const hd=add(bk,new THREE.TorusGeometry(.13,.012,6,18,Math.PI),std('#222'),0,.02,0);hd.rotation.y=Math.PI/2;g.userData.basket=bk;}});
+  add(g,new THREE.CylinderGeometry(.045,.05,.08,12),skin,0,1.55,0);
+  add(g,new THREE.SphereGeometry(.105,20,16),skin,0,1.66,0,0,0,.92,1);
+  add(g,new THREE.SphereGeometry(.112,20,12,0,Math.PI*2,0,Math.PI*.55),hair,0,1.675,-.01,-.25,0,.95,1);
+  if(o.long)add(g,new THREE.CylinderGeometry(.1,.085,.22,14),hair,0,1.55,-.06,0,0,1,.7);
+  if(o.cap){add(g,new THREE.SphereGeometry(.118,18,10,0,Math.PI*2,0,Math.PI*.5),std(o.cap),0,1.69,0);add(g,new THREE.BoxGeometry(.16,.012,.12),std(o.cap),0,1.69,.12);}
+  [-1,1].forEach(i=>add(g,new THREE.SphereGeometry(.012,6,4),blk,i*.035,1.68,.095));
+  g.userData.legs=legs;g.userData.arms=arms;return g;
+}
+const STAFFOBJ={};
+const STAFF=[
+ ['cajero1','Cajero(a) · Caja 1',12.6,2.62,-Math.PI/2,{armsForward:true,long:true,skin:'#b98058'}],
+ ['cajero2','Cajero(a) · Caja 2',12.6,1.38,-Math.PI/2,{armsForward:true,skin:'#d29a72',hair:'#2a1d14'}],
+ ['vendedor','Vendedor(a) · piso de ventas',6.4,5.62,Math.PI*0.62,{tablet:true,skin:'#a8714c'}],
+];
+function ladder(hgt,kind){
+  const g=new THREE.Group(),al=std('#c9ced4',{metalness:.6,roughness:.35}),or=std('#e46b2a');
+  const add=(geo,mat,x,y,z,rx=0)=>{const o=new THREE.Mesh(geo,mat);o.position.set(x,y,z);o.rotation.x=rx;o.castShadow=true;g.add(o);};
+  const w=kind==='ext'?.42:.46,lean=.12;
+  [-1,1].forEach(i=>add(new THREE.BoxGeometry(.05,hgt,.025),al,i*w/2,hgt/2,0,-lean));
+  const n=Math.round(hgt/.3);for(let k=1;k<=n;k++){const y=k*hgt/(n+1);add(new THREE.BoxGeometry(w,.02,.07),al,0,y,-Math.sin(lean)*(y-hgt/2));}
+  add(new THREE.BoxGeometry(w+.06,.05,.12),or,0,hgt,-Math.sin(lean)*hgt/2);
+  return g;
+}
+
+/* =================== CONSTRUCCIÓN =================== */
+const dummy=new THREE.Object3D();
+function buildAll(){
+  [L.struct,L.prod].forEach(g=>{g.children.slice().forEach(o=>{o.isInstancedMesh&&o.dispose();});g.clear();});
+  L.mezz.children.filter(o=>o.userData.dyn).forEach(o=>L.mezz.remove(o));
+  SB=[];const SBm=[];
+  FX.forEach(f=>{
+    if(ISO&&!ISO.ids.includes(f.id))return;
+    const keep=SB;if(f.base)SB=SBm;buildStructure(f);SB=keep;
+    if(f.kind==='machines'||f.kind==='ladders'||f.kind==='floor')return;
+    if(!f.slots)return;
+    const F=f.F;
+    f.slots.forEach(s=>{
+      let a=-F.L/2+MG;
+      s.items.forEach(p=>{
+        const tp=tplFor(p.cat,p.it),rfd=Math.min(p.fd,5),mdl=modelFor(p);
+        const posM=[],posB=[];
+        for(let i=0;i<p.f;i++)for(let j=0;j<rfd;j++)for(let k=0;k<p.st;k++){
+          const aa=a+p.w/2+i*(p.w+GF);let bb,yy;
+          if(s.peg){bb=F.D-.03-p.d/2-j*(p.d+.004);yy=s.y-.02-p.h/2;}
+          else{bb=.015+p.d/2+j*(p.d+.005);yy=s.y+k*(p.h+.003)+p.h/2;}
+          const v=wp(F,aa,bb,yy);
+          const front=s.peg?j===rfd-1:j===0;if(mdl&&front){if(k===0)posM.push(v);}else posB.push(v);
+        }
+        if(s.peg)for(let i=0;i<p.f;i++){const aa=a+p.w/2+i*(p.w+GF);(f.base?SBm:SB).push({p:wp(F,aa,F.D-.13,s.y),th:F.th,s:[.005,.005,.24],col:'#5c646e',fid:f.id});}
+        const mk=(geo,mat,pos,oy,grp)=>{if(!pos.length)return;const im=new THREE.InstancedMesh(geo,mat,pos.length);im.userData.sel='p:'+p.id;im.userData.grp=grp;im.castShadow=false;im.receiveShadow=true;im.frustumCulled=false;
+          pos.forEach((v,i)=>{dummy.position.set(v.x,v.y+oy,v.z);dummy.rotation.set(0,F.th,0);dummy.scale.set(1,1,1);dummy.updateMatrix();im.setMatrixAt(i,dummy.matrix);});
+          if(f.base){im.userData.dyn=1;L.mezz.add(im);}else L.prod.add(im);};
+        if(posM.length)mk(mdl.geo,mdl.mats,posM,0,'m'+p.id);
+        tp.parts.forEach(pt=>mk(pt.geo,pt.mat,posB,pt.oy,'b'+p.id));
+        // etiqueta de precio en el borde de la repisa / punta del gancho
+        if(p.pr){const tx=p._tag||(p._tag=canvasTex(160,64,(c,w,h)=>{c.fillStyle=p.offer?'#e5484d':'#ffd84d';c.fillRect(0,0,w,h);c.fillStyle=p.offer?'#fff':'#1d2430';c.textAlign='center';c.textBaseline='middle';fit(c,money(p.pr),w/2,24,w-10,30,800);c.fillStyle=p.offer?'#fff':'#4a4f57';fit(c,p.code||p.sub||'',w/2,50,w-10,16,700);}));
+          const tw=Math.min(.09,Math.max(.06,lin(p))),tg=new THREE.Mesh(new THREE.PlaneGeometry(tw,tw*.4),new THREE.MeshBasicMaterial({map:tx}));
+          tg.position.copy(s.peg?wp(F,a+p.w/2,F.D-.255,s.y-.012):wp(F,a+Math.min(lin(p),.12)/2,-.0135,s.y-.02));tg.rotation.y=F.th;tg.userData.sel='p:'+p.id;if(f.base){tg.userData.dyn=1;L.mezz.add(tg);}else L.prod.add(tg);}
+        // caja envolvente del producto
+        const a0=a,a1=a+lin(p),b0=s.peg?F.D-.03-rfd*(p.d+.004):.015,b1=s.peg?F.D-.03:.015+p.fd*(p.d+.005);
+        const y0=s.peg?s.y-.02-p.h:s.y,y1=s.peg?s.y:s.y+p.st*(p.h+.003);
+        p._bb=new THREE.Box3().setFromPoints([wp(F,a0,b0,y0),wp(F,a1,Math.min(b1,F.D),y1)]);
+        a+=lin(p)+GP;
+      });
+    });
+  });
+  const flush=(arr,parent,dyn)=>{if(!arr.length)return;const im=new THREE.InstancedMesh(unitGeo,structMat,arr.length),c=new THREE.Color();
+    arr.forEach((e,i)=>{dummy.position.copy(e.p);dummy.rotation.set(0,e.th,0);dummy.scale.set(...e.s);dummy.updateMatrix();im.setMatrixAt(i,dummy.matrix);im.setColorAt(i,c.set(e.col));});
+    im.userData.fids=arr.map(e=>e.fid);im.castShadow=im.receiveShadow=true;im.frustumCulled=false;if(dyn)im.userData.dyn=1;parent.add(im);};
+  flush(SB,L.struct);flush(SBm,L.mezz,true);
+  highlight();
+}
+
+function buildStatic(){
+  FX.forEach(f=>{headerSign(f);});
+  /* máquinas en exhibición (isla, tarima de compresores y bodega) */
+  const DIRS={W:[-1,0],E:[1,0],S:[0,-1],N:[0,1]};
+  MPOS.forEach(([code,fx,x,y,dir])=>{
+    const m=MCAT.find(r=>r[0]===code);if(!m)return;const[ ,name,kind,pr,stock,sc]=m,[nx,ny]=DIRS[dir],th=Math.atan2(nx,-ny),base=fx==='BM'?0:.15;
+    const p={id:'MC-'+code,fx,cat:fx==='T2'?'comp':'maq',t:'m',n:name,sub:code,code,pr,f:1,fd:1,st:1,stock,w:.6,h:.6,d:.5};
+    const g=new THREE.Group();g.position.copy(P3(x,y,base));g.rotation.y=th;g.add(machineMesh(kind,sc));g.userData.fx=fx;g.traverse(o=>o.userData.sel='p:'+p.id);L.misc.add(g);p._obj=g;PRODS.push(p);
+    g.updateMatrixWorld(true);const bb=new THREE.Box3().setFromObject(g);MFOOT.push([bb.min.x,-bb.max.z,bb.max.x,-bb.min.z]);
+    const off=/oferta/.test(name);const tag=canvasTex(256,96,(c,w,h)=>{c.fillStyle=off?'#e5484d':'#ffd84d';c.fillRect(0,0,w,h);c.fillStyle=off?'#fff':'#1d2430';c.textAlign='center';c.textBaseline='middle';fit(c,money(pr),w/2,36,w-16,40,800);fit(c,code,w/2,74,w-16,22,700);});
+    const sz=bb.getSize(new V3()),dep=Math.abs(nx)>.5?sz.x:sz.z;
+    const t=new THREE.Mesh(new THREE.PlaneGeometry(.24,.09),new THREE.MeshBasicMaterial({map:tag}));t.position.copy(P3(x+nx*(dep/2+.02),y+ny*(dep/2+.02),base+.06));t.rotation.y=th;t.userData.sel='p:'+p.id;t.userData.fx=fx;L.misc.add(t);
+  });
+  /* escaleras en pared */
+  const lf=fxById('E5'),LF=lf.F;
+  LADDERS.forEach((l,i)=>{
+    const a=-LF.L/2+LF.L/8+i*LF.L/4,p={id:'E5-'+i,fx:'E5',cat:'esc',t:'l',n:l[0],sub:l[1],pr:l[3],f:1,fd:3,st:1,w:.5,h:l[2],d:.1};
+    const g=new THREE.Group();for(let j=0;j<3;j++){const ld=ladder(l[2],i===3?'ext':'');ld.position.set(0,0,-j*.06);g.add(ld);}
+    g.position.copy(wp(LF,a,LF.D-.2,0));g.rotation.y=LF.th;g.traverse(o=>o.userData.sel='p:'+p.id);g.userData.fx='E5';L.misc.add(g);p._obj=g;PRODS.push(p);
+  });
+  /* cajas de cobro (2 estaciones) */
+  const cs='e:cajas',C=L.misc;
+  pbox(11.73,1.07,12.4,3.07,0,.92,M.dark,C,cs);pbox(11.7,1.05,12.43,3.09,.92,.96,std('#e9ecef',{roughness:.35}),C,cs);
+  pbox(11.725,1.07,11.735,3.07,.2,.7,std('#e09a1f'),C,cs);
+  [2.62,1.38].forEach((y,i)=>{
+    const scr=canvasTex(256,180,(x,w,h)=>{x.fillStyle='#0f1720';x.fillRect(0,0,w,h);x.fillStyle='#e09a1f';x.fillRect(0,0,w,36);x.fillStyle='#fff';x.textAlign='center';x.textBaseline='middle';fit(x,'CAJA '+(i+1),w/2,19,w-20,24,800);x.fillStyle='#9aa4af';fit(x,'TOTAL',w/2,82,w-20,22,600);x.fillStyle='#fff';fit(x,'L 0.00',w/2,130,w-20,46,800);});
+    const mon=new THREE.Mesh(new THREE.BoxGeometry(.36,.26,.04),[M.black,M.black,M.black,M.black,new THREE.MeshStandardMaterial({map:scr,emissive:'#fff',emissiveMap:scr,emissiveIntensity:.5}),M.black]);
+    mon.position.set(12.2,1.22,-y);mon.rotation.y=Math.PI/2;mon.userData.sel=cs;mon.castShadow=true;C.add(mon);
+    pbox(12.17,y-.02,12.23,y+.02,.96,1.08,M.grey,C,cs);
+    pbox(12.05,y-.2,12.2,y+.2,.96,.99,M.black,C,cs);
+    pbox(11.82,y-.22,12.0,y-.02,.96,1.06,M.black,C,cs);
+    pbox(11.82,y+.05,11.98,y+.2,.96,.97,std('#4d5b68',{metalness:.6,roughness:.15}),C,cs);
+    const term=pbox(11.86,y+.25,11.94,y+.39,.96,1.0,M.black,C,cs);
+    const ch=new THREE.Group();ch.position.set(13.1,0,-y);
+    [[new THREE.CylinderGeometry(.22,.22,.06,20),M.black,.62],[new THREE.CylinderGeometry(.025,.025,.55,10),M.grey,.32],[new THREE.CylinderGeometry(.25,.25,.03,5),M.black,.03]].forEach(([g,m,yy])=>{const o=new THREE.Mesh(g,m);o.position.y=yy;o.castShadow=true;o.userData.sel=cs;ch.add(o);});
+    const bk=new THREE.Mesh(new THREE.BoxGeometry(.04,.35,.36),M.black);bk.position.set(.2,.85,0);bk.userData.sel=cs;ch.add(bk);C.add(ch);
+  });
+  /* personal */
+  STAFF.forEach(([id,n,x,y,rot,o])=>{const g=person(o);g.position.copy(P3(x,y,0));g.rotation.y=rot;g.traverse(m=>m.userData.sel='e:'+id);g.userData.home=[x,y,rot];L.people.add(g);STAFFOBJ[id]=g;});
+  /* zonas de visual merchandising y ruta del cliente */
+  const VMZ=[['Descompresión','#7d8a96',[8.7,.25,11.6,1.6],'Entrada despejada: el cliente se adapta, sin producto'],
+   ['Zona caliente','#f07a1a',[8.7,1.6,10.32,11.3],'Pasillo central: lo nuevo, combos y alta rotación'],
+   ['Muro de poder','#e5484d',[13.0,3.2,13.66,11.2],'Pared derecha: primera vista al girar, máquinas y motosierras'],
+   ['Destino','#14806b',[10.4,11.5,12.4,16.1],'Generadores al fondo: arrastran al cliente por toda la tienda'],
+   ['Zona fría','#2f6fd6',[.62,9.6,8.2,10.94],'Fondo izquierdo: accesorios de compra planificada'],
+   ['Impulso','#8e4ec6',[11.1,.4,11.72,3.2],'Fila de caja: artículos pequeños y económicos']];
+  VMZ.forEach(([n,c,[x0,y0,x1,y1],d])=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,y1-y0),new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:.34,depthWrite:false}));
+    m.rotation.x=-Math.PI/2;m.position.set((x0+x1)/2,.012,-(y0+y1)/2);m.renderOrder=2;L.vm.add(m);
+    const sp=(()=>{const tx=canvasTex(512,96,(x,w,h)=>{x.fillStyle=c;x.beginPath();x.roundRect(2,2,w-4,h-4,40);x.fill();x.fillStyle='#fff';x.textAlign='center';x.textBaseline='middle';fit(x,n.toUpperCase(),w/2,h/2+2,w-40,52,800);});
+      const s2=new THREE.Sprite(new THREE.SpriteMaterial({map:tx,depthTest:false}));s2.scale.set(2.3,.43,1);s2.renderOrder=12;return s2;})();
+    sp.position.set((x0+x1)/2,2.9,-(y0+y1)/2);L.vm.add(sp);});
+  const route=[[10.45,.6],[9.5,2.2],[9.5,10.3],[5.0,10.3],[1.2,10.3],[1.2,1.15],[5.0,1.15],[8.9,1.15],[10.8,2.0],[11.4,2.0]];
+  const arM=new THREE.MeshBasicMaterial({color:'#1d2430',transparent:true,opacity:.55,depthWrite:false}),arG=new THREE.ShapeGeometry(new THREE.Shape([[0,.16],[.12,-.08],[0,-.02],[-.12,-.08]].map(q=>new THREE.Vector2(...q))));
+  for(let i=0;i<route.length-1;i++){const[ax,ay]=route[i],[bx,by]=route[i+1],len=Math.hypot(bx-ax,by-ay),n=Math.max(1,Math.floor(len/.9)),ang=Math.atan2(bx-ax,by-ay);
+    for(let k=0;k<n;k++){const t=(k+.5)/n,m=new THREE.Mesh(arG,arM);m.rotation.set(-Math.PI/2,0,-ang);m.position.set(ax+(bx-ax)*t,.016,-(ay+(by-ay)*t));m.renderOrder=3;L.vm.add(m);}}
+  window.__VMZ=VMZ;
+  /* vitrina: vidrios */
+  const vg=pbox(10.76,4.24,11.74,6.21,.15,1.04,M.glass,C,'f:V1');vg.castShadow=false;vg.userData.fx='V1';
+  [.5,.82].forEach(y=>{const sh=pbox(10.78,4.26,11.72,6.19,y-.01,y,new THREE.MeshStandardMaterial({color:'#dbeaf3',transparent:true,opacity:.45}),C,'f:V1');sh.castShadow=false;sh.userData.fx='V1';});
+  /* sensormatic */
+  [9.25,11.65].forEach(x=>{const g=new THREE.Group();g.position.set(x,0,-.45);
+    const p1=new THREE.Mesh(new THREE.BoxGeometry(.06,1.6,.5),new THREE.MeshStandardMaterial({color:'#dfe9f3',transparent:true,opacity:.55,roughness:.1}));p1.position.y=.85;g.add(p1);
+    const b=new THREE.Mesh(new THREE.BoxGeometry(.12,.08,.55),M.dark);b.position.y=.04;g.add(b);const t=new THREE.Mesh(new THREE.BoxGeometry(.08,.04,.52),M.dark);t.position.y=1.66;g.add(t);
+    g.traverse(o=>{o.userData.sel='e:sensor';o.castShadow=true;});L.misc.add(g);});
+  /* reloj */
+  const clk=canvasTex(128,128,(x,w,h)=>{x.fillStyle='#fff';x.beginPath();x.arc(64,64,60,0,7);x.fill();x.strokeStyle='#1d2430';x.lineWidth=6;x.stroke();x.lineWidth=5;x.beginPath();x.moveTo(64,64);x.lineTo(64,28);x.moveTo(64,64);x.lineTo(92,70);x.stroke();});
+  const ck=new THREE.Mesh(new THREE.CylinderGeometry(.16,.16,.04,24),[M.dark,new THREE.MeshStandardMaterial({map:clk}),M.dark]);ck.rotation.x=-Math.PI/2;ck.position.set(13.2,2.25,-.04);ck.userData.sel='e:reloj';L.misc.add(ck);
+  /* rótulos colgantes */
+  const hang=(txt,sub,x,y,h,th,w=1.3,col='#1d2430')=>{const tx=canvasTex(1024,Math.round(1024*.42/w),(c,W,H)=>{c.fillStyle=col;c.fillRect(0,0,W,H);c.fillStyle='#e09a1f';c.fillRect(0,H-12,W,12);c.fillStyle='#fff';c.textAlign='center';c.textBaseline='middle';fit(c,txt,W/2,H*.38,W-60,H*.36,800);c.fillStyle='#cfd5dc';fit(c,sub,W/2,H*.72,W-60,H*.22,600);});
+    const mt=std('#fff',{map:tx});const m=new THREE.Mesh(new THREE.BoxGeometry(w,.42,.03),[M.dark,M.dark,M.dark,M.dark,mt,mt]);m.position.set(x,h,-y);m.rotation.y=th;L.misc.add(m);
+    [-1,1].forEach(i=>{const c=new THREE.Mesh(new THREE.CylinderGeometry(.004,.004,.6,4),M.grey);c.position.set(x+Math.cos(th)*i*w*.4,h+.51,-y-Math.sin(th)*i*w*.4);L.misc.add(c);});};
+  GY.forEach((y,i)=>hang('GÓNDOLA '+(i+1),CAT[GC[i].sh][0],8.45,y,2.45,Math.PI/2));
+  hang('CAJAS','Pague aquí',12.07,2.07,2.45,Math.PI/2,1.0);
+  hang('GENERADORES','INGCO · gasolina, inverter y diésel',11.37,11.5,2.45,0,1.5);
+  hang('COMPRESORES','Directos, de banda e inalámbricos',11.27,7.0,2.45,0,1.4);
+  hang('SIERRAS','Ingleteadoras y sierra de mesa',11.27,10.75,2.45,0,1.4);
+  hang('HIDROLAVADO','Hidrolavadoras y bombas',13.3,9.6,2.45,Math.PI/2,1.3);
+  /* bodega bajo mezzanine */
+  const B=L.misc;
+  pbox(11.44,17.6,12.44,19.6,.86,.9,M.wood,B,'e:mesab');[[11.5,17.66],[12.38,17.66],[11.5,19.54],[12.38,19.54]].forEach(([x,y])=>pbox(x-.03,y-.03,x+.03,y+.03,0,.86,M.dark,B,'e:mesab'));
+  pbox(11.55,17.8,12.3,18.4,.9,1.2,std('#b8925a'),B,'e:mesab');
+  pbox(10.9,20.3,11.3,21.65,0,2.0,std('#c3c8ce'),B,'e:limpieza');pbox(10.885,20.3,10.9,21.65,.1,1.9,M.dark,B,'e:limpieza');
+  pbox(10.3,17.2,10.36,17.7,1.2,1.75,std('#b0b6bd',{metalness:.4}),B,'e:carga');
+  // baño
+  const bw=std('#f4f1ea');pbox(8.44,20.45,9.95,20.55,0,2.86,bw,B,'e:bano');pbox(10.45,20.45,10.55,20.55,0,2.86,bw,B,'e:bano');pbox(10.45,20.45,10.55,21.65,0,2.86,bw,B,'e:bano');pbox(9.95,20.45,10.45,20.55,2.1,2.86,bw,B,'e:bano');
+  const door=pbox(9.97,20.5,10.43,20.54,0,2.08,std('#8a6a48'),B,'e:bano');
+  pbox(8.6,21.0,9.0,21.5,0,.42,M.white,B,'e:bano');pbox(8.6,21.4,9.0,21.6,.42,.8,M.white,B,'e:bano');pbox(9.4,21.35,9.85,21.6,.8,.9,M.white,B,'e:bano');
+  // escalera
+  const st='e:escalera';for(let k=0;k<17;k++){const y=16.35+k*.24;pbox(8.7,y,9.8,y+.26,k*.18,(k+1)*.18,std('#8f98a3',{metalness:.5,roughness:.4}),B,st);}
+  const hr=new THREE.Mesh(new THREE.CylinderGeometry(.02,.02,Math.hypot(4.08,3.06),8),M.dark);hr.position.set(9.82,(3.06)/2+.9,-(16.35+2.04));hr.rotation.x=-Math.atan2(4.08,3.06);hr.userData.sel=st;B.add(hr);
+  // columnas del mezzanine
+  [[8.6,16.2],[14.0,16.2]].forEach(([x,y])=>pbox(x-.08,y-.08,x+.08,y+.08,0,MZ-SLAB,M.grey,B,'e:mezz'));
+  /* mezzanine */
+  const Z=L.mezz,sm=std('#d5d9de',{roughness:.7}),zs='e:mezz';
+  pbox(9.85,16.15,14.16,21.65,MZ-SLAB,MZ,sm,Z,zs);pbox(8.44,20.45,9.85,21.65,MZ-SLAB,MZ,sm,Z,zs);pbox(8.44,16.15,9.85,17.6,MZ-SLAB,MZ,sm,Z,zs);
+  const rail=(x0,y0,x1,y1)=>{const vert=x0===x1,len=vert?y1-y0:x1-x0;
+    pbox(Math.min(x0,x1)-.02,Math.min(y0,y1)-.02,Math.max(x0,x1)+.02,Math.max(y0,y1)+.02,MZ+.98,MZ+1.03,M.dark,Z,zs);
+    const g=pbox(x0-(vert?.005:0),y0-(vert?0:.005),x1+(vert?.005:0),y1+(vert?0:.005),MZ+.1,MZ+.95,M.glass,Z,zs);g.castShadow=false;
+    for(let t=0;t<=len+.001;t+=len/Math.max(1,Math.round(len/1.2))){const x=vert?x0:x0+t,y=vert?y0+t:y0;pbox(x-.025,y-.025,x+.025,y+.025,MZ,MZ+1.0,M.dark,Z,zs);}};
+  rail(8.44,16.15,14.16,16.15);rail(9.85,17.6,9.85,20.45);rail(8.44,17.6,9.85,17.6);
+  // mesa de trabajo + sillas
+  pbox(8.6,16.35,11.2,17.2,MZ+.86,MZ+.92,M.wood,Z,'e:taller');[[8.66,16.41],[11.14,16.41],[8.66,17.14],[11.14,17.14]].forEach(([x,y])=>pbox(x-.03,y-.03,x+.03,y+.03,MZ,MZ+.86,M.dark,Z,'e:taller'));
+  pbox(9.0,16.5,9.5,16.8,MZ+.92,MZ+1.1,std('#2f6fb5'),Z,'e:taller');pbox(10.2,16.45,10.6,16.65,MZ+.92,MZ+1.02,std('#e09a1f'),Z,'e:taller');
+  [[10.1,17.55],[10.8,17.55]].forEach(([x,y])=>{pbox(x-.22,y-.22,x+.22,y+.22,MZ+.45,MZ+.5,M.black,Z,'e:taller');pbox(x-.02,y-.02,x+.02,y+.02,MZ,MZ+.45,M.grey,Z,'e:taller');pbox(x-.22,y+.18,x+.22,y+.22,MZ+.5,MZ+.95,M.black,Z,'e:taller');});
+  // cocineta con microondas
+  pbox(9.95,18.3,10.6,20.3,MZ,MZ+.9,std('#e7e2d8'),Z,'e:cocina');pbox(9.93,18.28,10.62,20.32,MZ+.9,MZ+.94,std('#3a3f46'),Z,'e:cocina');
+  pbox(10.05,19.6,10.45,20.1,MZ+.94,MZ+1.2,M.white,Z,'e:micro');pbox(10.44,19.65,10.46,19.95,MZ+.98,MZ+1.16,M.black,Z,'e:micro');
+  [[10.95,19.6],[10.95,18.9]].forEach(([x,y])=>{const o=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,.05,18),M.black);o.position.set(x,MZ+.72,-y);o.userData.sel='e:cocina';Z.add(o);const l=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,.7,8),M.grey);l.position.set(x,MZ+.35,-y);l.userData.sel='e:cocina';Z.add(l);});
+  // oficina (B.K): escritorio, PC y grabadora de video
+  pbox(12.7,20.6,14.05,21.4,MZ+.72,MZ+.76,M.wood,Z,'e:oficina');[[12.75,20.65],[14.0,20.65],[12.75,21.35],[14.0,21.35]].forEach(([x,y])=>pbox(x-.025,y-.025,x+.025,y+.025,MZ,MZ+.72,M.dark,Z,'e:oficina'));
+  const mt=canvasTex(256,160,(x,w,h)=>{x.fillStyle='#10161d';x.fillRect(0,0,w,h);for(let i=0;i<4;i++){x.fillStyle=['#2a3a4a','#34495e','#2c3e50','#3d566e'][i];x.fillRect((i%2)*w/2+4,Math.floor(i/2)*h/2+4,w/2-8,h/2-8);}x.fillStyle='#e5484d';x.beginPath();x.arc(w-14,12,5,0,7);x.fill();});
+  const mon=new THREE.Mesh(new THREE.BoxGeometry(.55,.34,.03),[M.black,M.black,M.black,M.black,new THREE.MeshStandardMaterial({map:mt,emissive:'#fff',emissiveMap:mt,emissiveIntensity:.5}),M.black]);mon.position.set(13.35,MZ+1.0,-21.2);mon.userData.sel='e:nvr';Z.add(mon);
+  pbox(13.33,21.18,13.37,21.24,MZ+.76,MZ+.84,M.grey,Z,'e:nvr');
+  pbox(13.7,21.0,13.98,21.35,MZ+.76,MZ+.84,M.black,Z,'e:nvr');pbox(13.72,20.99,13.8,21.0,MZ+.79,MZ+.81,std('#2ee07a',{emissive:'#2ee07a'}),Z,'e:nvr');
+  pbox(12.82,20.7,13.0,21.2,MZ+.76,MZ+1.2,M.black,Z,'e:oficina');
+  pbox(13.12,20.0,13.58,20.45,MZ+.45,MZ+.5,M.black,Z,'e:oficina');pbox(13.33,20.2,13.37,20.25,MZ,MZ+.45,M.grey,Z,'e:oficina');
+  // oasis
+  pbox(12.3,20.8,12.6,21.1,MZ,MZ+1.0,M.white,Z,'e:oasis');const bt=new THREE.Mesh(new THREE.CylinderGeometry(.13,.13,.45,18),new THREE.MeshStandardMaterial({color:'#7fb8e6',transparent:true,opacity:.7}));bt.position.set(12.45,MZ+1.23,-20.95);bt.userData.sel='e:oasis';Z.add(bt);
+  // ventilador de pared
+  const fan=new THREE.Group();fan.position.set(14.08,MZ+2.2,-18.6);fan.rotation.y=-Math.PI/2;
+  const fr=new THREE.Mesh(new THREE.TorusGeometry(.22,.015,8,28),M.dark);fr.position.z=.15;fan.add(fr);const hub=new THREE.Mesh(new THREE.CylinderGeometry(.06,.06,.12,12),M.dark);hub.rotation.x=Math.PI/2;hub.position.z=.1;fan.add(hub);
+  for(let k=0;k<3;k++){const bl=new THREE.Mesh(new THREE.BoxGeometry(.06,.18,.01),M.grey);bl.position.set(Math.sin(k*2.1)*.11,Math.cos(k*2.1)*.11,.15);bl.rotation.z=-k*2.1;fan.add(bl);}
+  fan.traverse(o=>o.userData.sel='e:fan');Z.add(fan);
+  /* cámaras */
+  CAMS.forEach(c=>{
+    const[id,type,x,y,h,aim,zone]=c,col=CAMT[type][1],g=new THREE.Group();g.position.copy(P3(x,y,h));
+    const yaw=Math.atan2(aim[0],-aim[1]),isDome=type!=='bala';
+    if(isDome){const d=new THREE.Mesh(new THREE.SphereGeometry(.09,16,10,0,Math.PI*2,0,Math.PI/2),new THREE.MeshStandardMaterial({color:'#1c1f24',roughness:.1,metalness:.3}));d.rotation.x=Math.PI;g.add(d);
+      const b=new THREE.Mesh(new THREE.CylinderGeometry(.11,.11,.03,18),M.white);b.position.y=.015;g.add(b);}
+    else{const body=new THREE.Mesh(new THREE.CylinderGeometry(.045,.045,.22,14),M.white);body.rotation.x=Math.PI/2;const holder=new THREE.Group();holder.rotation.set(.42,yaw,0,'YXZ');body.position.z=.06;holder.add(body);
+      const lens=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.01,14),M.black);lens.rotation.x=Math.PI/2;lens.position.z=.175;holder.add(lens);g.add(holder);
+      const arm=new THREE.Mesh(new THREE.CylinderGeometry(.015,.015,.18,8),M.grey);arm.position.y=.09;g.add(arm);}
+    g.traverse(o=>{o.userData.sel='c:'+id;});L.cams.add(g);c.obj=g;
+    // cobertura
+    const len=isDome?(type==='domo2'?3.0:4.2):7.5,rad=isDome?(type==='domo2'?1.6:3.2):4.3;
+    const cone=new THREE.Mesh(new THREE.ConeGeometry(rad,len,28,1,true),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:.1,depthWrite:false,side:THREE.DoubleSide}));
+    cone.geometry.translate(0,-len/2,0);
+    const pitch=isDome?(aim[0]||aim[1]?-1.05:-Math.PI/2):-.42;
+    c.dir=new V3(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),Math.cos(yaw)*Math.cos(pitch)).normalize();
+    cone.position.copy(g.position);cone.quaternion.setFromUnitVectors(new V3(0,-1,0),c.dir);L.cover.add(cone);
+    label(id,g.position.clone().add(new V3(0,.28,0)),col);
+  });
+  /* aires acondicionados */
+  const grille=canvasTex(128,128,(x,w,h)=>{x.fillStyle='#f4f5f6';x.fillRect(0,0,w,h);x.fillStyle='#cfd4da';for(let i=0;i<4;i++){x.fillRect(8,8+i*0,w-16,10);}x.fillRect(8,8,w-16,12);x.fillRect(8,h-20,w-16,12);x.fillRect(8,8,12,h-16);x.fillRect(w-20,8,12,h-16);x.fillStyle='#e3e6ea';x.fillRect(32,32,64,64);for(let i=0;i<6;i++){x.fillStyle='#d0d5db';x.fillRect(36,38+i*9,56,3);}});
+  ACS.forEach(a=>{const[id,btu,x,y]=a,s=btu>40000?.95:.84,g=new THREE.Group();g.position.copy(P3(x,y,4.5));
+    const body=new THREE.Mesh(new THREE.BoxGeometry(s,.28,s),[M.white,M.white,M.white,new THREE.MeshStandardMaterial({map:grille}),M.white,M.white]);g.add(body);
+    [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([i,j])=>{const r=new THREE.Mesh(new THREE.CylinderGeometry(.01,.01,1.36,6),M.grey);r.position.set(i*s*.42,.82,j*s*.42);g.add(r);});
+    const fr=new THREE.Mesh(new THREE.BoxGeometry(s+.2,.05,.05),M.dark);fr.position.y=1.5;g.add(fr);const fr2=fr.clone();fr2.rotation.y=Math.PI/2;g.add(fr2);
+    g.traverse(o=>{o.userData.sel='a:'+id;o.castShadow=false;});L.ac.add(g);a.obj=g;label(id+' · '+(btu/1000)+'k BTU',g.position.clone().add(new V3(0,.35,0)),'#1f8a9a',1.1);});
+  /* iluminación */
+  const lm=new THREE.MeshStandardMaterial({color:'#fff',emissive:'#fffbe8',emissiveIntensity:1.2});
+  const linM=new THREE.InstancedMesh(new THREE.BoxGeometry(1.2,.05,.09),lm,LAMPS.length);
+  LAMPS.forEach(([x,y,r],i)=>{dummy.position.copy(P3(x,y,4.0));dummy.rotation.set(0,r?Math.PI/2:0,0);dummy.scale.set(1,1,1);dummy.updateMatrix();linM.setMatrixAt(i,dummy.matrix);});
+  linM.userData.sel='e:lamparas';L.lamps.add(linM);
+  const cab=new THREE.InstancedMesh(new THREE.CylinderGeometry(.003,.003,1,4),M.grey,LAMPS.length*2);let k=0;
+  LAMPS.forEach(([x,y,r])=>[-.5,.5].forEach(o=>{dummy.position.copy(P3(x+(r?0:o),y+(r?o:0),4.5));dummy.rotation.set(0,0,0);dummy.updateMatrix();cab.setMatrixAt(k++,dummy.matrix);}));L.lamps.add(cab);
+  const pn=new THREE.InstancedMesh(new THREE.BoxGeometry(.6,.03,.6),lm,PANELS.length);PANELS.forEach(([x,y],i)=>{dummy.position.copy(P3(x,y,MZ-SLAB-.015));dummy.updateMatrix();pn.setMatrixAt(i,dummy.matrix);});pn.userData.sel='e:lamparas';L.lamps.add(pn);
+}
+function label(txt,pos,col,scale=.7){
+  const tx=canvasTex(256,72,(x,w,h)=>{x.fillStyle=col;x.beginPath();x.roundRect(2,2,w-4,h-4,30);x.fill();x.fillStyle='#fff';x.textAlign='center';x.textBaseline='middle';fit(x,txt,w/2,h/2+2,w-28,40,800);});
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:tx,depthTest:false}));s.scale.set(scale*3.5*.28,scale*.28,1);s.position.copy(pos);s.renderOrder=10;L.labels.add(s);
+}
+
+/* =================== INFO DE EQUIPOS =================== */
+const EQI={
+ cajas:['Cajas de cobro','2 estaciones de cobro en un mostrador de 0.67 × 2.00 m. Cada una con monitor POS, teclado, escáner, gaveta, datáfono y silla de cajero. Cada caja tiene encima una cámara domo de 2 MP (C9 y C10).'],
+ sensor:['Sensor antihurto Sensormatic','Antenas a ambos lados de la puerta de vidrio de 2.00 m. Según el plano, solo se deja la canalización bajo piso: tubería conduit PVC de 1" con guía y cajas de registro.'],
+ reloj:['Reloj','Ubicación aproximada; el plano de tomas lo indica cerca de la entrada.'],
+ carga:['Centro de carga','Tablero eléctrico CC-1, ubicado en la bodega junto al estante central.'],
+ nvr:['Grabadora de video (NVR)','Toma y punto de red para la grabadora de video en bandeja metálica, en la oficina del mezzanine.'],
+ oasis:['Oasis (dispensador de agua)','En el mezzanine, junto a la oficina.'],micro:['Microondas','En la cocineta del mezzanine.'],cocina:['Cocineta','Mueble con microondas y 2 bancos, en el mezzanine.'],
+ taller:['Mesa de trabajo (taller)','En el mezzanine (NPT +3.06 m), con 2 sillas. El plano pide considerar ventiladores de pared para esta área.'],
+ oficina:['Oficina del mezzanine (B.K)','Escritorio con computadora, silla y monitor de cámaras.'],fan:['Ventilador de pared','Para el área de trabajo del mezzanine (taller).'],
+ mesab:['Mesa de bodega','Mesa de trabajo y empaque bajo el mezzanine.'],limpieza:['Separador de ambientes','Mueble para productos de limpieza, junto al baño.'],
+ bano:['Aseo','Baño con inodoro y lavamanos, bajo el mezzanine, con pileta de aseo.'],escalera:['Escalera al mezzanine','17 contrahuellas de 18 cm hasta el nivel +3.06 m.'],
+ mezz:['Mezzanine','Losa a +3.06 m sobre la bodega, de unos 5.7 × 5.5 m, con baranda de vidrio. Tiene taller, cocineta y oficina.'],
+ lamparas:['Iluminación',`${LAMPS.length} luminarias LED lineales colgantes de 100 W (14,000 lm, 5000 K) en el área de ventas y ${PANELS.length} lámparas de 50 W bajo el mezzanine.`],
+ cajero1:['Cajero(a) · Caja 1','Atiende la estación de cobro 1. Uniforme: camisa naranja tipo polo con cuello negro y pantalón negro.'],
+ cajero2:['Cajero(a) · Caja 2','Atiende la estación de cobro 2. Uniforme: camisa naranja tipo polo con cuello negro y pantalón negro.'],
+ vendedor:['Vendedor(a)','Atiende el piso de ventas; en el modelo está en el pasillo entre las góndolas 2 y 3, con tableta para consultar existencias. Uniforme: camisa naranja tipo polo con cuello negro y pantalón negro.'],
+ puerta:['Puerta de vidrio','Doble hoja, 2.00 m de ancho, en la fachada (eje 10).'],rotulo:['Rótulo de fachada: INGCO-STORE','Sobre la puerta de vidrio, con su propio circuito (Ckto #6). Para verlo, activa la capa Paredes altas.'],
+};
+
+/* =================== VISTAS =================== */
+let tw=null,pov=null;
+const VIEWS={
+ general:[[23,17,9],[7.4,0,-10.5]],planta:[[7.08,36,-10.83+.01],[7.08,0,-10.83]],entrada:[[10.45,1.65,1.6],[10.45,1.3,-6]],
+ pasillo:[[9.9,1.65,-5.47],[2.0,1.0,-5.47]],cajas:[[9.4,2.3,-.6],[12.1,1.0,-2.1]],maquinas:[[8.8,2.6,-10.4],[11.4,.6,-13.9]],
+ bodega:[[11.6,2.3,-15.0],[11.6,1.1,-20.5]],mezz:[[11.3,6.4,-13.4],[11.3,3.6,-19.0]],
+};
+function fly(p,t,fov=40){tw={t0:performance.now(),fp:camera.position.clone(),ft:controls.target.clone(),tp:p.clone(),tt:t.clone(),f0:camera.fov,f1:fov};}
+function goView(v){if(v==='mueble'){enterIso(ISO?ISO.key:'G1');return;}if(ISO)exitIso(false);exitPov(false);document.querySelectorAll('#views button').forEach(x=>x.classList.toggle('on',x.dataset.v===v));
+  let[p,t]=VIEWS[v];const a=stage.clientWidth/stage.clientHeight;p=new V3(...p);t=new V3(...t);
+  if(a<1&&(v==='general'||v==='planta'))p=t.clone().add(p.clone().sub(t).multiplyScalar(Math.min(1.9,1.1/a)));
+  if(v==='mezz'&&!layers.mezz){layers.mezz=true;applyLayers();}
+  fly(p,t);}
+document.getElementById('views').onclick=e=>{const b=e.target.closest('button');if(b)goView(b.dataset.v);};
+function camPov(id){if(ISO)exitIso(false);const c=CAMS.find(c=>c[0]===id);const pos=c.obj.position.clone();const t=pos.clone().add(c.dir.clone().multiplyScalar(4));
+  pov=id;document.getElementById('pov').style.display='flex';document.getElementById('povt').textContent=`Vista de ${id} · ${CAMT[c[1]][0]}`;
+  L.cover.visible=false;L.labels.visible=false;fly(pos.clone().add(c.dir.clone().multiplyScalar(.15)),t,c[1]==='bala'?70:95);}
+function exitPov(back=true){if(!pov)return;pov=null;document.getElementById('pov').style.display='none';L.cover.visible=layers.cover;L.labels.visible=layers.labels;if(back)goView('general');}
+document.getElementById('povx').onclick=()=>exitPov(true);
+
+/* =================== PANTALLA COMPLETA =================== */
+const fullb=document.getElementById('fullb'),fviews=document.getElementById('fviews'),viewsEl=document.getElementById('views'),headerEl=document.querySelector('header');
+let full=false;
+function setFull(on){
+  full=on;document.body.classList.toggle('full',on);
+  if(on){fviews.appendChild(viewsEl);}else{headerEl.appendChild(viewsEl);}
+  fullb.innerHTML=on?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg><span>Salir</span>':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span>Ampliar</span>';
+  fullb.title=on?'Salir de pantalla completa':'Ver en pantalla completa';
+  try{if(on&&!document.fullscreenElement&&document.documentElement.requestFullscreen)document.documentElement.requestFullscreen().catch(()=>{});
+      if(!on&&document.fullscreenElement)document.exitFullscreen().catch(()=>{});}catch(e){}
+  updateMini();setTimeout(resize,60);
+}
+fullb.onclick=()=>setFull(!full);
+document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&full)setFull(false);});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&full)setFull(false);});
+function selName(s){if(!s)return null;const[k,id]=s.split(/:(.*)/s);
+  if(k==='f'){const f=fxById(id);return[f.name,f.cat?CAT[f.cat][0]:'Almacenamiento'];}
+  if(k==='p'){const p=PRODS.find(p=>p.id===id);return[p.n+' '+p.sub,(p.pr?money(p.pr)+' · ':'')+fxById(p.fx).name];}
+  if(k==='c'){const c=CAMS.find(c=>c[0]===id);return[c[0]+' · '+CAMT[c[1]][0],c[6]];}
+  if(k==='a'){const a=ACS.find(a=>a[0]===id);return[a[0]+' · Cassette '+a[1].toLocaleString('es-HN')+' BTU','Suspendido a 4.50 m'];}
+  return EQI[id]?[EQI[id][0],'']:null;}
+function updateMini(){const m=document.getElementById('mini'),n=full&&selName(sel);if(!n){m.style.display='none';return;}m.style.display='block';m.innerHTML=`<b>${n[0]}</b>${n[1]?`<span style="color:var(--mut)">${n[1]}</span>`:''}`;}
+
+/* =================== VER UN SOLO MUEBLE =================== */
+let ISO=null,isoSaved=null,pedestal=null;
+const ISO_OPTS=[...GY.map((_,i)=>({key:'G'+(i+1),name:`Góndola ${i+1} · ${CAT[GC[i].sh][0]}`,ids:FX.filter(f=>f.zone===`Góndola ${i+1}`).map(f=>f.id),zone:'Góndolas',gond:true})),
+  ...FX.filter(f=>!f.zone.startsWith('Góndola')).map(f=>({key:f.id,name:f.name+(f.cat?' · '+CAT[f.cat][0]:''),ids:[f.id],zone:f.zone}))];
+(function(){const sel=document.getElementById('isosel');let h='',z=null;ISO_OPTS.forEach(o=>{if(o.zone!==z){if(z)h+='</optgroup>';z=o.zone;h+=`<optgroup label="${z}">`;}h+=`<option value="${o.key}">${o.name}</option>`;});sel.innerHTML=h+'</optgroup>';
+  sel.onchange=()=>enterIso(sel.value);document.getElementById('isox').onclick=()=>exitIso(true);})();
+function isoBox(){const b=new THREE.Box3();ISO.ids.forEach(id=>{const f=fxById(id),[x0,y0,x1,y1]=f.rect,bs=f.base||0;b.expandByPoint(new V3(x0,bs,-y1));b.expandByPoint(new V3(x1,bs+f.H+(f.cat?.25:0),-y0));});return b;}
+function setIsoVis(on){
+  L.walls.visible=!on;floor.visible=!on;L.vm.visible=!on&&layers.vm;walk.visible=!on;
+  L.misc.children.forEach(o=>o.visible=!on||!!(o.userData.fx&&ISO.ids.includes(o.userData.fx)));
+  L.mezz.children.forEach(o=>o.visible=!on||!!o.userData.dyn);
+  L.signs.children.forEach(o=>o.visible=!on||!!ISO.ids.includes(o.userData.fid));
+}
+function enterIso(key){
+  const o=ISO_OPTS.find(o=>o.key===key)||ISO_OPTS[0];
+  if(W.on)exitWalk();exitPov(false);
+  if(!ISO){isoSaved={...layers};Object.assign(layers,{people:false,cams:false,cover:false,ac:false,lamps:false,mezz:true,labels:false,walls:false,cotas:false});applyLayers();document.body.classList.add('iso');}
+  ISO=o;document.getElementById('isosel').value=o.key;
+  document.querySelectorAll('#views button').forEach(x=>x.classList.toggle('on',x.dataset.v==='mueble'));
+  sel=null;tab='res';back=null;buildAll();setIsoVis(true);
+  // base y cotas
+  L.dims.clear();const b=isoBox(),c=b.getCenter(new V3()),sz=b.getSize(new V3()),base=b.min.y;
+  const ped=new THREE.Mesh(new THREE.CylinderGeometry(Math.max(sz.x,sz.z)/2+.9,Math.max(sz.x,sz.z)/2+1.0,.04,64),std('#e6e9ed',{roughness:.9}));ped.position.set(c.x,base-.02+.001,c.z);ped.receiveShadow=true;L.dims.add(ped);
+  const lm=new THREE.LineBasicMaterial({color:'#1d2430'}),line=(a,bb)=>{const g=new THREE.BufferGeometry().setFromPoints([a,bb]);L.dims.add(new THREE.Line(g,lm));};
+  const dim=(a,bb,txt,tick)=>{line(a,bb);[a,bb].forEach(p=>line(p.clone().sub(tick),p.clone().add(tick)));dimLabel(txt,a.clone().lerp(bb,.5).add(new V3(0,.12,0)));};
+  const y0=base+.02,off=.35,hRack=ISO.ids.map(fxById).reduce((m,f)=>Math.max(m,f.H),0);
+  dim(new V3(b.min.x,y0,b.max.z+off),new V3(b.max.x,y0,b.max.z+off),sz.x.toFixed(2)+' m',new V3(0,0,.08));
+  dim(new V3(b.max.x+off,y0,b.min.z),new V3(b.max.x+off,y0,b.max.z),sz.z.toFixed(2)+' m',new V3(.08,0,0));
+  dim(new V3(b.max.x+off,base,b.max.z+off),new V3(b.max.x+off,base+hRack,b.max.z+off),hRack.toFixed(2)+' m',new V3(.08,0,0));
+  L.dims.visible=true;
+  // botones de vista
+  const vs=o.gond?[['3d','3D'],['N','Cara norte'],['S','Cara sur'],['E','Cabecera este'],['W','Cabecera oeste']]:[['3d','3D'],['F','Frente'],['L','Lado'],['T','Arriba']];
+  document.getElementById('isoviews').innerHTML=vs.map(([k,n],i)=>`<button data-iv="${k}" class="${i===0?'on':''}">${n}</button>`).join('');
+  isoView('3d');highlight();renderPanel();setTimeout(resize,30);
+}
+document.getElementById('isoviews').onclick=e=>{const b=e.target.closest('button');if(b)isoView(b.dataset.iv);};
+function dimLabel(txt,pos){const tx=canvasTex(256,80,(x,w,h)=>{x.fillStyle='#fff';x.beginPath();x.roundRect(4,4,w-8,h-8,20);x.fill();x.strokeStyle='#1d2430';x.lineWidth=4;x.stroke();x.fillStyle='#1d2430';x.textAlign='center';x.textBaseline='middle';fit(x,txt,w/2,h/2+2,w-30,44,800);});
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:tx,depthTest:false}));s.scale.set(.48,.15,1);s.position.copy(pos);s.renderOrder=11;L.dims.add(s);}
+function isoView(k){
+  if(!ISO)return;document.querySelectorAll('#isoviews button').forEach(x=>x.classList.toggle('on',x.dataset.iv===k));
+  const b=isoBox(),c=b.getCenter(new V3()),sz=b.getSize(new V3()),a=stage.clientWidth/stage.clientHeight,t=Math.tan(THREE.MathUtils.degToRad(20));
+  const fitD=(w,h)=>Math.max((h+.5)/2/t,(w+.5)/2/(t*a));
+  const f0=fxById(ISO.ids[0]),F=f0.F,nx=F.n.x,ny=F.n.y;let dir,d;
+  const dirs={N:new V3(0,0,-1),S:new V3(0,0,1),E:new V3(1,0,0),W:new V3(-1,0,0)};
+  if(k==='F'){dir=new V3(nx,0,-ny);}else if(k==='L'){dir=new V3(-ny,0,-nx).multiplyScalar(-1);}else if(dirs[k])dir=dirs[k];
+  if(k==='3d'){const front=ISO.gond?new V3(0,0,1):new V3(nx,0,-ny);const side=new V3(front.z,0,-front.x);dir=front.clone().multiplyScalar(.8).add(side.multiplyScalar(.6)).normalize();
+    d=fitD(Math.max(sz.x,sz.z)*1.05,sz.y+.6)*1.05;fly(c.clone().add(dir.multiplyScalar(d)).add(new V3(0,sz.y*.55+.5,0)),c);return;}
+  if(k==='T'){d=fitD(Math.max(sz.x,sz.z),Math.max(sz.x,sz.z));fly(c.clone().add(new V3(.001,d,.001)),c);return;}
+  const w=Math.abs(dir.x)>.5?sz.z:sz.x,depth=Math.abs(dir.x)>.5?sz.x:sz.z;d=fitD(w,sz.y)+depth/2;
+  const tgt=c.clone();fly(tgt.clone().add(dir.multiplyScalar(d)).add(new V3(0,.15,0)),tgt);
+}
+function exitIso(goGeneral=true){
+  if(!ISO)return;ISO=null;document.body.classList.remove('iso');L.dims.clear();
+  buildAll();setIsoVis(false);Object.assign(layers,isoSaved||{});applyLayers();sel=null;tab='res';highlight();renderPanel();
+  if(goGeneral)goView('general');
+}
+function isoSummary(){
+  const fs=ISO.ids.map(fxById),ps=fs.flatMap(fxProds),b=isoBox(),sz=b.getSize(new V3());
+  const u=ps.reduce((a,p)=>a+(p.t==='m'?1+p.stock:p.t==='l'?3:units(p)),0),v=ps.reduce((a,p)=>a+(p.t==='m'?1+p.stock:p.t==='l'?3:units(p))*p.pr,0);
+  const col=fs[0].cat?CAT[fs[fs.length>1?3:0].cat][1]:'#a7afb8';
+  let h=`<div class="ph"><i style="background:${col}"></i><div><b>${ISO.name}</b><span>${fs[0].zone}</span></div></div>
+   <div class="facts"><div class="fact"><span>Medidas totales (largo × fondo × alto)</span><b>${sz.x.toFixed(2)} × ${sz.z.toFixed(2)} × ${fs.reduce((m,f)=>Math.max(m,f.H),0).toFixed(2)} m</b></div>
+   <div class="fact"><span>Productos</span><b>${ps.length}</b></div><div class="fact"><span>Unidades</span><b>${u.toLocaleString('es-HN')}</b></div><div class="fact"><span>Valor exhibido</span><b>${money(v)}</b></div></div>`;
+  if(fs.length>1){h+=`<div class="sec">Caras de la góndola</div>`;
+    const vk={W:'W',PN:'N',PS:'S',SN:'N',SS:'S',E:'E'};
+    fs.forEach(f=>{const st=fxStats(f),o=st.occ;h+=`<div class="row" data-sel="f:${f.id}"><i style="background:${CAT[f.cat][1]}"></i><div><b>${f.name.split(' · ')[1]}</b><small>${CAT[f.cat][0]} · ${f.kind==='peg'?'ganchos':'repisas'} · ${f.F.L.toFixed(2)} m</small></div><div class="r">${st.sk} SKU · ${st.u} u<br><span class="${o>1?'over':''}">${o!==null?Math.round(o*100)+'% ocup.':''}</span></div></div>`;});}
+  else if(fs[0].slots){const f=fs[0];h+=`<div class="sec">Ocupación por nivel</div>`;
+    [...f.slots].reverse().forEach(sl=>{if(!sl.items.length)return;const o=slotUsed(sl)/f.F.L;h+=`<div class="lv"><div class="top"><span style="color:var(--ink)">${sl.peg?'Ganchos':'Repisa'} a ${sl.y.toFixed(2)} m</span><span class="${o>1?'over':''}">${Math.round(o*100)}%</span></div><div class="bar">${sl.items.map((p,i)=>`<i style="width:${Math.min(100,lin(p)/f.F.L*100)}%;background:${CAT[p.cat][1]};opacity:${.55+.45*(i%2)};margin-right:${GP/f.F.L*100}%"></i>`).join('')}</div></div>`;});}
+  if(ps.length)h+=`<div class="sec">Productos</div><div class="list">${ps.map(p=>`<button class="chip" data-sel="p:${p.id}"><i class="dot" style="background:${CAT[p.cat][1]}"></i>${p.n}${p.code?' · '+p.code:p.sub?' '+p.sub:''}</button>`).join('')}</div>`;
+  h+=`<div class="note">Usa los botones de arriba para ver cada cara. Toca un producto para ver su ficha y cambiarle los frentes; la góndola se actualiza al momento.</div>`;
+  return h;
+}
+
+/* =================== CAPAS =================== */
+const layers={vm:false,people:true,cams:true,cover:false,ac:true,lamps:true,mezz:true,walls:false,labels:true,cotas:false,cotasTapadas:false};
+const LNAMES=[['cotas','Medidas'],['cotasTapadas','Ocultar medidas tras paredes'],['vm','Zonas VM'],['people','Personal'],['cams','Cámaras'],['cover','Cobertura'],['ac','Aires'],['lamps','Lámparas'],['mezz','Mezzanine'],['labels','Etiquetas'],['walls','Paredes altas']];
+function applyLayers(){L.cotas.visible=layers.cotas;
+  // con la opción encendida, las paredes tapan los rótulos de medidas (no se ven a través de ellas)
+  L.cotas.children.forEach(o=>{if(o.userData.rotuloCota){o.material.depthTest=!!layers.cotasTapadas;o.renderOrder=layers.cotasTapadas?0:12;}});L.vm.visible=layers.vm;L.people.visible=layers.people;L.cams.visible=layers.cams;L.cover.visible=layers.cover&&!pov;L.ac.visible=layers.ac;L.lamps.visible=layers.lamps;L.mezz.visible=layers.mezz;L.labels.visible=layers.labels;setWalls(layers.walls);
+  document.getElementById('layers').innerHTML=LNAMES.map(([k,n])=>`<button data-l="${k}" class="${layers[k]?'on':''}">${n}</button>`).join('');}
+document.getElementById('layers').onclick=e=>{const b=e.target.closest('button');if(!b)return;layers[b.dataset.l]=!layers[b.dataset.l];applyLayers();};
+
+/* =================== SELECCIÓN =================== */
+const ray=new THREE.Raycaster(),ptr=new THREE.Vector2();let down=null,sel=null,hl=[];
+const hlMat=new THREE.MeshBasicMaterial({color:'#1f6feb',transparent:true,opacity:.13,depthWrite:false});
+const visibleUp=o=>{for(;o;o=o.parent)if(!o.visible)return false;return true;};
+renderer.domElement.addEventListener('pointerdown',e=>{down=[e.clientX,e.clientY];});
+renderer.domElement.addEventListener('pointerup',e=>{
+  if(W.on)return;
+  if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>6)return;
+  const r=renderer.domElement.getBoundingClientRect();ptr.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);
+  ray.setFromCamera(ptr,camera);
+  const hits=ray.intersectObjects([L.people,L.struct,L.prod,L.mezz,L.misc,L.cams,L.ac,L.lamps],true).filter(h=>visibleUp(h.object));
+  let s=null;
+  for(const h of hits){const o=h.object;
+    if(o.userData.fids&&h.instanceId!==undefined){s='f:'+o.userData.fids[h.instanceId];break;}
+    if(o.userData.sel){s=o.userData.sel;break;}
+    if(o.material&&o.material.transparent&&!o.userData.sel)continue;
+  }
+  select(s);document.getElementById('hint').style.opacity=0;
+});
+function boxOfSel(s){
+  const[k,id]=s.split(/:(.*)/s);
+  if(k==='f'){const f=fxById(id),[x0,y0,x1,y1]=f.rect,b=f.base||0;return new THREE.Box3(new V3(x0,b,-y1),new V3(x1,b+f.H+(f.cat?.25:0),-y0));}
+  if(k==='p'){const p=PRODS.find(p=>p.id===id);return p._obj?new THREE.Box3().setFromObject(p._obj):p._bb;}
+  if(k==='c')return new THREE.Box3().setFromObject(CAMS.find(c=>c[0]===id).obj);
+  if(k==='a')return new THREE.Box3().setFromObject(ACS.find(a=>a[0]===id).obj);
+  if(s==='e:lamparas')return null;
+  const objs=[];scene.traverse(o=>{if(o.userData.sel===s&&o.isMesh)objs.push(o);});if(!objs.length)return null;
+  const b=new THREE.Box3();objs.forEach(o=>b.expandByObject(o));return b;
+}
+function highlight(){hl.forEach(o=>scene.remove(o));hl=[];if(!sel)return;const b=boxOfSel(sel);if(!b||b.isEmpty())return;b.expandByScalar(.03);
+  const sz=b.getSize(new V3()),c=b.getCenter(new V3());const m=new THREE.Mesh(new THREE.BoxGeometry(sz.x,sz.y,sz.z),hlMat);m.position.copy(c);
+  hl=[m,new THREE.Box3Helper(b,new THREE.Color('#1f6feb'))];hl.forEach(o=>scene.add(o));}
+let tab='res',back=null;
+function select(s,fromPanel){if(s&&sel&&s!==sel&&sel.startsWith('f:')&&s.startsWith('p:'))back=sel;else if(!(s&&s.startsWith('p:')&&fromPanel))back=null;sel=s;if(s)tab='ficha';highlight();renderPanel();updateMini();}
+function focusSel(s){const b=boxOfSel(s);if(!b)return;const c=b.getCenter(new V3()),sz=b.getSize(new V3()).length();
+  const d=Math.max(1.6,sz*1.3);const dir=camera.position.clone().sub(controls.target).setY(0).normalize();fly(c.clone().add(dir.multiplyScalar(d)).add(new V3(0,d*.45,0)),c);}
+
+/* =================== PANEL =================== */
+const panel=document.getElementById('panel');
+const fxStats=f=>{const ps=fxProds(f);return{sk:ps.length,u:ps.reduce((a,p)=>a+units(p),0),v:ps.reduce((a,p)=>a+units(p)*p.pr,0),occ:f.slots&&f.slots.length?Math.max(...f.slots.filter(s=>s.items.length).map(s=>slotUsed(s)/f.F.L),0):null};};
+function renderPanel(){
+  const sale=PRODS.filter(p=>p.pr>0),names=new Set(sale.map(p=>p.n+p.sub));
+  const tu=sale.reduce((a,p)=>a+units(p)+(p.stock||0),0),tv=sale.reduce((a,p)=>a+(units(p)+(p.stock||0))*p.pr,0);
+  let h=`<div class="kpis"><div class="kpi"><b>${names.size}</b><span>Productos · ${new Set(sale.filter(p=>p.code).map(p=>p.code)).size} Herco</span></div><div class="kpi"><b>${tu.toLocaleString('es-HN')}</b><span>Unidades</span></div>
+   <div class="kpi"><b>${moneyK(tv)}</b><span>Valor exhibido</span></div><div class="kpi"><b>${CAMS.length}</b><span>Cámaras</span></div></div>
+   <div class="tabs">${[['res',ISO?'Mueble':'Resumen'],['ficha','Ficha'],...(ISO?[]:[['eq','Equipos']])].map(([k,n])=>`<button data-t="${k}" class="${tab===k?'on':''}">${n}</button>`).join('')}</div>`;
+  if(tab==='res')h+=ISO?isoSummary():resumen();else if(tab==='eq')h+=equipos();else h+=ficha();
+  panel.innerHTML=h;
+}
+function resumen(){
+  let h='';const zones=[...new Set(FX.map(f=>f.zone))];
+  const grp={'Área de ventas':zones.filter(z=>z.startsWith('Góndola')||z.startsWith('Pared')||z==='Islas'),'Atrás':['Bodega','Mezzanine']};
+  for(const[g,zs]of Object.entries(grp)){h+=`<div class="sec">${g}</div>`;
+    zs.forEach(z=>{const fs=FX.filter(f=>f.zone===z);
+      if(z.startsWith('Góndola')){const ps=fs.flatMap(fxProds),u=ps.reduce((a,p)=>a+units(p),0),cats=[...new Set(fs.map(f=>f.cat))];
+        h+=`<div class="row" data-sel="f:${fs[3].id}" data-focus="1"><i style="background:${CAT[cats[cats.length-1]][1]}"></i><div><b>${z}</b><small>${cats.map(c=>CAT[c][0]).join(' · ')} · 6 caras</small></div><div class="r">${ps.length} SKU<br>${u} u</div></div>`;}
+      else fs.forEach(f=>{const s=fxStats(f),col=f.cat?CAT[f.cat][1]:'#a7afb8',u=(f.kind==='machines'||f.kind==='floor')?fxProds(f).reduce((a,p)=>a+1+p.stock,0):f.kind==='ladders'?fxProds(f).reduce((a,p)=>a+3,0):s.u;
+        h+=`<div class="row" data-sel="f:${f.id}" data-focus="1"><i style="background:${col}"></i><div><b>${f.name}</b><small>${f.cat?CAT[f.cat][0]:'Almacenamiento cerrado'}</small></div><div class="r">${f.cat?`${s.sk} SKU<br>${u} u`:''}</div></div>`;});
+    });}
+  h+=`<div class="sec">Categorías · espacio lineal</div>`;
+  const tot={};PRODS.filter(p=>p.pr>0&&p.f).forEach(p=>tot[p.cat]=(tot[p.cat]||0)+lin(p));const all=Object.values(tot).reduce((a,b)=>a+b,0);
+  Object.entries(tot).sort((a,b)=>b[1]-a[1]).forEach(([c,v])=>{h+=`<div class="lv"><div class="top"><span style="color:var(--ink)"><i class="dot" style="background:${CAT[c][1]}"></i>${CAT[c][0]}</span><span>${(v).toFixed(1)} m · ${Math.round(v/all*100)}%</span></div><div class="bar"><i style="width:${v/all*100}%;background:${CAT[c][1]}"></i></div></div>`;});
+  h+=`<div class="sec">Visual merchandising aplicado</div>
+   <div class="note" style="margin-top:0;color:var(--ink);line-height:1.55">
+   <b>1. Niveles de la repisa.</b> Altura de ojos (1.1–1.6 m): kits y productos de mayor valor. Altura de manos: complementos. Piso: cajas grandes y pesadas. Parte alta: accesorios livianos.<br>
+   <b>2. Orden de izquierda a derecha.</b> Del más económico al de mayor valor, siguiendo la lectura del cliente.<br>
+   <b>3. Bloques por categoría y color.</b> Cada mueble lleva una sola familia, con su rótulo y franja de color.<br>
+   <b>4. Cabeceras destacadas.</b> Las cabeceras que dan al pasillo central llevan rótulo rojo "★ Destacados".<br>
+   <b>5. Producto destino al fondo.</b> Generadores y máquinas atraen al cliente a recorrer toda la tienda.<br>
+   <b>6. Ruta y descompresión.</b> Entrada despejada y recorrido en sentido contrario al reloj, terminando en cajas.<br>
+   <b>7. Impulso en caja.</b> Exhibidor con artículos pequeños de menos de L 600 junto a la fila.<br>
+   <b>8. Precio visible.</b> Cada producto tiene etiqueta amarilla con precio y código; las ofertas van en rojo.</div>
+   <button class="btn" data-vmz="1">${layers.vm?'Ocultar':'Ver'} zonas y ruta del cliente</button>`;
+  h+=`<div class="sec">Agotados en Herco (no exhibidos)</div>`+AGOTADOS.map(a=>`<div class="row" style="cursor:default"><i style="background:#c9ced4"></i><div><b>${a[0]}</b><small>${a[1]}</small></div><div class="r">${a[2]?money(a[2]):'—'}</div></div>`).join('');
+  h+=`<div class="note">Distribución, muebles y equipos según los planos del Local 02. Los productos con código INGCO tienen nombre y precio tomados de herco.hn; los que no tienen código son de ejemplo y faltan por confirmar. Las medidas de empaque son aproximadas.</div>`;
+  return h;
+}
+function equipos(){
+  let h=`<div class="sec">Cámaras · plano de distribución de cámaras</div>`;
+  CAMS.forEach(c=>{h+=`<div class="row" data-sel="c:${c[0]}"><i style="background:${CAMT[c[1]][1]};border-radius:50%"></i><div><b>${c[0]} · ${CAMT[c[1]][0]}</b><small>${c[6]} · altura ${c[4].toFixed(2)} m</small></div><div class="r"><button class="chip" data-pov="${c[0]}">Ver</button></div></div>`;});
+  h+=`<div class="sec">Aires acondicionados · opción 1 cassette</div>`;
+  ACS.forEach(a=>{h+=`<div class="row" data-sel="a:${a[0]}"><i style="background:#1f8a9a"></i><div><b>${a[0]} · Cassette ${a[1].toLocaleString('es-HN')} BTU</b><small>Suspendido con estructura metálica a 4.50 m</small></div><div class="r"></div></div>`;});
+  h+=`<div class="sec">Personal · 3 personas</div>`;
+  ['cajero1','cajero2','vendedor'].forEach(k=>{h+=`<div class="row" data-sel="e:${k}"><i style="background:#f07a1a;border-radius:50%"></i><div><b>${EQI[k][0]}</b><small>Camisa naranja con cuello negro · pantalón negro</small></div><div class="r"></div></div>`;});
+  h+=`<div class="sec">Otros equipos</div>`;
+  ['cajas','sensor','lamparas','carga','nvr','reloj','fan','oasis','micro','bano','escalera','limpieza'].forEach(k=>{h+=`<div class="row" data-sel="e:${k}"><i style="background:#5d6b7a"></i><div><b>${EQI[k][0]}</b><small>${EQI[k][1].split('. ')[0]}</small></div><div class="r"></div></div>`;});
+  h+=`<div class="note">Los planos también piden parlantes de audio, pero no dan su ubicación, así que no están dibujados. Las tomas y los circuitos eléctricos tampoco se dibujan.</div>`;
+  return h;
+}
+function ficha(){
+  if(!sel)return `<div class="empty">Toca un mueble, un producto, una cámara o un equipo en la escena. También puedes elegirlo en las pestañas Resumen o Equipos.</div>`;
+  const[k,id]=sel.split(/:(.*)/s);let h=back?`<button class="back" data-sel="${back}">← Volver al mueble</button>`:'';
+  if(k==='f'){const f=fxById(id),s=fxStats(f),col=f.cat?CAT[f.cat][1]:'#a7afb8',F=f.F,ps=fxProds(f);
+    h+=`<div class="ph"><i style="background:${col}"></i><div><b>${f.name}</b><span>${f.cat?CAT[f.cat][0]:'Almacenamiento cerrado'} · ${f.zone}</span></div></div>
+    <div class="facts"><div class="fact"><span>Medidas (largo × fondo × alto)</span><b>${F.L.toFixed(2)} × ${F.D.toFixed(2)} × ${f.H.toFixed(2)} m</b></div>
+    <div class="fact"><span>Tipo</span><b>${{shelf:'Repisas',peg:'Ganchos + repisa base',table:'Mesa',vitrine:'Vitrina',rack:'Estante de carga',cabinet:'Gabinete',ladders:'Exhibidor de escaleras',machines:'Tarima de máquinas',floor:'Piso de exhibición'}[f.kind]}</b></div>
+    ${f.cat?`<div class="fact"><span>Productos</span><b>${ps.length}</b></div><div class="fact"><span>Unidades</span><b>${(f.kind==='machines'||f.kind==='floor')?ps.reduce((a,p)=>a+1+p.stock,0)+' (con bodega)':f.kind==='ladders'?ps.length*3:s.u}</b></div>`:''}</div>`;
+    if(f.slots){h+=`<div class="sec">Ocupación por nivel</div>`;
+      [...f.slots].map((s,i)=>[s,i]).reverse().forEach(([s,i])=>{if(!s.items.length)return;const o=slotUsed(s)/F.L;
+        h+=`<div class="lv"><div class="top"><span style="color:var(--ink)">${s.peg?'Ganchos':'Repisa'} a ${s.y.toFixed(2)} m</span><span class="${o>1?'over':''}">${Math.round(o*100)}%</span></div><div class="bar">${s.items.map(p=>`<i style="width:${Math.min(100,lin(p)/F.L*100)}%;background:${CAT[p.cat][1]};opacity:${.55+.45*((s.items.indexOf(p)%2))};margin-right:${GP/F.L*100}%"></i>`).join('')}</div></div>`;});}
+    if(ps.length)h+=`<div class="sec">Productos</div><div class="list">${ps.map(p=>`<button class="chip" data-sel="p:${p.id}">${p.n}${p.code?' · '+p.code:p.sub?' '+p.sub:''}</button>`).join('')}</div>`;
+    const ik=f.zone.startsWith('Góndola')?'G'+f.zone.split(' ')[1]:f.id;
+    h+=`<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-focus-sel="${sel}">Acercar en 3D</button><button class="btn" style="background:#1f6feb" data-iso="${ik}">${f.zone.startsWith('Góndola')?'Ver solo la '+f.zone:'Ver solo este mueble'}</button></div>`;
+  }else if(k==='p'){const p=PRODS.find(p=>p.id===id),f=fxById(p.fx),col=CAT[p.cat][1];
+    const s=f.slots?f.slots[p.slot]:null,o=s?slotUsed(s)/f.F.L:0,u=p.t==='m'?1:units(p);
+    h+=`<div class="ph"><i style="background:${col}"></i><div><b>${p.n}${p.code?'':' '+p.sub}</b><span>${p.code?'INGCO '+p.code+' · ':''}${p.pr?money(p.pr):'sin precio (bodega)'}</span></div></div>
+    <div class="note" style="margin:0 0 10px;color:${p.code?'#14806b':'#8a6d1d'}">${p.code?'Producto real · código y precio de Herco (herco.hn)':p.pr?'Producto de ejemplo: aún no está en la lista de Herco que compartiste':'Inventario de bodega'}</div><div class="facts">
+    <div class="fact"><span>Mueble</span><b>${f.name.replace(' · ','<br>')}</b></div>
+    ${s?`<div class="fact"><span>Ubicación</span><b>${s.peg?'Gancho':'Repisa'} a ${s.y.toFixed(2)} m</b></div>
+    <div class="fact"><span>Zona de visual merchandising</span><b>${p.vm||'—'}</b></div>
+    <div class="fact"><span>Medidas (an × al × fo)</span><b>${Math.round(p.w*100)} × ${Math.round(p.h*100)} × ${Math.round(p.d*100)} cm</b></div>
+    <div class="fact"><span>Frentes</span><div class="step"><button data-d="-1">−</button><b>${p.f}</b><button data-d="1">+</button></div></div>
+    <div class="fact"><span>${s.peg?'Por gancho':'Fondo × apilado'}</span><b>${s.peg?p.fd:p.fd+' × '+p.st}</b></div>
+    <div class="fact"><span>Unidades</span><b>${u}</b></div><div class="fact"><span>Espacio lineal</span><b>${(lin(p)*100).toFixed(0)} cm</b></div>
+    <div class="fact"><span>Ocupación del nivel</span><b class="${o>1?'over':''}">${Math.round(o*100)}%</b></div>`
+    :p.t==='m'?`<div class="fact"><span>En exhibición</span><b>1</b></div><div class="fact"><span>En bodega</span><b>${p.stock}</b></div>`
+    :`<div class="fact"><span>Unidades</span><b>3 en exhibidor</b></div><div class="fact"><span>Altura</span><b>${p.h.toFixed(2)} m</b></div>`}
+    <div class="fact"><span>Valor exhibido</span><b>${money((p.t==='m'?1+p.stock:p.t==='l'?3:u)*p.pr)}</b></div></div>
+    ${o>1?`<div class="warn">Este nivel se pasa del largo del mueble (${(slotUsed(s)*100).toFixed(0)} de ${(f.F.L*100).toFixed(0)} cm). Quita frentes aquí o en otro producto del nivel.</div>`:''}
+    <button class="btn" data-focus-sel="${sel}">Acercar en 3D</button>`;
+  }else if(k==='c'){const c=CAMS.find(c=>c[0]===id);
+    h+=`<div class="ph"><i style="background:${CAMT[c[1]][1]};border-radius:50%"></i><div><b>${c[0]} · ${CAMT[c[1]][0]}</b><span>${c[6]}</span></div></div><div class="facts">
+    <div class="fact"><span>Altura de instalación</span><b>${c[4].toFixed(2)} m</b></div><div class="fact"><span>Posición en planta</span><b>x ${c[2].toFixed(2)} · y ${c[3].toFixed(2)} m</b></div>
+    <div class="fact"><span>Montaje</span><b>${c[1]==='bala'?'Pared / estructura':c[4]<3?'Bajo losa del mezzanine':'Techo'}</b></div><div class="fact"><span>Fuente</span><b>Plano de cámaras</b></div></div>
+    <button class="btn" data-pov="${c[0]}">Ver desde esta cámara</button>`;
+  }else if(k==='a'){const a=ACS.find(a=>a[0]===id);
+    h+=`<div class="ph"><i style="background:#1f8a9a"></i><div><b>${a[0]} · Aire tipo cassette</b><span>${a[1].toLocaleString('es-HN')} BTU</span></div></div><div class="facts">
+    <div class="fact"><span>Altura</span><b>4.50 m</b></div><div class="fact"><span>Soporte</span><b>Estructura metálica suspendida</b></div>
+    <div class="fact"><span>Posición en planta</span><b>x ${a[2]} · y ${a[3]} m</b></div><div class="fact"><span>Circuito</span><b>${{AC1:'Ckto #7',AC2:'Ckto #8',AC3:'Ckto #10',AC4:'Ckto #9'}[a[0]]} · tubería EMT ¾"</b></div></div>`;
+  }else{const e=EQI[id];h+=`<div class="ph"><i style="background:${id.startsWith('cajero')||id==='vendedor'?'#f07a1a':'#5d6b7a'}"></i><div><b>${e[0]}</b><span>${id.startsWith('cajero')||id==='vendedor'?'Personal de tienda':'Según planos'}</span></div></div><div class="note" style="font-size:13px;color:var(--ink)">${e[1]}</div><button class="btn" data-focus-sel="${sel}">Acercar en 3D</button>`;}
+  return h;
+}
+panel.addEventListener('click',e=>{
+  const q=s=>e.target.closest(s);let el;
+  if(el=q('[data-t]')){tab=el.dataset.t;renderPanel();return;}
+  if(el=q('[data-iso]')){enterIso(el.dataset.iso);return;}
+  if(el=q('[data-vmz]')){layers.vm=!layers.vm;applyLayers();renderPanel();if(layers.vm)goView('planta');return;}
+  if(el=q('[data-isov]')){isoView(el.dataset.isov);return;}
+  if(el=q('[data-pov]')){e.stopPropagation();select('c:'+el.dataset.pov,true);camPov(el.dataset.pov);return;}
+  if(el=q('[data-d]')){const p=PRODS.find(p=>p.id===sel.slice(2));p.f=Math.max(1,Math.min(20,p.f+ +el.dataset.d));buildAll();renderPanel();return;}
+  if(el=q('[data-focus-sel]')){focusSel(el.dataset.focusSel);return;}
+  {const es=q('[data-sel]');if(es&&ISO&&ISO.gond&&es.dataset.sel.startsWith('f:'))isoView(fxById(es.dataset.sel.slice(2)).face);}
+  if(el=q('[data-sel]')){const s=el.dataset.sel;if(el.classList.contains('back'))back=null;select(s,true);if(el.dataset.focus||s.startsWith('c:')||s.startsWith('a:')||s.startsWith('e:')||s.startsWith('p:'))focusSel(s);return;}
+});
+
+/* =================== MODO CLIENTE =================== */
+const W=window.__W={on:false,x:10.45,y:1.0,h:0,yaw:0,pitch:-.06,third:true,keys:{},jx:0,jy:0,phase:0,cart:new Map(),saved:null};
+let avatar=null,OBS0=null,OBS1=null;
+const R=.24,STAIR={x0:8.7,x1:9.8,y0:16.35,y1:20.45};
+const inStair=(x,y)=>x>STAIR.x0&&x<STAIR.x1&&y>STAIR.y0&&y<STAIR.y1;
+const stairH=y=>Math.max(0,Math.min(MZ,(y-STAIR.y0)/4.08*MZ));
+const SLABS=[[9.85,16.15,14.16,21.65],[8.44,20.45,9.85,21.65],[8.44,16.15,9.85,17.6],[8.7,20.2,9.8,20.46]];
+function buildObstacles(){
+  OBS0=FX.filter(f=>!f.base&&f.kind!=='floor').map(f=>f.rect);OBS0.push(...MFOOT);
+  OBS0.push([11.7,1.05,12.43,3.09],[12.43,1.0,13.4,3.2],[9.2,.2,9.3,.7],[11.6,.2,11.7,.7],[8.44,20.45,10.55,21.65],[10.9,20.3,11.3,21.65],[11.44,17.6,12.44,19.6],[8.5,16.1,8.7,16.3],[13.92,16.1,14.16,16.3],[6.25,5.47,6.55,5.77]);
+  OBS1=FX.filter(f=>f.base).map(f=>f.rect);
+  OBS1.push([8.6,16.35,11.2,17.2],[9.85,17.3,11.05,17.8],[9.95,18.3,10.6,20.3],[10.75,18.7,11.15,19.8],[12.7,20.6,14.05,21.4],[12.3,20.8,12.6,21.1],[13.1,19.95,13.6,20.5]);
+}
+const hitRect=(x,y,[x0,y0,x1,y1])=>{const cx=Math.max(x0,Math.min(x,x1)),cy=Math.max(y0,Math.min(y,y1));return(x-cx)**2+(y-cy)**2<R*R;};
+const inFloor=(x,y)=>(x>=R&&x<=14.16-R&&y>=R&&y<=11.44-R)||(x>=8.44+R&&x<=14.16-R&&y>=R&&y<=21.65-R);
+const inU=(x,y)=>SLABS.some(([x0,y0,x1,y1])=>x>=x0&&x<=x1&&y>=y0&&y<=y1);
+const onSlab=(x,y)=>inU(x,y)&&inU(x+R,y)&&inU(x-R,y)&&inU(x,y+R)&&inU(x,y-R)&&x<=14.16-R&&y<=21.65-R;
+function tryMove(nx,ny){
+  const was=inStair(W.x,W.y),up=W.h>1.5;
+  if(!inFloor(nx,ny))return false;
+  if(W.vend&&W.h<1&&(nx-W.vend[0])**2+(ny-W.vend[1])**2<.45*.45)return false;
+  if(inStair(nx,ny)){
+    if(!was){const okBottom=!up&&W.y<=STAIR.y0+.06,okTop=up&&W.y>=STAIR.y1-.3;if(!(okBottom||okTop)||nx<8.82||nx>9.68)return false;}
+    if(nx<8.82||nx>9.68)return false;
+    W.x=nx;W.y=ny;W.h=stairH(ny);return true;}
+  if(was){if(ny<=STAIR.y0){W.x=nx;W.y=ny;W.h=0;return true;}if(ny>=STAIR.y1){W.x=nx;W.y=ny;W.h=MZ;return true;}return false;}
+  if(up){if(!onSlab(nx,ny)||OBS1.some(r=>hitRect(nx,ny,r)))return false;}
+  else{if(OBS0.some(r=>hitRect(nx,ny,r)))return false;if(nx>STAIR.x0-R&&nx<STAIR.x1+R&&ny>STAIR.y0&&ny<STAIR.y1)return false;}
+  W.x=nx;W.y=ny;return true;
+}
+function waveVendor(dt){const v=STAFFOBJ.vendedor;if(!v||!W.vend)return;
+  // mira al cliente
+  const dx=W.x-W.vend[0],dy=W.y-W.vend[1];if(dx*dx+dy*dy<64)v.rotation.y=Math.atan2(dx,-dy);
+  const arm=v.userData.arms[0];if(W.wave>0){W.wave-=dt;const t=performance.now()/1000;arm.rotation.set(-2.7,0,-.25+Math.sin(t*9)*.35);}else arm.rotation.set(arm.userData.base,0,-.08);}
+function updateWalk(dt){waveVendor(dt);
+  const k=W.keys;
+  let f=((k.KeyW||k.ArrowUp)?1:0)-((k.KeyS||k.ArrowDown)?1:0)+W.jy;
+  let st=((k.KeyD)?1:0)-((k.KeyA)?1:0);
+  const turn=((k.ArrowLeft||k.KeyQ)?1:0)-((k.ArrowRight||k.KeyE)?1:0)-W.jx*.9;
+  W.yaw+=turn*1.9*dt;
+  f=Math.max(-1,Math.min(1,f));st=Math.max(-1,Math.min(1,st));
+  const mag=Math.min(1,Math.hypot(f,st)),sp=(k.ShiftLeft||k.ShiftRight?2.6:1.45)*dt;
+  if(mag>.04){
+    const dx=(-Math.sin(W.yaw)*f+Math.cos(W.yaw)*st)*sp,dy=(Math.cos(W.yaw)*f+Math.sin(W.yaw)*st)*sp;
+    const n=Math.ceil(Math.hypot(dx,dy)/.05)||1;
+    for(let i=0;i<n;i++){if(!tryMove(W.x+dx/n,W.y+dy/n)){if(!tryMove(W.x+dx/n,W.y))tryMove(W.x,W.y+dy/n);}}
+    W.phase+=dt*7.5*mag*(k.ShiftLeft||k.ShiftRight?1.5:1);
+  }else W.phase*=.85;
+  const sw=Math.sin(W.phase)*(mag>.04?.55:0),ud=avatar.userData;
+  ud.legs[0].rotation.x=sw;ud.legs[1].rotation.x=-sw;ud.arms[0].rotation.x=ud.arms[0].userData.base-sw*.7;ud.arms[1].rotation.x=ud.arms[1].userData.base+sw*.25;
+  avatar.position.set(W.x,W.h,-W.y);avatar.rotation.y=W.yaw+Math.PI;avatar.visible=W.third;
+  const fwd=new V3(-Math.sin(W.yaw),0,-Math.cos(W.yaw));
+  if(!W.third){const eye=new V3(W.x,W.h+1.6,-W.y);camera.position.copy(eye);
+    camera.lookAt(eye.clone().add(new V3(fwd.x*Math.cos(W.pitch),Math.sin(W.pitch),fwd.z*Math.cos(W.pitch))));}
+  else{const d=2.15,cp=new V3(W.x,W.h,-W.y).addScaledVector(fwd,-d).add(new V3(0,1.95-W.pitch*1.3,0));
+    if(W.h<1.5&&W.y>16.15)cp.y=Math.min(cp.y,2.7);
+    camera.position.lerp(cp,Math.min(1,dt*10));camera.lookAt(new V3(W.x,W.h+1.4+W.pitch*1.2,-W.y).addScaledVector(fwd,1.1));}
+}
+function enterWalk(){
+  if(ISO)exitIso(false);if(full)setFull(false);exitPov(false);
+  if(!OBS0)buildObstacles();
+  if(!avatar){avatar=person({collar:false,shirt:'#3d7cc9',pants:'#34465f',shoes:'#e9e9e9',skin:'#c99272',hair:'#2a1d14',cap:'#1d2430',basket:true});L.misc.add(avatar);}
+  W.saved={...layers};Object.assign(layers,{walls:true,labels:false,cover:false,mezz:true,people:true});applyLayers();
+  W.on=true;document.body.classList.add('walk','full');controls.enabled=false;tw=null;camera.fov=W.third?60:70;camera.updateProjectionMatrix();
+  sel=null;highlight();Object.assign(W,{x:10.45,y:2.5,h:0,yaw:0,pitch:-.06,jx:0,jy:0});
+  camera.position.set(10.45,2.2,.4);updateWalk(0);updateCart();
+  const v=STAFFOBJ.vendedor;if(v){W.vend=[9.8,3.7];v.position.copy(P3(9.8,3.7,0));v.rotation.y=Math.PI;W.wave=3.2;}
+  setTimeout(resize,60);setTimeout(()=>{if(W.on)guide(true);},700);
+}
+function exitWalk(){
+  {const v=STAFFOBJ.vendedor;if(v){const[x,y,r]=v.userData.home;v.position.copy(P3(x,y,0));v.rotation.y=r;const a=v.userData.arms;a[0].rotation.set(a[0].userData.base,0,-.08);}W.vend=null;W.wave=0;}
+  if(guideMark){guideMark.forEach(m=>scene.remove(m));guideMark=null;}
+  W.on=false;W.keys={};document.body.classList.remove('walk','full');controls.enabled=true;camera.fov=40;camera.updateProjectionMatrix();
+  avatar.visible=false;Object.assign(layers,W.saved||{});applyLayers();hideCard();setTimeout(()=>{resize();goView('general');},60);
+}
+document.getElementById('walkb').onclick=enterWalk;window.__tryMove=tryMove;window.__ans=answer;window.__guide=guide;window.__search=searchProd;window.__locate=locate;window.__dbg={PRODS,CATALOG,FX,MCAT,MPOS};window.__upd=updateWalk;
+document.getElementById('wexit').onclick=exitWalk;
+document.getElementById('wcam').onclick=e=>{W.third=!W.third;e.target.textContent='Vista: '+(W.third?'3ª persona':'1ª persona');document.getElementById('cross').style.display=W.third?'none':'block';camera.fov=W.third?60:70;camera.updateProjectionMatrix();};
+addEventListener('keydown',e=>{if(!W.on)return;if(e.target&&e.target.tagName==='INPUT'){if(e.code==='Escape')e.target.blur();return;}W.keys[e.code]=true;if(e.code.startsWith('Arrow')||e.code==='Space')e.preventDefault();if(e.code==='Escape')exitWalk();});
+addEventListener('keyup',e=>{W.keys[e.code]=false;});
+addEventListener('blur',()=>{W.keys={};});
+/* joystick */
+const joy=document.getElementById('joy'),knob=document.getElementById('knob');let joyId=null;
+function joyMove(e){const r=joy.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;let dx=e.clientX-cx,dy=e.clientY-cy;const m=Math.hypot(dx,dy),mx=44;if(m>mx){dx*=mx/m;dy*=mx/m;}
+  knob.style.transform=`translate(${dx}px,${dy}px)`;W.jx=dx/mx;W.jy=-dy/mx;if(Math.abs(W.jx)<.18)W.jx=0;}
+joy.addEventListener('pointerdown',e=>{joyId=e.pointerId;joy.setPointerCapture(joyId);joyMove(e);e.preventDefault();});
+joy.addEventListener('pointermove',e=>{if(e.pointerId===joyId)joyMove(e);});
+const joyEnd=e=>{if(e.pointerId!==joyId)return;joyId=null;W.jx=W.jy=0;knob.style.transform='';};
+joy.addEventListener('pointerup',joyEnd);joy.addEventListener('pointercancel',joyEnd);
+/* mirar arrastrando + tocar para tomar */
+let look=null;
+renderer.domElement.addEventListener('pointerdown',e=>{if(!W.on)return;look={id:e.pointerId,x:e.clientX,y:e.clientY,x0:e.clientX,y0:e.clientY};});
+renderer.domElement.addEventListener('pointermove',e=>{if(!W.on||!look||e.pointerId!==look.id)return;
+  W.yaw-=(e.clientX-look.x)*.0055;W.pitch=Math.max(-1.0,Math.min(.75,W.pitch-(e.clientY-look.y)*.004));look.x=e.clientX;look.y=e.clientY;});
+renderer.domElement.addEventListener('pointerup',e=>{if(!W.on||!look||e.pointerId!==look.id)return;const moved=Math.hypot(e.clientX-look.x0,e.clientY-look.y0);look=null;if(moved<7)walkTap(e);});
+const ZERO=new THREE.Matrix4().makeScale(0,0,0);
+function walkTap(e){
+  const r=renderer.domElement.getBoundingClientRect();
+  if(!W.third&&e.pointerType!=='touch'&&false)ptr.set(0,0);else ptr.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);
+  ray.setFromCamera(ptr,camera);
+  const hits=ray.intersectObjects([L.people,L.prod,L.mezz,L.misc,L.struct],true).filter(h=>visibleUp(h.object)&&h.object!==avatar&&!isAvatar(h.object));
+  let hit=null;for(const h of hits){if(h.object.userData.sel||h.object.userData.fids){hit=h;break;}}
+  if(!hit){hideCard();return;}
+  const s=hit.object.userData.sel||'';const eye=new V3(W.x,W.h+1.5,-W.y),dist=eye.distanceTo(hit.point);
+  if(s.startsWith('e:vendedor'))return guide();
+  if(s.startsWith('e:cajero'))return talk('Cajero(a)',W.cart.size?'Con gusto le cobro. Toque “Canasta” arriba a la derecha y luego “Pagar”.':'Cuando tenga sus productos, pase por aquí para pagar.');
+  if(s==='e:cajas'){openCart();return;}
+  if(!s.startsWith('p:')){hideCard();return;}
+  const p=PRODS.find(q=>q.id===s.slice(2));if(!p)return;
+  if(!p.pr){toast('Eso es inventario de bodega, no está a la venta en piso.');return;}
+  if(dist>3.0){toast(`Acérquese para tomarlo (está a ${dist.toFixed(1)} m).`);return;}
+  showTake(p,hit.object.isInstancedMesh?{grp:hit.object.userData.grp,i:hit.instanceId}:null);
+}
+const isAvatar=o=>{for(;o;o=o.parent)if(o===avatar)return true;return false;};
+const card=document.getElementById('wcard');
+function hideCard(){card.style.display='none';card.classList.remove('side');}
+function showTake(p,iid){
+  const big=p.t==='m'||p.t==='l';
+  card.innerHTML=`<b>${p.n}${p.code?'':' '+p.sub}</b>${p.code?`<span style="color:var(--mut)">INGCO ${p.code}</span><br>`:''}<span style="color:var(--mut)">${CAT[p.cat][0]} · ${fxById(p.fx).name}</span>
+   <div style="font-size:20px;font-weight:800;margin-top:6px">${money(p.pr)}</div>${big?'<div style="font-size:12px;color:var(--mut);margin-top:2px">Producto grande: un asesor se lo lleva a caja desde bodega.</div>':''}
+   <div class="act"><button class="sec2" data-w="close">Dejar</button><button class="pri" data-w="take">Tomar</button></div>`;
+  card.style.display='block';card._take=()=>{
+    if(iid){[L.prod,L.mezz].forEach(g=>g.children.forEach(m=>{if(m.isInstancedMesh&&m.userData.grp===iid.grp){m.setMatrixAt(iid.i,ZERO);m.instanceMatrix.needsUpdate=true;m.boundingSphere=null;}}));}
+    const c=W.cart.get(p.id)||{p,q:0};c.q++;W.cart.set(p.id,c);updateCart();hideCard();toast(`Agregado a la canasta: ${p.n}`);};
+}
+/* vendedor: indicaciones exactas según el planograma */
+function whereIs(f){
+  const gm=f.zone.match(/^Góndola (\d)$/);
+  if(gm){const n=+gm[1],side=f.face==='N'?(n===1?'el pasillo entre la pared del fondo y la Góndola 1':`el pasillo entre la Góndola ${n-1} y la Góndola ${n}`):
+      f.face==='S'?(n===4?'el pasillo de enfrente, entre la Góndola 4 y la entrada':`el pasillo entre la Góndola ${n} y la Góndola ${n+1}`):
+      f.face==='E'?'la cabecera que da al pasillo central':'la cabecera que da a la pared izquierda';
+    return `Góndola ${n}, ${f.face==='N'||f.face==='S'?(f.kind==='peg'?'en ganchos':'en repisas')+', en '+side:'en '+side}`;}
+  const extra={W1:'al frente, cerca de la entrada',W2:'entre el módulo 1 y el 3',W3:'a media pared',W4:'al fondo',N1:'a la izquierda',N2:'al centro',E1:'',E2:'pasando las cajas',E3:'a media tienda',E4:'frente a la tarima de sierras',E5:'cerca de la bodega',L1:'junto a la escalera del mezzanine, a la izquierda de la isla de generadores',B1:'',B2:'',B3:'',
+    T1:'en el pasillo central, frente a la Góndola 1',T2:'en el pasillo central, frente a la Góndola 2',V1:'en el pasillo central, a la altura de la Góndola 3',M1:'al fondo del pasillo central, antes de la bodega',
+    BM:'al fondo, en el área de bodega',C0:'junto a la Caja 1'}[f.id]||'';
+  const nm=f.id==='L1'?'Pared de la escalera':f.name.replace(' · ',', ');
+  return nm+(extra?', '+extra:'');
+}
+const ASK=[['Taladros y atornilladores',/^(taladro|atornillador|llave de impacto|combo atornillador)/i],['Esmeriladoras',/^(esmeril|mini esmeril|combo esmeril)/i],['Rotomartillos',/^rotomartillo/i],
+  ['Sierras, discos y hojas',/sierra(?!.*bimet)|caladora|ingleteadora|ranuradora|disco de sierra|hojas? (para caladora|sierra)/i],['Motosierras y podadoras',/^(motosierra|podadora|espada|cadena)/i],
+  ['Generadores',/^generador/i],['Compresores de aire',/^(compresor|combo 5 accesorios para compresor|manguera espiral)/i],
+  ['Hidrolavadoras',/^(hidrolavadora|boquilla|cepillo para limpieza de rines|destapador|pistola con lanza|manguera alta presión|dispensador de shampoo)/i],['Bombas de agua',/^(bomba|caja de control bomba)/i],['Baterías y cargadores',/^(batería|cargador|combo( 2)? bater)/i],
+  ['Llaves, desarmadores y martillos',null,['manual','sets']],['Brocas y brocas sierra',/broca|mandril|extractor/i],['Discos de corte y diamantados',/disco (diamantado|de corte|flap|de desbaste)|discos de corte/i],
+  ['Niveles y medición',/^(nivel|medidor|cinta métrica|multímetro|pinza amper|detector)|^escuadra$/i],['Seguridad y candados',null,['seg']],['Albañilería y tablayeso',null,['alba']],
+  ['Material eléctrico y linternas',null,['electr']],['Jardinería',null,['jard']],['Engrapadoras y pintura',null,['pint']]];
+let guideMark=null;
+const norm=t=>(t||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9.½¼¾"]+/g,' ').trim();
+function guide(first){
+  W.wave=first?3.2:1.6;
+  card.innerHTML=`<b>Vendedor(a) · INGCO-STORE</b><div style="line-height:1.45;margin-bottom:8px">${first?'¡Buenos días! Bienvenido a INGCO-STORE. Soy su asesor de ventas.':'Con gusto le ayudo.'} ¿Qué producto busca? Escríbame el nombre o el código y le digo dónde está.</div>
+   <input id="vsearch" type="search" placeholder="Ej.: esmeriladora 4½, UAG75028, nivel 80 cm…" autocomplete="off"
+     style="width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 10px;font:500 14px Inter;margin-bottom:8px">
+   <div id="vres"></div>
+   <div style="font-size:11.5px;color:var(--mut);margin:6px 0 4px">O elija una categoría:</div>
+   <div class="list" style="max-height:110px;overflow:auto">${ASK.map((a,i)=>`<button class="chip" data-w="ask" data-i="${i}">${a[0]}</button>`).join('')}</div>
+   <div class="act"><button class="sec2" data-w="close">Solo estoy viendo</button></div>`;card.style.display='block';card.classList.add('side');
+  const inp=document.getElementById('vsearch');inp.addEventListener('input',()=>searchProd(inp.value));if(!first)setTimeout(()=>inp.focus(),50);
+}
+function slotTxt(p){const f=fxById(p.fx);if(p.t==='m')return'Piso de exhibición';if(p.t==='l')return'Exhibidor de escaleras';const sl=f.slots&&f.slots[p.slot];if(!sl)return'';
+  const z=(p.vm||'').split(' · ')[0].toLowerCase();return `${sl.peg?'en gancho':'en repisa'} a ${sl.y.toFixed(2)} m${z?' ('+z+')':''}`;}
+function searchProd(q){
+  const box=document.getElementById('vres');if(!box)return;const t=norm(q);if(t.length<2){box.innerHTML='';return;}
+  const words=t.split(' ');const groups=new Map();
+  PRODS.filter(p=>p.pr).forEach(p=>{const hay=norm(p.n+' '+(p.code||'')+' '+(p.sub||'')+' '+CAT[p.cat][0]);if(words.every(w=>hay.includes(w))){const k=p.code||p.n+'|'+p.sub;groups.set(k,(groups.get(k)||[]).concat(p));}});
+  const ag=AGOTADOS.filter(a=>words.every(w=>norm(a[0]+' '+a[1]).includes(w)));
+  if(!groups.size&&!ag.length){box.innerHTML=`<div style="font-size:13px;color:var(--mut)">No tenemos ese producto en piso. Pruebe con otra palabra o el código INGCO.</div>`;return;}
+  const list=[...groups.values()].slice(0,6);
+  box.innerHTML=list.map((ps,i)=>{const p=ps[0];return `<div class="ln" style="cursor:pointer;align-items:flex-start" data-w="loc" data-k="${encodeURIComponent(p.code||p.n+'|'+p.sub)}">
+     <span style="flex:1"><b style="font-size:13px;display:inline">${p.n}</b>${p.code?` <span style="color:var(--mut);font-size:11.5px">${p.code}</span>`:''}<br><span style="font-size:12px;color:var(--mut)">${whereIs(fxById(p.fx))}${ps.length>1?` · y ${ps.length-1} lugar${ps.length>2?'es':''} más`:''}</span></span>
+     <span style="font-weight:700;white-space:nowrap">${money(p.pr)}</span></div>`;}).join('')
+   +(groups.size>6?`<div style="font-size:12px;color:var(--mut);margin-top:4px">${groups.size-6} resultados más; escriba más detalle.</div>`:'')
+   +ag.slice(0,3).map(a=>`<div class="ln"><span style="flex:1;font-size:12.5px">${a[0]} <span style="color:var(--mut)">${a[1]}</span></span><span style="color:#c62828;font-size:12px;font-weight:700">Agotado</span></div>`).join('');
+}
+function locate(key){
+  const k=decodeURIComponent(key),ps=PRODS.filter(p=>p.pr&&((p.code||p.n+'|'+p.sub)===k));if(!ps.length)return;const p=ps[0];
+  W.wave=1.2;
+  card.innerHTML=`<b>Vendedor(a)</b><div style="line-height:1.45"><b>${p.n}</b>${p.code?` · INGCO ${p.code}`:''} — ${money(p.pr)}.<br>Lo encuentra en:
+   <ul style="margin:6px 0 0 18px;padding:0">${ps.slice(0,4).map(q=>`<li>${whereIs(fxById(q.fx))}, ${slotTxt(q)}</li>`).join('')}</ul>
+   <div style="margin-top:6px;color:var(--mut);font-size:12px">Le marqué ${ps.length>1?'los lugares':'el lugar'} con una flecha verde; también aparece${ps.length>1?'n':''} en el minimapa.</div></div>
+   <div class="act"><button class="sec2" data-w="guide">Buscar otro</button><button class="pri" data-w="close">Gracias</button></div>`;card.classList.add('side');
+  if(guideMark)guideMark.forEach(m=>scene.remove(m));
+  guideMark=ps.slice(0,4).map(q=>{const bb=q._obj?new THREE.Box3().setFromObject(q._obj):q._bb;const c=bb.getCenter(new V3());
+    const g=new THREE.Mesh(new THREE.ConeGeometry(.12,.3,16),new THREE.MeshBasicMaterial({color:'#2ee07a'}));g.rotation.x=Math.PI;g.position.set(c.x,bb.max.y+.35,c.z);g.userData.bob=g.position.y;scene.add(g);return g;});
+}
+function answer(i){
+  const[label,re,cats]=ASK[i];
+  const hits=PRODS.filter(p=>p.pr&&(re?re.test(p.n):cats.includes(p.cat)));
+  const by=new Map();hits.forEach(p=>{const k=p.fx;by.set(k,(by.get(k)||[]).concat(p));});
+  const rows=[...by.entries()].sort((a,b)=>b[1].length-a[1].length);
+  const names=new Set(hits.map(p=>p.code||p.n));
+  const lines=rows.slice(0,4).map(([fid,ps])=>`<li>${whereIs(fxById(fid))} <span style="color:var(--mut)">(${ps.length})</span></li>`).join('');
+  const more=rows.length>4?`<div style="color:var(--mut);font-size:12px;margin-top:4px">y ${rows.length-4} lugar${rows.length-4>1?'es':''} más con pocas unidades.</div>`:'';
+  const cheap=hits.slice().sort((a,b)=>a.pr-b.pr)[0],top=hits.slice().sort((a,b)=>b.pr-a.pr)[0];
+  card.innerHTML=`<b>Vendedor(a)</b><div style="line-height:1.45">${label}: tenemos ${names.size} modelo${names.size>1?'s':''}${cheap?`, desde ${money(cheap.pr)}${top!==cheap?` hasta ${money(top.pr)}`:''}`:''}. Los encuentra en:
+   <ul style="margin:6px 0 0 18px;padding:0">${lines}</ul>${more}
+   <div style="margin-top:6px;color:var(--mut);font-size:12px">Le marqué ${rows.length>1?'los lugares':'el lugar'} con una flecha verde.</div></div>
+   <div class="act"><button class="sec2" data-w="guide">Otra cosa</button><button class="pri" data-w="close">Gracias</button></div>`;card.style.display='block';
+  if(guideMark)guideMark.forEach(m=>scene.remove(m));
+  guideMark=rows.slice(0,4).map(([fid,ps])=>{const f=fxById(fid),b=new THREE.Box3();ps.forEach(p=>{const bb=p._obj?new THREE.Box3().setFromObject(p._obj):p._bb;if(bb)b.union(bb);});const c=b.getCenter(new V3());
+    const g=new THREE.Mesh(new THREE.ConeGeometry(.14,.36,16),new THREE.MeshBasicMaterial({color:'#2ee07a'}));g.rotation.x=Math.PI;g.position.set(c.x,Math.max(b.max.y,(f.base||0)+1.2)+.45,c.z);g.userData.bob=g.position.y;scene.add(g);return g;});
+}
+function talk(who,txt){card.innerHTML=`<b>${who}</b><div style="line-height:1.45">${txt}</div><div class="act"><button class="pri" data-w="close">Gracias</button></div>`;card.style.display='block';}
+const cartTotal=()=>[...W.cart.values()].reduce((a,c)=>a+c.q*c.p.pr,0);
+function updateCart(){const n=[...W.cart.values()].reduce((a,c)=>a+c.q,0);document.getElementById('wcart').textContent=`Canasta · ${n}${n?' · '+moneyK(cartTotal()):''}`;
+  if(avatar&&avatar.userData.basket){const bk=avatar.userData.basket;bk.children.filter(o=>o.userData.item).forEach(o=>bk.remove(o));
+    [...W.cart.values()].slice(0,6).forEach((c,i)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(.08,.07,.06),std(CAT[c.p.cat][1]));m.position.set(-.11+(i%3)*.11,.03,(i<3?-.04:.05));m.userData.item=1;bk.add(m);});}}
+function openCart(){
+  if(!W.cart.size){card.innerHTML=`<b>Su canasta está vacía</b><div>Toque un producto en los estantes para tomarlo.</div><div class="act"><button class="pri" data-w="close">Seguir comprando</button></div>`;card.style.display='block';return;}
+  card.innerHTML=`<b>Su canasta</b>${[...W.cart.values()].map(c=>`<div class="ln"><span style="flex:1">${c.q} × ${c.p.n} ${c.p.sub}</span><span>${money(c.q*c.p.pr)}</span><button data-w="minus" data-id="${c.p.id}">−</button></div>`).join('')}
+   <div class="ln" style="border:0;font-weight:800;font-size:15px"><span>Total</span><span>${money(cartTotal())}</span></div>
+   <div class="act"><button class="sec2" data-w="close">Seguir comprando</button><button class="pri" data-w="pay">Pagar</button></div>`;card.style.display='block';}
+function pay(){
+  const near=W.h<1&&W.x>10.6&&W.x<11.75&&W.y>.8&&W.y<3.4;
+  if(!near){toast('Para pagar, camine hasta una de las cajas (a la derecha de la entrada) y toque “Pagar” ahí.',3800);hideCard();return;}
+  const items=[...W.cart.values()];
+  card.innerHTML=`<b>INGCO-STORE · Local 02</b><span style="color:var(--mut);font-size:12px">Compra simulada · ${new Date().toLocaleString('es-HN')}</span>
+   <div style="margin-top:8px">${items.map(c=>`<div class="ln"><span style="flex:1">${c.q} × ${c.p.n} ${c.p.sub}</span><span>${money(c.q*c.p.pr)}</span></div>`).join('')}</div>
+   <div class="ln" style="border:0;font-weight:800;font-size:15px"><span>Total pagado</span><span>${money(cartTotal())}</span></div>
+   <div style="text-align:center;margin-top:6px;color:#14806b;font-weight:700">¡Gracias por su compra!</div><div class="act"><button class="pri" data-w="close">Listo</button></div>`;
+  card.style.display='block';W.cart.clear();updateCart();
+}
+card.addEventListener('click',e=>{const b=e.target.closest('[data-w]');if(!b)return;const w=b.dataset.w;if(w==='ask'){answer(+b.dataset.i);return;}if(w==='guide'){guide();return;}if(w==='loc'){locate(b.dataset.k);return;}
+  if(w==='close')hideCard();else if(w==='take')card._take&&card._take();else if(w==='pay')pay();
+  else if(w==='minus'){const c=W.cart.get(b.dataset.id);c.q--;if(c.q<=0)W.cart.delete(b.dataset.id);updateCart();openCart();}});
+document.getElementById('wcart').onclick=openCart;
+let toastT=null;function toast(t,ms=2600){const el=document.getElementById('wtoast');el.textContent=t;el.style.opacity=1;clearTimeout(toastT);toastT=setTimeout(()=>el.style.opacity=0,ms);}
+/* minimapa */
+const mm=document.getElementById('mmap'),mx=mm.getContext('2d'),MS=8.4;
+function drawMap(){const w=mm.width,h=mm.height,X=x=>2+x*MS,Y=y=>h-2-y*MS;
+  mx.clearRect(0,0,w,h);mx.fillStyle='rgba(255,255,255,.93)';mx.fillRect(0,0,w,h);
+  mx.fillStyle='#ece9e3';mx.beginPath();[[0,0],[14.16,0],[14.16,21.65],[8.44,21.65],[8.44,11.44],[0,11.44]].forEach(([x,y],i)=>i?mx.lineTo(X(x),Y(y)):mx.moveTo(X(x),Y(y)));mx.closePath();mx.fill();mx.strokeStyle='#8f98a3';mx.lineWidth=1.5;mx.stroke();
+  FX.filter(f=>!f.base).forEach(f=>{const[x0,y0,x1,y1]=f.rect;mx.fillStyle=f.cat?CAT[f.cat][1]:'#a7afb8';mx.fillRect(X(x0),Y(y1),(x1-x0)*MS,(y1-y0)*MS);});
+  mx.fillStyle='#2b3038';mx.fillRect(X(11.7),Y(3.09),.73*MS,2.04*MS);mx.fillStyle='#8f98a3';mx.fillRect(X(8.7),Y(20.45),1.1*MS,4.1*MS);
+  mx.setLineDash([3,2]);mx.strokeStyle='#5d6b7a';mx.lineWidth=1;mx.strokeRect(X(8.44),Y(21.65),5.72*MS,5.5*MS);mx.setLineDash([]);
+  mx.fillStyle='#14806b';mx.fillRect(X(9.45),Y(0)-2,2*MS,3);
+  STAFF.forEach(s=>{mx.fillStyle='#f07a1a';mx.beginPath();mx.arc(X(s[2]),Y(s[3]),2.6,0,7);mx.fill();});
+  if(guideMark)guideMark.forEach(m=>{mx.fillStyle='#2ee07a';mx.strokeStyle='#0b7a3b';mx.lineWidth=1.5;mx.beginPath();mx.arc(X(m.position.x),Y(-m.position.z),4.5,0,7);mx.fill();mx.stroke();});
+  mx.save();mx.translate(X(W.x),Y(W.y));mx.rotate(-W.yaw);mx.fillStyle=W.h>1.5?'#8e4ec6':'#1f6feb';mx.beginPath();mx.moveTo(0,-7);mx.lineTo(4.5,5);mx.lineTo(0,2.5);mx.lineTo(-4.5,5);mx.closePath();mx.fill();mx.restore();
+  if(W.h>1.5){mx.fillStyle='#8e4ec6';mx.font='700 9px Inter';mx.fillText('MEZZANINE',4,11);}
+}
+
+/* =================== LOOP =================== */
+function resize(){const w=stage.clientWidth,h=stage.clientHeight;if(!w||!h)return;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
+new ResizeObserver(resize).observe(stage);
+let lastT=performance.now(),frame=0;
+function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-lastT)/1000);lastT=now;
+  if(guideMark)guideMark.forEach(m=>{m.position.y=m.userData.bob+Math.sin(now/250)*.08;m.rotation.y+=dt*2;});
+  if(W.on){updateWalk(dt);if((frame++&1)===0)drawMap();renderer.render(scene,camera);return;}
+  if(tw){const k=Math.min(1,(now-tw.t0)/850),e=1-Math.pow(1-k,3);camera.position.lerpVectors(tw.fp,tw.tp,e);controls.target.lerpVectors(tw.ft,tw.tt,e);camera.fov=tw.f0+(tw.f1-tw.f0)*e;camera.updateProjectionMatrix();if(k>=1)tw=null;}
+  controls.update();renderer.render(scene,camera);}
+(async()=>{
+  try{await Promise.race([document.fonts.load('800 64px Inter'),new Promise(r=>setTimeout(r,1500))]);}catch(e){}
+  FX.forEach(initFixture);buildStatic();buildAll();applyLayers();renderPanel();resize();
+  const[p,t]=VIEWS.general;const a=stage.clientWidth/stage.clientHeight;let pp=new V3(...p),tt=new V3(...t);if(a<1)pp=tt.clone().add(pp.clone().sub(tt).multiplyScalar(Math.min(1.9,1.1/a)));
+  camera.position.copy(pp);controls.target.copy(tt);window.__ok=true;
+  requestAnimationFrame(loop);
+  // HERCO OPS puede pedir abrir en una vista: window.__VISTA = 'planta' | 'pasillo' | … | 'cliente'
+  const pedida=window.__VISTA;
+  if(pedida==='cliente')setTimeout(enterWalk,350);
+  else if(pedida&&pedida!=='general'&&document.querySelector(`#views button[data-v="${pedida}"]`))setTimeout(()=>goView(pedida),350);
+})();
+</script>
+</body>
+</html>
