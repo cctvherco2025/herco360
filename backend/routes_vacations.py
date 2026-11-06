@@ -9,6 +9,7 @@ Las de antes de la jerarquía recibieron sus aprobadores con
 scripts/vacaciones_aprobadores.py; una solicitud sin `aprobadores` solo la
 aprueban ellos."""
 from datetime import date as date_cls, timedelta
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from core import (db, get_current_user, require_vacaciones_access, serialize_doc, now_iso, new_id, today_local_str,
                   RETAIL, departamento_de, es_jefe_depto, es_super_admin, filtro_depto)
@@ -179,16 +180,41 @@ async def calendar(start: str, end: str, user=Depends(require_vacaciones_access)
         'status': {'$in': ['approved', 'pending']},
         'start_date': {'$lte': end},
         'end_date': {'$gte': start},
-        **filtro_depto(user),
+        **await _filtro_visibles(user),
     }
+    rows = await db.vacation_requests.find(q, {'_id': 0}).sort('start_date', 1).to_list(500)
+    return serialize_doc(rows)
+
+
+async def _filtro_visibles(user) -> dict:
+    """De quién puede ver solicitudes (Calendario e Historial): el jefe del
+    departamento y sus admins, todo el departamento; quien tiene gente a cargo,
+    las suyas y las de su equipo; los demás, las suyas."""
+    q = dict(filtro_depto(user))
     if _sees_all_areas(user):
         pass
     elif await mando.tiene_equipo(user):
         q['user_id'] = {'$in': [user['id']] + await mando.ids_subordinados(user)}
     else:
         q['user_id'] = user['id']
-    rows = await db.vacation_requests.find(q, {'_id': 0}).sort('start_date', 1).to_list(500)
-    return serialize_doc(rows)
+    return q
+
+
+@router.get('/history')
+async def history(year: Optional[int] = None, user=Depends(require_vacaciones_access)):
+    """Historial: las solicitudes ya revisadas (autorizadas o rechazadas) de un
+    año, por fecha de inicio, de la más reciente a la más vieja. Se ven las
+    mismas personas que en el Calendario. `anios` son los años con algo."""
+    base = {'status': {'$in': ['approved', 'rejected']}, **await _filtro_visibles(user)}
+    anios = sorted({str(d)[:4] for d in await db.vacation_requests.distinct('start_date', base) if d}, reverse=True)
+    if year is None:
+        year = int(anios[0]) if anios else date_cls.fromisoformat(today_local_str()).year
+    q = {**base, 'start_date': {'$gte': f'{year:04d}-01-01', '$lte': f'{year:04d}-12-31'}}
+    campos = {'_id': 0, 'id': 1, 'user_id': 1, 'user_name': 1, 'user_avatar': 1, 'position': 1, 'area': 1,
+              'start_date': 1, 'end_date': 1, 'type': 1, 'status': 1, 'reviewed_by_name': 1, 'reviewed_at': 1,
+              'review_comment': 1}
+    rows = await db.vacation_requests.find(q, campos).sort([('start_date', -1), ('created_at', -1)]).to_list(3000)
+    return {'anio': year, 'anios': anios, 'solicitudes': serialize_doc(rows)}
 
 @router.put('/{request_id}')
 async def update_request(request_id: str, data: VacationRequestInput, user=Depends(require_vacaciones_access)):

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Palmtree, Plus, Check, X, Clock, CalendarRange, Inbox, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Palmtree, Plus, Check, X, CalendarRange, Inbox, ChevronLeft, ChevronRight, Search, History, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { Navigate } from 'react-router-dom';
@@ -157,6 +157,92 @@ function StatusBadge({ status }) {
 
 // Sin permiso de Vacaciones (override por usuario) se redirige al inicio.
 // Va en un envoltorio para no cortar el orden de los hooks de la página.
+const sinAcentos = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const MESES_LARGO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+// Historial: lo ya autorizado o rechazado de un año, por mes (se ven las mismas personas que en el Calendario)
+function Historial() {
+  const [anio, setAnio] = useState(null);
+  const [datos, setDatos] = useState(null);
+  const [q, setQ] = useState('');
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    setError(false);
+    api.get('/vacations/history', { params: anio ? { year: anio } : {} })
+      .then(({ data }) => { if (vivo) { setDatos(data); if (!anio) setAnio(data.anio); } })
+      .catch(() => { if (vivo) setError(true); });
+    return () => { vivo = false; };
+  }, [anio]);
+
+  const texto = sinAcentos(q.trim());
+  const filas = (datos?.solicitudes || []).filter((r) => !texto || sinAcentos(`${r.user_name} ${r.position || ''} ${r.area || ''}`).includes(texto));
+  const meses = [];
+  filas.forEach((r) => {
+    const m = r.start_date.slice(0, 7);
+    if (!meses.length || meses[meses.length - 1].m !== m) meses.push({ m, items: [] });
+    meses[meses.length - 1].items.push(r);
+  });
+  const anios = datos ? Array.from(new Set([...(datos.anios || []), String(datos.anio)])).sort().reverse() : [];
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="space-y-4" data-testid="vacaciones-historial">
+      <div className="flex gap-2">
+        <label className="flex-1 min-w-0 flex items-center gap-2 h-11 rounded-xl border bg-card px-3">
+          <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar persona" aria-label="Buscar persona en el historial"
+            spellCheck={false} autoComplete="off" className="flex-1 min-w-0 bg-transparent text-sm outline-none" data-testid="historial-buscar" />
+        </label>
+        <select value={anio || ''} onChange={(e) => setAnio(Number(e.target.value))} aria-label="Año" disabled={!datos}
+          className="h-11 rounded-xl border bg-card px-3 text-sm" data-testid="historial-anio">
+          {anios.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+      </div>
+
+      {error ? (
+        <div className="rounded-[18px] bg-card border shadow-card p-10 text-center text-sm text-muted-foreground">No se pudo cargar el historial</div>
+      ) : !datos ? (
+        <div className="rounded-[18px] bg-card border shadow-card p-10 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+      ) : !filas.length ? (
+        <div className="rounded-[18px] bg-card border shadow-card p-10 text-center">
+          <History className="h-10 w-10 text-muted-foreground/40 mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">{texto ? 'Nadie coincide con esa búsqueda' : `No hay vacaciones ni permisos revisados en ${datos.anio}`}</p>
+        </div>
+      ) : meses.map(({ m, items }) => (
+        <section key={m} className="space-y-2">
+          <h3 className="font-heading text-sm font-semibold text-muted-foreground capitalize">{MESES_LARGO[Number(m.slice(5)) - 1]}</h3>
+          <div className="rounded-[18px] bg-card border shadow-card overflow-hidden">
+            {items.map((r) => {
+              const n = diasDe(r);
+              return (
+                <div key={r.id} className="flex items-center gap-3 px-4 py-3 border-t first:border-t-0" data-testid="historial-item">
+                  <Avatar className="h-10 w-10 border shrink-0"><AvatarImage src={r.user_avatar} /><AvatarFallback>{r.user_name?.[0]}</AvatarFallback></Avatar>
+                  <span className="flex-1 min-w-0">
+                    <span className="block font-medium truncate">{r.user_name}</span>
+                    <span className="block text-xs text-muted-foreground truncate">
+                      <span className="inline-block h-2 w-2 rounded-full mr-1.5 align-[1px]" style={{ background: TYPE_COLOR[r.type] }} />
+                      {r.type} · {rangoCorto(r)}
+                    </span>
+                    <span className="block text-xs text-muted-foreground truncate">
+                      {r.status === 'approved' ? 'Autorizó' : <><span className="font-semibold text-[#dc2626]">Rechazada</span> por</>} {r.reviewed_by_name || '—'}
+                      {r.status === 'rejected' && r.review_comment ? ` · «${r.review_comment}»` : ''}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right">
+                    <span className="block font-heading font-semibold leading-tight tabular-nums">{n}</span>
+                    <span className="text-[11px] text-muted-foreground">{n === 1 ? 'día' : 'días'}</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </motion.div>
+  );
+}
+
 export default function Vacaciones() {
   const { user } = useAuth();
   if (!canAccessVacaciones(user)) return <Navigate to="/" replace />;
@@ -306,11 +392,11 @@ function VacacionesPage() {
       </div>
 
       {/* Pestañas */}
-      <div className={`mb-5 grid ${isManager ? 'grid-cols-[1.3fr_1fr_1fr]' : 'grid-cols-2'} rounded-xl border bg-card p-1 sm:max-w-[480px]`} role="tablist">
-        {[...(isManager ? [['autorizar', 'Por autorizar']] : []), ['mias', 'Mis solicitudes'], ['calendario', 'Calendario']].map(([k, t]) => (
+      <div className={`mb-5 grid ${isManager ? 'grid-cols-[1.3fr_1fr_1fr_1fr]' : 'grid-cols-3'} rounded-xl border bg-card p-1 sm:max-w-[600px]`} role="tablist">
+        {[...(isManager ? [['autorizar', 'Por autorizar']] : []), ['mias', 'Mis solicitudes'], ['calendario', 'Calendario'], ['historial', 'Historial']].map(([k, t]) => (
           <button key={k} role="tab" aria-selected={vistaActual === k} onClick={() => setVista(k)} data-testid={`vacaciones-tab-${k}`}
-            className={`min-w-0 inline-flex items-center justify-center whitespace-nowrap rounded-lg px-1 py-2 text-[13px] sm:text-sm font-medium transition-colors ${vistaActual === k ? 'bg-[#1e395e] text-white dark:bg-[#3cbef6] dark:text-[#0a1220]' : 'text-muted-foreground hover:text-foreground'}`}>
-            <span className="truncate">{t}</span>
+            className={`min-w-0 inline-flex items-center justify-center rounded-lg px-1 py-1.5 sm:py-2 text-[12px] leading-tight sm:text-sm font-medium transition-colors ${vistaActual === k ? 'bg-[#1e395e] text-white dark:bg-[#3cbef6] dark:text-[#0a1220]' : 'text-muted-foreground hover:text-foreground'}`}>
+            <span className="text-center sm:truncate sm:whitespace-nowrap">{t}</span>
             {k === 'autorizar' && toReview.length > 0 && <span className={`ml-1.5 inline-grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[11px] font-semibold ${vistaActual === k ? 'bg-[#ec9032] text-white' : 'bg-[rgba(236,144,50,0.14)] text-[#ec9032]'}`}>{toReview.length}</span>}
           </button>
         ))}
@@ -364,44 +450,55 @@ function VacacionesPage() {
         </SheetContent>
       </Sheet>
 
+      {vistaActual === 'historial' && <Historial />}
+
       {/* My requests */}
       {vistaActual === 'mias' && (
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.06 }}
-        className="rounded-[18px] bg-card border shadow-card p-5">
-        <h2 className="font-heading text-lg font-semibold mb-4">Mis solicitudes</h2>
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
         {mine.length === 0 ? (
-          <div className="text-center py-10">
+          <div className="rounded-[18px] bg-card border shadow-card p-10 text-center">
             <Palmtree className="h-10 w-10 text-muted-foreground/40 mx-auto mb-2" />
             <p className="text-sm text-muted-foreground">Aún no tienes solicitudes. Usa "Solicitar" para pedir días.</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {mine.map((r) => (
-              <div key={r.id} className="rounded-xl border p-4" data-testid="my-vacation-card">
-                <div className="flex items-center justify-between gap-3 mb-2">
-                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ color: TYPE_COLOR[r.type], background: `${TYPE_COLOR[r.type]}22` }}>{r.type}</span>
-                  <StatusBadge status={r.status} />
+          <div className="rounded-[18px] bg-card border shadow-card overflow-hidden">
+            {mine.map((r) => {
+              const n = diasDe(r);
+              return (
+                <div key={r.id} className="flex items-start gap-3 px-4 py-3 border-t first:border-t-0" data-testid="my-vacation-card">
+                  <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: TYPE_COLOR[r.type] }} aria-hidden="true" />
+                  <span className="flex-1 min-w-0">
+                    <span className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium">{rangoCorto(r)}</span>
+                      <StatusBadge status={r.status} />
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      {r.type}{r.reason && r.reason !== r.type ? ` · ${r.reason}` : ''}
+                    </span>
+                    {r.status !== 'pending' && r.reviewed_by_name && (
+                      <span className="block text-xs text-muted-foreground">
+                        {r.status === 'approved' ? 'Autorizó' : 'Rechazó'} {r.reviewed_by_name}
+                        {r.review_comment ? ` · «${r.review_comment}»` : ''}
+                      </span>
+                    )}
+                    <span className="mt-1.5 flex gap-4">
+                      <button onClick={() => openEdit(r)} className="text-xs font-medium text-[#1e395e] dark:text-[#3cbef6] hover:underline" data-testid="edit-my-vacation">
+                        Editar
+                      </button>
+                      {r.status !== 'approved' && (
+                        <button onClick={() => removeMine(r)} className="text-xs font-medium text-[#dc2626] hover:underline" data-testid="delete-my-vacation">
+                          Eliminar
+                        </button>
+                      )}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right">
+                    <span className="block font-heading font-semibold leading-tight tabular-nums">{n}</span>
+                    <span className="text-[11px] text-muted-foreground">{n === 1 ? 'día' : 'días'}</span>
+                  </span>
                 </div>
-                <RangeRow r={r} />
-                {r.reason && <p className="text-sm text-muted-foreground mt-1.5">{r.reason}</p>}
-                {r.status !== 'pending' && r.reviewed_by_name && (
-                  <p className="text-xs text-muted-foreground mt-2 pt-2 border-t inline-flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> {r.status === 'approved' ? 'Autorizada' : 'Rechazada'} por {r.reviewed_by_name}
-                    {r.review_comment ? ` — "${r.review_comment}"` : ''}
-                  </p>
-                )}
-                <div className="flex gap-2 mt-3 pt-3 border-t">
-                  <button onClick={() => openEdit(r)} className="text-xs font-medium text-[#1e395e] dark:text-[#3cbef6] hover:underline" data-testid="edit-my-vacation">
-                    Editar
-                  </button>
-                  {r.status !== 'approved' && (
-                    <button onClick={() => removeMine(r)} className="text-xs font-medium text-[#dc2626] hover:underline" data-testid="delete-my-vacation">
-                      Eliminar
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </motion.div>
