@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Plus, ChevronLeft, ChevronRight, CalendarDays, Check, X as XIcon, Eye, EyeOff, Users as UsersIcon, Palmtree, Wrench } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CalendarDays, Check, X as XIcon, Eye, EyeOff, Users as UsersIcon, Palmtree, Wrench, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -81,6 +81,8 @@ export function MantResumen({ m, ahora, onClose, onIr }) {
   );
 }
 
+const sinAcentos = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
 export default function Agenda() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
@@ -93,6 +95,11 @@ export default function Agenda() {
   const [pendingTime, setPendingTime] = useState('09:00');
   const [team, setTeam] = useState([]);
   const [visible, setVisible] = useState({});
+  const [buscaEquipo, setBuscaEquipo] = useState('');
+  const qEquipo = sinAcentos(buscaEquipo.trim());
+  const equipoFiltrado = qEquipo
+    ? team.filter((m) => sinAcentos(`${m.name} ${m.position || ''} ${m.area || ''}`).includes(qEquipo))
+    : team;
   const [teamEvents, setTeamEvents] = useState({});
   const [tareas, setTareas] = useState([]); // tareas con fecha límite (todo el día) en el rango
   // mantenimientos de activos (los que hace o supervisa), con un interruptor para verlos u ocultarlos
@@ -141,8 +148,9 @@ export default function Agenda() {
   }, [anchor]);
 
   const toggleMember = (id) => {
+    // se ve un calendario a la vez: elegir a alguien cambia al suyo; tocarlo otra vez vuelve al tuyo
     setVisible((prev) => {
-      const next = { ...prev, [id]: !prev[id] };
+      const next = prev[id] ? {} : { [id]: true };
       if (next[id]) fetchMember(id);
       return next;
     });
@@ -151,11 +159,10 @@ export default function Agenda() {
     if (params.get('new') === '1') { setEditing(null); setModalOpen(true); setParams({}); }
   }, [params, setParams]);
 
-  const filtered = [
-    ...activities,
-    ...team.filter((m) => visible[m.id]).flatMap((m) => teamEvents[m.id] || []),
-  ];
-  const enCalendario = [...filtered, ...(verMant ? mants.mantenimientos.map((m) => mantComoActividad(m, mants.ahora)) : [])];
+  const otro = team.find((m) => visible[m.id]); // calendario de otra persona en pantalla (el tuyo se oculta)
+  const filtered = otro ? (teamEvents[otro.id] || []) : activities;
+  const enCalendario = otro ? filtered : [...filtered, ...(verMant ? mants.mantenimientos.map((m) => mantComoActividad(m, mants.ahora)) : [])];
+  const tareasVista = otro ? [] : tareas;
   const proxMant = mants.mantenimientos.filter((m) => m.estado !== 'completada' && m.estado !== 'incompleta' && m.fecha >= ymd(new Date())).slice(0, 5);
   const [mantSel, setMantSel] = useState(null); // mantenimiento del modal de resumen
   const openEvent = (ev) => { if (ev.mant) { setMantSel(ev.datos); return; } setEditing(ev); setModalOpen(true); };
@@ -283,10 +290,16 @@ export default function Agenda() {
               </TabsList>
             </Tabs>
           </div>
+          {otro && (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm" style={{ borderColor: colorFor(otro.id) }} data-testid="agenda-viendo-otro">
+              <span className="flex items-center gap-2 min-w-0"><Eye className="h-4 w-4 shrink-0" style={{ color: colorFor(otro.id) }} /><span className="truncate">Viendo el calendario de <b>{otro.name}</b></span></span>
+              <button onClick={() => setVisible({})} className="text-xs font-medium text-[#00a5df] hover:underline">Volver a mi calendario</button>
+            </div>
+          )}
           <div className="overflow-hidden">
-            {view === 'Semana' && <WeekView anchor={anchor} activities={enCalendario} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} onNuevoEnDia={(ds) => openNew(ds)} tareas={tareas} onTareaClick={(t) => navTareas(`/tareas/${t.id}`)} />}
-            {view === 'Día' && <DayView anchor={anchor} activities={enCalendario} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} onNuevoEnDia={(ds) => openNew(ds)} tareas={tareas} onTareaClick={(t) => navTareas(`/tareas/${t.id}`)} />}
-            {view === 'Mes' && <MonthView anchor={anchor} activities={enCalendario} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onEventMove={moveEvent} tareas={tareas} onTareaClick={(t) => navTareas(`/tareas/${t.id}`)} />}
+            {view === 'Semana' && <WeekView anchor={anchor} activities={enCalendario} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} onNuevoEnDia={(ds) => openNew(ds)} tareas={tareasVista} onTareaClick={(t) => navTareas(`/tareas/${t.id}`)} />}
+            {view === 'Día' && <DayView anchor={anchor} activities={enCalendario} onEventClick={openEvent} onSlotClick={(ds, t) => openNew(ds, t)} onEventMove={moveEvent} onNuevoEnDia={(ds) => openNew(ds)} tareas={tareasVista} onTareaClick={(t) => navTareas(`/tareas/${t.id}`)} />}
+            {view === 'Mes' && <MonthView anchor={anchor} activities={enCalendario} onEventClick={openEvent} onSlotClick={(ds) => openNew(ds)} onEventMove={moveEvent} tareas={tareasVista} onTareaClick={(t) => navTareas(`/tareas/${t.id}`)} />}
           </div>
         </motion.div>
 
@@ -299,9 +312,16 @@ export default function Agenda() {
                 <UsersIcon className="h-4 w-4 text-[#1e395e] dark:text-[#3cbef6]" />
                 <h3 className="font-heading font-semibold">Calendarios del equipo</h3>
               </div>
-              <p className="text-xs text-muted-foreground mb-3">Activa para ver el calendario de tu equipo sobre el tuyo.</p>
+              <p className="text-xs text-muted-foreground mb-3">Toca a una persona para ver solo su calendario; tócala otra vez para volver al tuyo.</p>
+              <div className="relative mb-2">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <input type="search" value={buscaEquipo} onChange={(e) => setBuscaEquipo(e.target.value)}
+                  placeholder="Buscar persona, cargo o área" spellCheck={false} autoComplete="off" aria-label="Buscar en calendarios del equipo" data-testid="team-calendar-search"
+                  className="w-full h-9 rounded-xl border bg-background pl-8 pr-3 text-sm outline-none focus:ring-2 focus:ring-[#00a5df]/40" />
+              </div>
               <div className="space-y-1.5 max-h-[260px] overflow-y-auto">
-                {team.map((m) => {
+                {!equipoFiltrado.length && <p className="text-sm text-muted-foreground text-center py-3">Nadie coincide con «{buscaEquipo.trim()}»</p>}
+                {equipoFiltrado.map((m) => {
                   const on = !!visible[m.id];
                   const color = colorFor(m.id);
                   return (
