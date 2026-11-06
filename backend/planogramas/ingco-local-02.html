@@ -374,6 +374,10 @@ const LAMPS=[];
 [9.5,6.75,4.25,1.62].forEach(y=>LAMPS.push([1.36,y,1]));
 [10.49,12.85].forEach(x=>[15.4,12.7,9.96,7.22,4.36,1.62].forEach(y=>LAMPS.push([x,y,1])));
 const PANELS=[[11.06,19.33],[13.06,19.33],[11.06,16.95],[13.06,16.95],[9.15,16.95]];
+// mezzanine (plano «Distribución de lámparas · Mezzanine»): paneles LED 2'×2' de empotrar y bombillos LED de 15 W
+const MZ_PANELS=[[10.80,17.79],[12.60,17.79],[11.99,19.61]];
+const MZ_FOCOS=[[9.16,21.03],[13.34,20.99]];
+const MZ_CIELO=MZ+2.75;
 
 /* =================== UTILIDADES =================== */
 const money=v=>'L '+v.toLocaleString('es-HN',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -1133,6 +1137,10 @@ function buildStatic(){
   const cab=new THREE.InstancedMesh(new THREE.CylinderGeometry(.003,.003,1,4),M.grey,LAMPS.length*2);let k=0;
   LAMPS.forEach(([x,y,r])=>[-.5,.5].forEach(o=>{dummy.position.copy(P3(x+(r?0:o),y+(r?o:0),4.5));dummy.rotation.set(0,0,0);dummy.updateMatrix();cab.setMatrixAt(k++,dummy.matrix);}));L.lamps.add(cab);
   const pn=new THREE.InstancedMesh(new THREE.BoxGeometry(.6,.03,.6),lm,PANELS.length);PANELS.forEach(([x,y],i)=>{dummy.position.copy(P3(x,y,MZ-SLAB-.015));dummy.updateMatrix();pn.setMatrixAt(i,dummy.matrix);});pn.userData.sel='e:lamparas';L.lamps.add(pn);
+  const mzp=new THREE.InstancedMesh(new THREE.BoxGeometry(.6,.03,.6),lm,MZ_PANELS.length);MZ_PANELS.forEach(([x,y],i)=>{dummy.position.copy(P3(x,y,MZ_CIELO));dummy.updateMatrix();mzp.setMatrixAt(i,dummy.matrix);});mzp.userData.sel='e:lamparas';L.lamps.add(mzp);
+  const mzm=new THREE.InstancedMesh(new THREE.BoxGeometry(.64,.02,.64),M.grey,MZ_PANELS.length);MZ_PANELS.forEach(([x,y],i)=>{dummy.position.copy(P3(x,y,MZ_CIELO+.02));dummy.updateMatrix();mzm.setMatrixAt(i,dummy.matrix);});mzm.userData.sel='e:lamparas';L.lamps.add(mzm);
+  MZ_FOCOS.forEach(([x,y])=>{const f=new THREE.Mesh(new THREE.SphereGeometry(.06,12,8),lm);f.position.copy(P3(x,y,MZ_CIELO-.1));f.userData.sel='e:lamparas';L.lamps.add(f);
+    const c=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.06,10),M.grey);c.position.copy(P3(x,y,MZ_CIELO-.02));c.userData.sel='e:lamparas';L.lamps.add(c);});
 }
 function label(txt,pos,col,scale=.7){
   const tx=canvasTex(256,72,(x,w,h)=>{x.fillStyle=col;x.beginPath();x.roundRect(2,2,w-4,h-4,30);x.fill();x.fillStyle='#fff';x.textAlign='center';x.textBaseline='middle';fit(x,txt,w/2,h/2+2,w-28,40,800);});
@@ -1152,7 +1160,7 @@ const EQI={
  mesab:['Mesa de bodega','Mesa de trabajo y empaque bajo el mezzanine.'],limpieza:['Separador de ambientes','Mueble para productos de limpieza, junto al baño.'],
  bano:['Aseo','Baño con inodoro y lavamanos, bajo el mezzanine, con pileta de aseo.'],escalera:['Escalera al mezzanine','17 contrahuellas de 18 cm hasta el nivel +3.06 m.'],
  mezz:['Mezzanine','Losa a +3.06 m sobre la bodega, de unos 5.7 × 5.5 m, con baranda de vidrio. Tiene taller, cocineta y oficina.'],
- lamparas:['Iluminación',`${LAMPS.length} luminarias LED lineales colgantes de 100 W (14,000 lm, 5000 K) en el área de ventas y ${PANELS.length} lámparas de 50 W bajo el mezzanine.`],
+ lamparas:['Iluminación',`${LAMPS.length} luminarias LED lineales colgantes de 100 W (14,000 lm, 5000 K) en el área de ventas, ${PANELS.length} lámparas de 50 W bajo el mezzanine y, arriba en el mezzanine, ${MZ_PANELS.length} paneles LED de empotrar 2'×2' y ${MZ_FOCOS.length} bombillos LED de 15 W.`],
  cajero1:['Cajero(a) · Caja 1','Atiende la estación de cobro 1. Uniforme: camisa naranja tipo polo con cuello negro y pantalón negro.'],
  cajero2:['Cajero(a) · Caja 2','Atiende la estación de cobro 2. Uniforme: camisa naranja tipo polo con cuello negro y pantalón negro.'],
  vendedor:['Vendedor(a)','Atiende el piso de ventas; en el modelo está en el pasillo entre las góndolas 2 y 3, con tableta para consultar existencias. Uniforme: camisa naranja tipo polo con cuello negro y pantalón negro.'],
