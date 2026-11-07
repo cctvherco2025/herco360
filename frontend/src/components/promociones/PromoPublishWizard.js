@@ -40,6 +40,22 @@ const ORIGEN_LABEL = { excel: 'del Excel', memoria: 'recordada', sugerida: 'suge
 // minúsculas, sin tildes, sin espacios dobles — para buscar y comparar
 const normTxt = (v) => (v ?? '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
+// Una l\u00ednea cuyo vencimiento ya pas\u00f3 no se publica (la promoci\u00f3n termin\u00f3).
+// Vence el d\u00eda que dice: se puede publicar hasta ese mismo d\u00eda.
+// Acepta "06/11/2026", "6/11/26" y "2026-11-06"; si no se entiende, no bloquea.
+const fechaVence = (v) => {
+  const t = (v ?? '').toString().trim();
+  let m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/);
+  if (m) return new Date(m[3].length === 2 ? 2000 + +m[3] : +m[3], +m[2] - 1, +m[1]);
+  m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+};
+const estaVencida = (v) => {
+  const d = fechaVence(v);
+  const hoy = new Date();
+  return !!d && d < new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+};
+
 // Sugerencia de categoría por palabras clave del nombre de la línea. Solo es
 // un punto de partida: el administrador revisa y corrige cada línea antes de
 // publicar. El orden importa (p. ej. "Electrodomésticos Black & Decker" es
@@ -331,7 +347,7 @@ export default function PromoPublishWizard() {
           est.codigo ? `Código ${est.codigo}` : null, vence ? `Vence ${vence}` : null].filter(Boolean).join(' · ')
         : hint;
       return {
-        localId: newItemId(), titulo: nombre, pregunta: referencia, incluida: true, categoria, origen,
+        localId: newItemId(), titulo: nombre, pregunta: referencia, incluida: !estaVencida(vence), categoria, origen,
         nombreOriginal: nombre, estrategia: est.estrategia, oferta: est.oferta, etiqueta: est.etiqueta,
         descuento: descCol ? (row[descCol] ?? '') : '', vence,
         opciones: OPCIONES_BASE.map((o) => ({ ...o })),
@@ -339,6 +355,8 @@ export default function PromoPublishWizard() {
     });
     const recordadas = generated.filter((it) => it.origen === 'memoria').length;
     if (recordadas) toast.success(`${recordadas} línea(s) tomaron la categoría de meses anteriores`);
+    const vencidas = generated.filter((it) => estaVencida(it.vence)).length;
+    if (vencidas) toast.warning(`${vencidas} línea(s) ya vencieron y no se publicarán`);
     setItems(generated);
     setBusqueda(''); setCatFiltro(''); setSeleccion(new Set());
     setStep(2);
@@ -402,7 +420,7 @@ export default function PromoPublishWizard() {
     setGrupoDialog(null);
   };
 
-  const includedItems = items.filter((it) => it.incluida);
+  const includedItems = items.filter((it) => it.incluida && !estaVencida(it.vence));
   const sinCategoria = includedItems.filter((it) => !it.categoria).length;
 
   const conteoCategorias = {};
@@ -666,8 +684,10 @@ export default function PromoPublishWizard() {
               <div ref={listaRef} className="space-y-2.5 max-h-[480px] overflow-y-auto pr-1 mb-4">
                 {itemsFiltrados.map((it) => {
                   const idx = items.indexOf(it);
+                  const vencida = estaVencida(it.vence);
+                  const entra = it.incluida && !vencida;
                   return (
-                  <div key={it.localId} className={`rounded-[14px] border bg-card p-3.5 ${!it.incluida ? 'opacity-50' : ''} ${it.incluida && !it.categoria ? 'border-[#dc2626]/60' : ''}`} data-testid="promo-item-row">
+                  <div key={it.localId} className={`rounded-[14px] border bg-card p-3.5 ${!entra ? 'opacity-50' : ''} ${entra && !it.categoria ? 'border-[#dc2626]/60' : ''}`} data-testid="promo-item-row">
                     <div className="flex items-start gap-2.5">
                       <div className="pt-2 shrink-0">
                         <Checkbox checked={seleccion.has(it.localId)} onCheckedChange={() => toggleSel(it.localId)} />
@@ -705,6 +725,11 @@ export default function PromoPublishWizard() {
                             placeholder="Referencia (opcional)" className="h-8 text-xs text-muted-foreground" />
                         )}
                         <p className="text-[11px] text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1">
+                          {vencida && (
+                            <span className="rounded-full px-2 py-0.5 font-semibold bg-[#fee2e2] text-[#991b1b]" data-testid="promo-item-vencida">
+                              Venció el {it.vence} · no se publica
+                            </span>
+                          )}
                           {it.etiqueta && (
                             <span className="rounded-full px-2 py-0.5 font-semibold text-white" style={{ background: ESTRATEGIA_COLOR[it.estrategia] }}
                               data-testid="promo-item-estrategia">{it.etiqueta}</span>
@@ -732,7 +757,8 @@ export default function PromoPublishWizard() {
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        <Switch checked={it.incluida} onCheckedChange={(v) => updateItem(it.localId, { incluida: v })} data-testid="promo-item-toggle" />
+                        <Switch checked={entra} disabled={vencida} onCheckedChange={(v) => updateItem(it.localId, { incluida: v })}
+                          title={vencida ? 'La promoción ya venció' : undefined} data-testid="promo-item-toggle" />
                         <button onClick={() => removeItem(it.localId)} className="text-muted-foreground hover:text-[#dc2626]" data-testid="promo-item-remove">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>

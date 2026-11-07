@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight, Camera, Upload, X, Info, Send, FileDown, RotateCcw,
-  AlertTriangle,
+  AlertTriangle, Clock,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -27,6 +27,21 @@ const GENERAL_PHOTO_OWNER = '_general';
 function tone(pct) { return pct >= 90 ? 'g' : pct >= 75 ? 'a' : 'r'; }
 const TONE_COLOR = { g: '#16a34a', a: '#ec9032', r: '#dc2626' };
 const draftKey = (formId) => `herco360_customform_draft_${formId}`;
+
+// Promociones del mes: una línea cuya promoción ya terminó ("… · Vence
+// 07/11/2026" en su referencia) se puede contestar igual; solo se avisa.
+// Vence el día que dice: hasta ese día no está vencida.
+const VENCE_RE = /Vence:?\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/;
+const DIAS_CORTO = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+const MESES_CORTO = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+function vencioEl(it) {
+  const m = VENCE_RE.exec(it?.pregunta || '');
+  if (!m) return null;
+  const d = new Date(+m[3], +m[2] - 1, +m[1]);
+  const hoy = new Date();
+  return d < new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()) ? d : null;
+}
+const diaCorto = (d) => `${DIAS_CORTO[d.getDay()]} ${d.getDate()} ${MESES_CORTO[d.getMonth()]}`;
 
 function loadDraft(formId) {
   try { const raw = localStorage.getItem(draftKey(formId)); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
@@ -55,6 +70,11 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
     eligeCategoria ? schema.items.filter((it) => (it.seccion || 'General') === categoria) : schema.items
   ), [eligeCategoria, schema.items, categoria]);
   const STEPS = items.length;
+  const vencidas = useMemo(() => {
+    const m = {};
+    if (isPromo) items.forEach((it) => { const d = vencioEl(it); if (d) m[it.id] = d; });
+    return m;
+  }, [isPromo, items]);
   const conteoPorCategoria = useMemo(() => {
     const c = {};
     schema.items.forEach((it) => { const k = it.seccion || 'General'; c[k] = (c[k] || 0) + 1; });
@@ -491,11 +511,12 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
           it={items[cursor]} cursor={cursor} steps={STEPS} items={items} choice={choice} notes={notes} photos={photos} uploading={uploading}
           onSelectSingle={selectSingle} onToggleMulti={toggleMulti} onToggleAll={toggleAll} onSetText={setText} onSetNote={setNote}
           onFiles={handleFiles} onRemovePhoto={removePhoto} onPrev={prev} onNext={next} onGoto={goto}
-          onZoom={setZoomSrc} camInputs={camInputs} touched={touched}
+          onZoom={setZoomSrc} camInputs={camInputs} touched={touched} vencidas={vencidas}
         />
       )}
       {phase === 'resumen' && (
-        <Resumen schema={schema} summary={summary} categoria={eligeCategoria ? categoria : ''} onExport={exportPdf} onSubmit={submit} submitting={submitting} />
+        <Resumen schema={schema} summary={summary} categoria={eligeCategoria ? categoria : ''} onExport={exportPdf} onSubmit={submit} submitting={submitting}
+          vencidas={items.filter((it) => vencidas[it.id] && touched.has(it.id)).map((it) => ({ titulo: it.titulo, fecha: vencidas[it.id] }))} />
       )}
 
       <PhotoZoomDialog open={!!zoomSrc} onClose={() => setZoomSrc(null)}>
@@ -505,8 +526,9 @@ export default function CustomFormWizard({ schema, onSubmitted }) {
   );
 }
 
-function WalkCard({ it, cursor, steps, items, choice, notes, photos, uploading, onSelectSingle, onToggleMulti, onToggleAll, onSetText, onSetNote, onFiles, onRemovePhoto, onPrev, onNext, onGoto, onZoom, camInputs, touched }) {
+function WalkCard({ it, cursor, steps, items, choice, notes, photos, uploading, onSelectSingle, onToggleMulti, onToggleAll, onSetText, onSetNote, onFiles, onRemovePhoto, onPrev, onNext, onGoto, onZoom, camInputs, touched, vencidas = {} }) {
   const pics = photos[it.id] || [];
+  const vencio = vencidas[it.id];
   const busy = uploading === it.id;
   const single = choice[it.id];
   const multi = Array.isArray(choice[it.id]) ? choice[it.id] : [];
@@ -522,10 +544,18 @@ function WalkCard({ it, cursor, steps, items, choice, notes, photos, uploading, 
           <div className="h-full rounded-full bg-[#00a5df] transition-all" style={{ width: `${((cursor + 1) / steps) * 100}%` }} />
         </div>
         <div className="flex flex-wrap gap-1.5 mt-3">
-          {items.map((f, i) => (
-            <button key={f.id} onClick={() => onGoto(i)} title={f.titulo} className="h-2 w-2 rounded-full transition-all"
-              style={{ background: i === cursor ? '#00a5df' : touched.has(f.id) ? '#1e395e' : 'var(--border)', transform: i === cursor ? 'scale(1.6)' : 'scale(1)' }} />
-          ))}
+          {items.map((f, i) => {
+            const v = !!vencidas[f.id];
+            const libre = i !== cursor && !touched.has(f.id);
+            return (
+              <button key={f.id} onClick={() => onGoto(i)} title={v ? `${f.titulo} · vencida` : f.titulo} className="h-2 w-2 rounded-full transition-all"
+                style={{
+                  background: i === cursor ? (v ? '#dc2626' : '#00a5df') : touched.has(f.id) ? '#1e395e' : v ? 'transparent' : 'hsl(var(--border))',
+                  boxShadow: v && libre ? 'inset 0 0 0 2px #dc2626' : undefined,
+                  transform: i === cursor ? 'scale(1.6)' : 'scale(1)',
+                }} />
+            );
+          })}
         </div>
       </div>
 
@@ -540,6 +570,13 @@ function WalkCard({ it, cursor, steps, items, choice, notes, photos, uploading, 
           )}
           <h3 className="font-heading text-lg font-semibold leading-snug">{it.titulo}</h3>
           {it.pregunta && <p className="text-sm text-muted-foreground mt-0.5">{it.pregunta}</p>}
+          {vencio && (
+            <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-[#f6c9c9] bg-[#fdecec] dark:border-[#7f1d1d] dark:bg-[rgba(220,38,38,0.12)] px-3 py-2.5 text-[13px] text-[#b91c1c] dark:text-[#f87171]"
+              data-testid="customform-promo-vencida">
+              <Clock className="h-4 w-4 shrink-0 mt-0.5" />
+              <span><b className="block">Esta promoción terminó el {diaCorto(vencio)}</b>Puedes contestarla.</span>
+            </div>
+          )}
 
           {it.tipo === 'opcion_unica' && (
             <div className="mt-5 space-y-2">
@@ -651,7 +688,7 @@ function WalkCard({ it, cursor, steps, items, choice, notes, photos, uploading, 
   );
 }
 
-function Resumen({ schema, summary, categoria, onExport, onSubmit, submitting }) {
+function Resumen({ schema, summary, categoria, onExport, onSubmit, submitting, vencidas = [] }) {
   const t = tone(summary.pct);
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
@@ -666,6 +703,26 @@ function Resumen({ schema, summary, categoria, onExport, onSubmit, submitting })
         </div>
       )}
       <p className="text-sm text-muted-foreground text-center mb-4">{summary.touchedCount} de {summary.total} preguntas respondidas{categoria ? ` · ${categoria}` : ''}</p>
+
+      {vencidas.length > 0 && (
+        <div className="rounded-[18px] bg-card border shadow-card p-4 space-y-3" data-testid="customform-resumen-vencidas">
+          <div className="flex items-start gap-2.5 rounded-xl border border-[#f6c9c9] bg-[#fdecec] dark:border-[#7f1d1d] dark:bg-[rgba(220,38,38,0.12)] px-3 py-2.5 text-[13px] text-[#b91c1c] dark:text-[#f87171]">
+            <Clock className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>
+              <b className="block">{vencidas.length === 1 ? '1 línea ya venció' : `${vencidas.length} líneas ya vencieron`}</b>
+              Se envían igual y quedan marcadas como contestadas después de vencer.
+            </span>
+          </div>
+          <ul className="text-sm divide-y">
+            {vencidas.map((v, i) => (
+              <li key={i} className="flex items-center justify-between gap-3 py-1.5">
+                <span className="min-w-0 truncate">{v.titulo}</span>
+                <span className="shrink-0 text-xs font-semibold text-[#b91c1c] dark:text-[#f87171]">venció {v.fecha.getDate()} {MESES_CORTO[v.fecha.getMonth()]}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2 mt-5">
         <Button variant="outline" className="rounded-xl" onClick={onExport} data-testid="customform-export-pdf">

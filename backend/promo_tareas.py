@@ -19,12 +19,13 @@ Enviar observaciones abre un ticket con esas líneas; al cerrarlo, la categoría
 queda validada.
 """
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from core import (db, get_current_user, serialize_doc, new_id, now_iso, PROMO_TIENDAS,
+from core import (db, get_current_user, serialize_doc, new_id, now_iso, PROMO_TIENDAS, APP_UTC_OFFSET_HOURS,
                   JEFE_TIENDA, tienda_promos, es_revisor_tienda, es_coordinador_tienda,
                   require_promociones_mes_access, can_admin_promos)
 from notifications import create_notification, notify_admins
@@ -49,6 +50,27 @@ def periodo_label(periodo: str) -> str:
         return f'{_MESES[int(m) - 1]} {y}'
     except Exception:
         return periodo or ''
+
+
+_VENCE_RE = re.compile(r'Vence:?\s*(\d{1,2})/(\d{1,2})/(\d{4})')
+
+
+def vence_de(item: dict) -> Optional[str]:
+    """Día en que vence la promoción de una línea ('2026-11-07'), leído de su
+    referencia ('… · Vence 07/11/2026'). None si no trae una sola fecha."""
+    m = _VENCE_RE.search((item or {}).get('pregunta') or '')
+    return f'{m[3]}-{int(m[2]):02d}-{int(m[1]):02d}' if m else None
+
+
+def dia_local(iso_utc: Optional[str]) -> Optional[str]:
+    """Día (hora de Honduras) de un instante guardado en UTC."""
+    try:
+        dt = datetime.fromisoformat((iso_utc or '').replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return dt.strftime('%Y-%m-%d')
+    return (dt.astimezone(timezone.utc) + timedelta(hours=APP_UTC_OFFSET_HOURS)).strftime('%Y-%m-%d')
 
 
 def categorias_de(form: dict) -> list:
@@ -387,6 +409,12 @@ async def detalle(tarea_id: str, user=Depends(get_current_user)):
     form = await db.custom_forms.find_one({'id': t['form_id']}, {'_id': 0, 'items': 1, 'titulo': 1, 'periodo': 1})
     items = {it['id']: {k: it.get(k) for k in ('titulo', 'pregunta', 'tipo', 'estrategia', 'etiqueta', 'opciones')}
              for it in (form or {}).get('items', [])}
+    # Líneas contestadas después del día en que vencía su promoción: no se
+    # bloquean, se marcan para que quien revisa no las cuente como falla.
+    contestada = dia_local(t.get('enviada_at'))
+    for it in items.values():
+        it['vence'] = vence_de(it)
+        it['fuera_de_tiempo'] = bool(contestada and it['vence'] and contestada > it['vence'])
     ticket = None
     if t.get('ticket_id'):
         ticket = await db.tickets.find_one({'id': t['ticket_id']}, {'_id': 0, 'id': 1, 'numero': 1, 'estado': 1})

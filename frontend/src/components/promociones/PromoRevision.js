@@ -180,6 +180,14 @@ function RevisionTarea({ id, onBack }) {
           Contestó {tarea.coordinador_name || '—'}{tarea.enviada_at ? ` · ${timeAgoEs(tarea.enviada_at)}` : ''}
           {respuesta ? ` · socializado: ${respuesta.socializo ? 'Sí' : 'No'}` : ''}
         </p>
+        {(() => {
+          const n = entries.filter((e) => items[e.id]?.fuera_de_tiempo).length;
+          return n > 0 && (
+            <p className="text-xs rounded-xl bg-[rgba(220,38,38,0.08)] text-[#b91c1c] dark:text-[#f87171] px-3 py-2" data-testid="promo-revision-fuera-tiempo-resumen">
+              {n === 1 ? '1 línea se contestó' : `${n} líneas se contestaron`} después de que venció su promoción.
+            </p>
+          );
+        })()}
         {d.es_propia && <p className="text-xs rounded-xl bg-muted px-3 py-2">Es tu respuesta: la revisa el otro jefe o el gerente de la tienda.</p>}
         {tarea.estado === 'validada' && <p className="text-xs rounded-xl bg-[rgba(22,163,74,0.12)] text-[#16a34a] px-3 py-2">Validada por {tarea.validada_por_name}.</p>}
         {d.ticket && (
@@ -214,6 +222,11 @@ function RevisionTarea({ id, onBack }) {
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-muted-foreground">Coordinador:</span> <Respuesta entry={e} item={it} />
             </div>
+            {it.fuera_de_tiempo && (
+              <p className="text-xs rounded-xl bg-[rgba(220,38,38,0.08)] text-[#b91c1c] dark:text-[#f87171] px-3 py-2" data-testid="promo-revision-fuera-tiempo">
+                <span className="font-semibold">Contestada después de vencer</span> · la promoción terminó el {it.vence.split('-').reverse().join('/')}. No la cuentes como falla de la tienda.
+              </p>
+            )}
             {e.note && <p className="text-xs text-muted-foreground">Nota: {e.note}</p>}
             {(e.photos || []).length > 0 && (
               <div className="flex flex-wrap gap-2">
