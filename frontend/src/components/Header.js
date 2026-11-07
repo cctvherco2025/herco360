@@ -126,7 +126,7 @@ export default function Header({ onMenuClick }) {
               )}
             </button>
           </PopoverTrigger>
-          <PopoverContent align="end" className="w-[min(92vw,380px)] p-0 rounded-2xl overflow-hidden">
+          <PopoverContent align="end" sideOffset={8} collisionPadding={16} className="w-[min(calc(100vw-32px),380px)] p-0 rounded-2xl overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b">
               <p className="font-heading font-semibold text-foreground">Notificaciones</p>
               {unread > 0 && <button onClick={markAll} className="text-xs text-[#00a5df] hover:underline font-medium" data-testid="notif-mark-all">Marcar todas</button>}
