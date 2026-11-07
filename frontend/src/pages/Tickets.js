@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Ticket } from 'lucide-react';
+import { Ticket, ArrowLeft } from 'lucide-react';
 import api from '@/lib/api';
 import { timeAgoEs } from '@/lib/time';
 import { PlazoChip } from '@/lib/promoPlazos';
+import { useAuth } from '@/context/AuthContext';
+import { canAccessFormulariosPrincipal } from '@/lib/constants';
 
 export const ESTADO_TICKET = {
   abierto: { label: 'Abierto', cls: 'bg-[rgba(220,38,38,0.1)] text-[#dc2626]' },
@@ -34,6 +36,9 @@ const FILTROS = [
    ve las que tiene asignadas; el jefe y el gerente, las de su tienda. */
 export default function Tickets() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  // Seguimientos es parte de Formularios: se regresa ahí (o a Inicio si no tiene esa pantalla)
+  const volver = canAccessFormulariosPrincipal(user) ? { to: '/formularios', label: 'Formularios' } : { to: '/', label: 'Inicio' };
   const [tickets, setTickets] = useState(null);
   const [filtro, setFiltro] = useState('atender');
 
@@ -48,6 +53,10 @@ export default function Tickets() {
 
   return (
     <div className="max-w-[900px] mx-auto pt-2">
+      <Link to={volver.to} data-testid="tickets-volver"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-3 min-h-[44px] sm:min-h-0">
+        <ArrowLeft className="h-3.5 w-3.5" /> {volver.label}
+      </Link>
       <div className="mb-5">
         <h1 className="font-heading text-2xl sm:text-3xl font-semibold flex items-center gap-2">
           <Ticket className="h-7 w-7 text-[#00a5df]" /> Seguimientos
