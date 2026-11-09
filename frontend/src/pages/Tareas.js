@@ -2,11 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { ListChecks, Plus, Loader2, CalendarClock, Search, X } from 'lucide-react';
+import { ListChecks, Plus, Loader2, CalendarClock, Search, X, ChevronRight } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { timeAgoEs } from '@/lib/time';
-import { puedeCrearTareas, PRIORIDADES_TAREA, esRetail, esSuperAdmin } from '@/lib/constants';
+import { puedeCrearTareas, PRIORIDADES_TAREA } from '@/lib/constants';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -56,6 +55,116 @@ const FILTROS = [
   { key: 'cerrada', label: 'Cerradas', fn: (t) => t.estado === 'cerrada' || t.estado === 'cancelada' },
   { key: 'todos', label: 'Todas', fn: () => true },
 ];
+
+// ---- Lista: grupos por urgencia y qué le toca a la persona ----
+const MES_TAREA = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const aDia = (s) => {
+  const [a, m, d] = (s || '').slice(0, 10).split('-').map(Number);
+  return a && m && d ? new Date(a, m - 1, d) : null;
+};
+const diasHasta = (s) => {
+  const d = aDia(s);
+  if (!d) return null;
+  const h = new Date();
+  return Math.round((d - new Date(h.getFullYear(), h.getMonth(), h.getDate())) / 86400000);
+};
+const nombreCorto = (n) => (n || '').trim().split(/\s+/).slice(0, 2).join(' ');
+const PESO_PRIORIDAD = { alta: 0, media: 1, baja: 2 };
+const porFecha = (a, b) => (a.fecha_limite || '').localeCompare(b.fecha_limite || '')
+  || (PESO_PRIORIDAD[a.prioridad] ?? 1) - (PESO_PRIORIDAD[b.prioridad] ?? 1);
+const porRecientes = (a, b) => (b.updated_at || '').localeCompare(a.updated_at || '');
+const GRUPOS_TAREA = [
+  { key: 'vencidas', label: 'Vencidas', rojo: true, orden: porFecha },
+  { key: 'semana', label: 'Esta semana', orden: porFecha },
+  { key: 'adelante', label: 'Más adelante', orden: porFecha },
+  { key: 'sin', label: 'Sin fecha', orden: porRecientes },
+  { key: 'cerradas', label: 'Cerradas', orden: porRecientes },
+];
+function grupoDe(t) {
+  if (t.estado !== 'abierta') return 'cerradas';
+  if (t.vencida) return 'vencidas';
+  const n = diasHasta(t.fecha_limite);
+  if (n === null) return 'sin';
+  const hastaDomingo = (7 - new Date().getDay()) % 7;
+  return n <= hastaDomingo ? 'semana' : 'adelante';
+}
+function plazoDe(t) {
+  if (t.estado !== 'abierta') return null;
+  const n = diasHasta(t.fecha_limite);
+  if (n === null) return null;
+  if (t.vencida) return n === -1 ? 'Venció ayer' : `Venció hace ${-n} días`;
+  if (n === 0) return 'Vence hoy';
+  if (n === 1) return 'Vence mañana';
+  return n > 1 ? `Faltan ${n} días` : null;
+}
+// Lo que la tarea espera de la persona; sin nada suyo, a quién se está esperando.
+const ACCION_CLS = {
+  hacer: 'bg-[#1e395e] text-white dark:bg-[#3cbef6] dark:text-[#0a1220]',
+  validar: 'bg-[rgba(0,165,223,0.14)] text-[#1e395e] dark:text-[#3cbef6]',
+  devuelta: 'bg-[rgba(236,144,50,0.16)] text-[#a85c10] dark:text-[#ec9032]',
+  espera: 'bg-muted text-muted-foreground',
+};
+function accionDe(t) {
+  if (t.mi_estado === 'devuelta') return { label: 'Te la devolvieron', cls: ACCION_CLS.devuelta };
+  if (t.mi_estado === 'pendiente') return { label: 'Te toca hacerla', cls: ACCION_CLS.hacer };
+  if (t.soy_validador && t.por_validar > 0) {
+    return { label: `Te toca validar${t.por_validar > 1 ? ` · ${t.por_validar}` : ''}`, cls: ACCION_CLS.validar };
+  }
+  const faltan = (t.asignados || []).filter((a) => ['pendiente', 'devuelta'].includes(a.estado));
+  if (faltan.length === 1) return { label: `Esperando a ${nombreCorto(faltan[0].name)}`, cls: ACCION_CLS.espera };
+  if (faltan.length > 1) return { label: `Esperando a ${faltan.length} personas`, cls: ACCION_CLS.espera };
+  return { label: 'Esperando validación', cls: ACCION_CLS.espera };
+}
+
+function FilaTarea({ t, yoId, onAbrir }) {
+  const dia = aDia(t.fecha_limite);
+  const abierta = t.estado === 'abierta';
+  const total = (t.asignados || []).length;
+  const val = (t.asignados || []).filter((a) => a.estado === 'validada').length;
+  const accion = abierta ? accionDe(t) : null;
+  const plazo = plazoDe(t);
+  const lugar = t.tienda || t.area;
+  const para = total > 1 ? `${total} personas` : (t.mi_estado ? '' : t.asignados?.[0]?.name);
+  const asigno = t.creado_por?.id === yoId ? 'asignada por ti' : `asignó ${t.creado_por?.name || ''}`;
+  const detalle = [lugar, para, asigno].filter(Boolean).join(' · ');
+  return (
+    <button type="button" onClick={onAbrir} data-testid="tarea-row"
+      className="grid w-full grid-cols-[48px_minmax(0,1fr)_16px] items-center gap-x-3 gap-y-1.5 border-t px-3 py-3 text-left transition-colors first:border-t-0 hover:bg-muted/40 sm:grid-cols-[54px_minmax(0,1fr)_auto_16px] sm:gap-x-3.5 sm:gap-y-0 sm:px-4">
+      {dia ? (
+        <span className={`flex h-12 w-12 flex-col items-center justify-center rounded-xl leading-none sm:h-[54px] sm:w-[54px] ${t.vencida ? 'bg-[rgba(220,38,38,0.1)] text-[#dc2626]' : 'bg-muted text-[#1e395e] dark:text-[#3cbef6]'}`} data-testid="tarea-dia">
+          <span className="font-heading text-lg font-semibold sm:text-xl">{dia.getDate()}</span>
+          <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide">{MES_TAREA[dia.getMonth()]}</span>
+        </span>
+      ) : (
+        <span className="grid h-12 w-12 place-items-center rounded-xl bg-muted text-center text-[10.5px] font-medium leading-tight text-muted-foreground sm:h-[54px] sm:w-[54px]" data-testid="tarea-dia">Sin fecha</span>
+      )}
+      <span className="min-w-0">
+        <span className="block break-words text-[14.5px] font-semibold leading-snug sm:flex sm:items-start sm:gap-2 sm:text-[15px]">
+          <span className="sm:min-w-0">{t.titulo}</span>
+          <span className="ml-1.5 inline-block align-[1px] sm:ml-0 sm:shrink-0"><PrioridadTarea prioridad={t.prioridad} /></span>
+        </span>
+        <span className="mt-0.5 block truncate text-[12.5px] text-muted-foreground">
+          <span className="font-mono text-[11.5px]">{t.numero}</span>{detalle ? ` · ${detalle}` : ''}
+        </span>
+        {abierta && total > 1 && (
+          <span className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground" data-testid="tarea-avance">
+            <span className="block h-[5px] w-[90px] overflow-hidden rounded-full bg-muted">
+              <span className="block h-full rounded-full bg-[#00a5df]" style={{ width: `${Math.round((val / total) * 100)}%` }} />
+            </span>
+            {val} de {total} validadas
+          </span>
+        )}
+      </span>
+      <span className="col-start-2 row-start-2 flex flex-wrap items-center gap-2 sm:col-start-3 sm:row-start-1 sm:flex-col sm:flex-nowrap sm:items-end sm:gap-1 sm:whitespace-nowrap">
+        {accion
+          ? <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${accion.cls}`} data-testid="tarea-accion">{accion.label}</span>
+          : <EstadoTarea estado={t.estado} />}
+        {plazo && <span className={`text-xs ${t.vencida ? 'font-medium text-[#dc2626]' : 'text-muted-foreground'}`} data-testid="tarea-plazo">{plazo}</span>}
+      </span>
+      <ChevronRight className="col-start-3 row-start-1 h-4 w-4 text-muted-foreground sm:col-start-4" />
+    </button>
+  );
+}
 
 function NuevaTarea({ open, onOpenChange, onCreada }) {
   const vacio = { titulo: '', descripcion: '', prioridad: 'media', fecha_limite: '' };
@@ -146,6 +255,7 @@ export default function Tareas() {
   const navigate = useNavigate();
   const [tareas, setTareas] = useState(null);
   const [filtro, setFiltro] = useState('atender');
+  const [busca, setBusca] = useState('');
   const [nueva, setNueva] = useState(false);
 
   const load = useCallback(async () => {
@@ -155,69 +265,70 @@ export default function Tareas() {
   useEffect(() => { load(); }, [load]);
 
   const f = FILTROS.find((x) => x.key === filtro);
-  const lista = (tareas || []).filter(f.fn);
+  const palabras = normalizar(busca).split(/\s+/).filter(Boolean);
+  const coincide = (t) => {
+    if (!palabras.length) return true;
+    const texto = normalizar([t.titulo, t.numero, t.tienda, t.area, t.creado_por?.name, ...(t.asignados || []).map((a) => a.name)].join(' '));
+    return palabras.every((p) => texto.includes(p));
+  };
+  const lista = (tareas || []).filter((t) => f.fn(t) && coincide(t));
+  const grupos = GRUPOS_TAREA
+    .map((g) => ({ ...g, items: lista.filter((t) => grupoDe(t) === g.key).sort(g.orden) }))
+    .filter((g) => g.items.length);
 
   return (
-    <div className="max-w-[900px] mx-auto pt-2">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+    <div className="max-w-[960px] mx-auto pt-2">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl sm:text-3xl font-semibold flex items-center gap-2">
             <ListChecks className="h-7 w-7 text-[#00a5df]" /> Tareas
           </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">{!esRetail(user) && !esSuperAdmin(user)
-            ? 'Encargos del equipo: quien la hace sube foto al terminar y el gerente o jefe valida.'
-            : 'Encargos de la tienda: el coordinador sube foto al terminar y el gerente o jefe valida.'}</p>
+          <p className="text-muted-foreground text-sm mt-0.5">Lo que te toca hacer o validar</p>
         </div>
         {puedeCrearTareas(user) && (
-          <Button onClick={() => setNueva(true)} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white" data-testid="tareas-nueva">
+          <Button onClick={() => setNueva(true)} className="rounded-xl bg-[#1e395e] hover:bg-[#162c49] text-white max-sm:w-full" data-testid="tareas-nueva">
             <Plus className="h-4 w-4 mr-1" /> Nueva tarea
           </Button>
         )}
       </div>
 
-      <div className="flex flex-wrap gap-1.5 mb-4" role="tablist">
-        {FILTROS.map((x) => {
-          const n = (tareas || []).filter(x.fn).length;
-          return (
-            <button key={x.key} type="button" role="tab" aria-selected={filtro === x.key} onClick={() => setFiltro(x.key)}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium border transition-colors ${filtro === x.key ? 'bg-[#1e395e] text-white border-transparent' : 'bg-card text-muted-foreground hover:text-foreground'}`}
-              data-testid={`tareas-filtro-${x.key}`}>
-              {x.label}{tareas ? ` · ${n}` : ''}
-            </button>
-          );
-        })}
+      <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex justify-between gap-1 max-[340px]:gap-0 sm:shrink-0 sm:justify-start sm:gap-1.5" role="tablist" aria-label="Filtrar tareas">
+          {FILTROS.map((x) => {
+            const n = (tareas || []).filter(x.fn).length;
+            const activo = filtro === x.key;
+            return (
+              <button key={x.key} type="button" role="tab" aria-selected={activo} onClick={() => setFiltro(x.key)}
+                className={`min-h-9 whitespace-nowrap rounded-full border px-[9px] text-[12.5px] font-medium transition-colors max-[340px]:px-[7px] max-[340px]:text-xs sm:px-3 sm:text-sm ${activo ? 'bg-[#1e395e] text-white border-transparent' : 'bg-card text-muted-foreground hover:text-foreground'}`}
+                data-testid={`tareas-filtro-${x.key}`}>
+                {x.label}{tareas ? <span className={activo ? '' : 'hidden sm:inline'}> · {n}</span> : ''}
+              </button>
+            );
+          })}
+        </div>
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar tarea, número o persona"
+            aria-label="Buscar tarea" className="h-10 rounded-xl bg-card pl-9" data-testid="tareas-buscar" />
+        </div>
       </div>
 
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
-        className="rounded-[18px] bg-card border shadow-card overflow-hidden">
-        {tareas === null && <p className="text-sm text-muted-foreground text-center py-12">Cargando…</p>}
-        {tareas && lista.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-12">
-            {filtro === 'atender' ? 'No tienes tareas por atender.' : 'Sin tareas en este filtro.'}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+        {(tareas === null || lista.length === 0) && (
+          <p className="mt-4 rounded-[18px] border bg-card py-12 text-center text-sm text-muted-foreground shadow-card">
+            {tareas === null ? 'Cargando…'
+              : palabras.length ? `Ninguna tarea coincide con “${busca.trim()}”.`
+                : filtro === 'atender' ? 'No tienes tareas por atender.' : 'Sin tareas en este filtro.'}
           </p>
         )}
-        {lista.map((t) => {
-          const total = (t.asignados || []).length;
-          const val = (t.asignados || []).filter((a) => a.estado === 'validada').length;
-          return (
-            <button key={t.id} type="button" onClick={() => navigate(`/tareas/${t.id}`)}
-              className="w-full text-left flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-4 border-b last:border-0 hover:bg-muted/40 transition-colors"
-              data-testid="tarea-row">
-              <span className="font-mono text-xs text-muted-foreground w-[92px] shrink-0">{t.numero}</span>
-              <span className="flex-1 min-w-[180px]">
-                <span className="block text-sm font-medium">{t.titulo}</span>
-                <span className="block text-xs text-muted-foreground">
-                  {t.tienda || t.area || 'Equipo'} · {total === 1 ? t.asignados[0].name : `${total} personas`} · asignó {t.creado_por?.name}
-                </span>
-              </span>
-              <PrioridadTarea prioridad={t.prioridad} />
-              <FechaLimite fecha={t.fecha_limite} vencida={t.vencida} />
-              {t.estado === 'abierta' && <span className="text-xs text-muted-foreground">{val}/{total} validadas</span>}
-              <EstadoTarea estado={t.estado} />
-              <span className="text-xs text-muted-foreground w-[90px] text-right">{timeAgoEs(t.updated_at)}</span>
-            </button>
-          );
-        })}
+        {grupos.map((g) => (
+          <section key={g.key} data-testid={`tareas-grupo-${g.key}`}>
+            <h2 className={`mx-0.5 mb-2 mt-4 text-xs font-semibold uppercase tracking-wide ${g.rojo ? 'text-[#dc2626]' : 'text-muted-foreground'}`}>{g.label} · {g.items.length}</h2>
+            <div className="overflow-hidden rounded-[18px] border bg-card shadow-card">
+              {g.items.map((t) => <FilaTarea key={t.id} t={t} yoId={user?.id} onAbrir={() => navigate(`/tareas/${t.id}`)} />)}
+            </div>
+          </section>
+        ))}
       </motion.div>
 
       <NuevaTarea open={nueva} onOpenChange={setNueva} onCreada={load} />
