@@ -33,6 +33,7 @@ const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'o
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 const fechaCorta = (iso) => { const d = new Date(iso); return `${d.getDate()} ${MESES[d.getMonth()]}`; };
 const horaDe = (iso) => new Date(iso).toLocaleTimeString('es-HN', { hour: 'numeric', minute: '2-digit' });
+const fechaCompleta = (iso) => { const d = new Date(iso); return `${DIAS[d.getDay()]} ${d.getDate()} ${MESES[d.getMonth()]} ${d.getFullYear()} · ${horaDe(iso)}`; };
 function etiquetaDia(iso) {
   const d = new Date(iso); const hoy = new Date(); const ayer = new Date(); ayer.setDate(hoy.getDate() - 1);
   if (d.toDateString() === hoy.toDateString()) return 'Hoy';
@@ -670,6 +671,47 @@ function InventarioTab({ refreshKey, onAbrir }) {
 }
 
 /* ----------------- Movimientos (historial, de 12 en 12) ----------------- */
+function DatoMovimiento({ titulo, children }) {
+  return (
+    <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-3 border-t py-2.5 text-sm">
+      <dt className="text-muted-foreground">{titulo}</dt>
+      <dd className="m-0 whitespace-pre-line break-words font-medium">{children}</dd>
+    </div>
+  );
+}
+
+function DetalleMovimiento({ mov, pc, onClose }) {
+  const tp = mov ? tipoDe(mov) : 'entrada'; const t = TIPO[tp];
+  return (
+    <Ventana open={!!mov} onClose={onClose} pc={pc} ancho={480} titulo="Detalle del movimiento" testid="mov-detalle">
+      {mov && (
+        <div className="p-5">
+          <div className="grid grid-cols-[64px_minmax(0,1fr)] items-center gap-3 pr-8">
+            <span className="grid h-16 w-16 place-items-center overflow-hidden rounded-xl bg-muted"><FotoProducto src={mov.thumb} nombre={mov.article} mini /></span>
+            <span className="min-w-0">
+              <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${t.cls}`}>{t.label}</span>
+              <span className={`block font-heading text-2xl font-semibold tabular-nums ${t.color}`}>{t.signo}{fmtN(mov.quantity)}</span>
+            </span>
+          </div>
+          <p className="mb-3 mt-3 whitespace-pre-line break-words font-heading text-base font-semibold leading-snug">{mov.article}</p>
+          <dl className="m-0">
+            <DatoMovimiento titulo="Fecha">{fechaCompleta(mov.created_at)}</DatoMovimiento>
+            {tp === 'traslado' ? (
+              <>
+                <DatoMovimiento titulo="Sale de">{mov.sucursal}</DatoMovimiento>
+                <DatoMovimiento titulo="Llega a">{mov.sucursal_destino}</DatoMovimiento>
+              </>
+            ) : <DatoMovimiento titulo="Ubicación">{mov.sucursal}</DatoMovimiento>}
+            {mov.description && <DatoMovimiento titulo="Motivo">{mov.description}</DatoMovimiento>}
+            {mov.solicitante && <DatoMovimiento titulo="Solicita">{mov.solicitante}</DatoMovimiento>}
+            <DatoMovimiento titulo="Registró">{mov.registered_by_name}</DatoMovimiento>
+          </dl>
+        </div>
+      )}
+    </Ventana>
+  );
+}
+
 const FILTROS = [['', 'Todos'], ['entrada', 'Entradas'], ['salida', 'Salidas'], ['traslado', 'Traslados']];
 function MovimientosTab({ refreshKey, articulo, onQuitarArticulo }) {
   const [tipo, setTipo] = useState('');
@@ -680,6 +722,8 @@ function MovimientosTab({ refreshKey, articulo, onQuitarArticulo }) {
   const [total, setTotal] = useState(0);
   const [hayMas, setHayMas] = useState(false);
   const [cargando, setCargando] = useState(false);
+  const [detalle, setDetalle] = useState(null);
+  const pc = usePc();
   const params = useCallback((skip) => {
     const p = new URLSearchParams({ skip: String(skip), limit: String(POR_PAGINA) });
     if (tipo) p.set('tipo', tipo);
@@ -743,7 +787,8 @@ function MovimientosTab({ refreshKey, articulo, onQuitarArticulo }) {
                   {g.l.map((m) => {
                     const tp = tipoDe(m); const t = TIPO[tp];
                     return (
-                      <div key={m.id} className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 border-t px-3.5 py-2.5 first:border-t-0" data-testid="mov-row">
+                      <button key={m.id} type="button" onClick={() => setDetalle(m)} aria-label={`Ver detalle: ${t.label} de ${corto(m.article)}`}
+                        className="grid w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 border-t px-3.5 py-2.5 text-left transition-colors first:border-t-0 hover:bg-muted/40" data-testid="mov-row">
                         <span className="grid h-9 w-11 place-items-center overflow-hidden rounded-lg bg-muted"><FotoProducto src={m.thumb} nombre={m.article} mini /></span>
                         <span className="min-w-0">
                           <span className="block truncate text-[13.5px] font-medium">{corto(m.article)}</span>
@@ -756,7 +801,7 @@ function MovimientosTab({ refreshKey, articulo, onQuitarArticulo }) {
                           <span className={`block font-heading font-semibold tabular-nums ${t.color}`}>{t.signo}{fmtN(m.quantity)}</span>
                           <span className="block text-[11px] text-muted-foreground">{horaDe(m.created_at)}</span>
                         </span>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -770,6 +815,7 @@ function MovimientosTab({ refreshKey, articulo, onQuitarArticulo }) {
             ) : <p className="mt-3 text-center text-sm text-muted-foreground">Son todos los movimientos ({fmtN(total)}).</p>}
           </div>
         )}
+      <DetalleMovimiento mov={detalle} pc={pc} onClose={() => setDetalle(null)} />
     </div>
   );
 }
