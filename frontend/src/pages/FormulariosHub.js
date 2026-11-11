@@ -145,7 +145,7 @@ export default function FormulariosHub() {
       chip: e.to === '/formularios/promociones' ? promos?.chip : null,
     }));
     const publicados = customForms.filter((f) => (f.esquema === 2 ? f.estado === 'publicado' && f.version : true)).map((f) => ({
-      to: `/formularios/custom/${f.id}`, label: f.titulo, area: 'Otras', icon: ClipboardList, color: '#712146',
+      to: `/formularios/custom/${f.id}`, label: f.titulo, area: AREAS.includes(f.seccion) ? f.seccion : 'Otras', icon: ClipboardList, color: '#712146',
       desc: f.descripcion || (f.esquema === 2 ? plural(f.preguntas || 0, 'pregunta', 'preguntas') : AUD_LABEL(f.audiencia)),
       testid: `formularios-hub-custom-${f.id}`,
     }));

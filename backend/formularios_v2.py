@@ -608,7 +608,11 @@ class BorradorInput(BaseModel):
     rev: int
     titulo: str
     descripcion: Optional[str] = ''
+    seccion: Optional[str] = None  # en qué sección de la pantalla Formularios sale (no se versiona)
     contenido: dict
+
+
+SECCIONES = ('ECCP', 'Tienda', 'Otras')
 
 
 @router.put('/{fid}/borrador')
@@ -623,6 +627,8 @@ async def guardar_borrador(fid: str, data: BorradorInput, user=Depends(get_curre
         raise HTTPException(status_code=400, detail='El formulario necesita al menos un paso')
     sets = {'titulo': _txt(data.titulo, 160) or 'Formulario sin título', 'descripcion': _texto_largo(data.descripcion, 1000),
             'borrador': contenido, 'guardado_at': now_iso(), 'guardado_por': user['name']}
+    if data.seccion is not None:
+        sets['seccion'] = data.seccion if data.seccion in SECCIONES else 'Otras'
     r = await db.custom_forms.update_one({'id': fid, 'rev': data.rev}, {'$set': sets, '$inc': {'rev': 1}})
     if not r.modified_count:
         raise HTTPException(status_code=409, detail='Alguien más guardó cambios en este formulario: recarga para seguir')

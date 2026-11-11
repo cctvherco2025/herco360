@@ -702,6 +702,7 @@ async def list_available(kind: Optional[str] = None, user=Depends(get_current_us
             'mis_permisos': fa.mis_permisos(user, f) if nuevo else None,
             'respuestas': await db.custom_form_responses.count_documents({'form_id': f['id']}) if nuevo and _sees_all_responses(user, f) else None,
             'preguntas': len(f.get('items') or []), 'guardado_at': f.get('guardado_at') or f.get('updated_at'),
+            'seccion': f.get('seccion') or 'Otras',
         })
     return serialize_doc(out)
 

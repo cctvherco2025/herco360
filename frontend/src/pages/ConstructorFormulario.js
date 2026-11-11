@@ -67,6 +67,7 @@ export default function ConstructorFormulario() {
   const [error, setError] = useState(null);
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
+  const [seccion, setSeccion] = useState('Otras'); // sección de la pantalla Formularios donde sale
   const [asigEdit, setAsigEdit] = useState(null); // lo elegido en Asignaciones que todavía no se aplica
   const [cont, setCont] = useState({ pasos: [] });
   const [pasoId, setPasoId] = useState(null);
@@ -92,10 +93,10 @@ export default function ConstructorFormulario() {
   const [editCond, setEditCond] = useState(null); // { tipo: 'paso' | 'seccion', id }
 
   const aplicarDoc = useCallback((d) => {
-    const datos = { titulo: d.titulo || '', descripcion: d.descripcion || '', contenido: conDefaults(d.borrador || { pasos: [] }) };
+    const datos = { titulo: d.titulo || '', descripcion: d.descripcion || '', seccion: d.seccion || 'Otras', contenido: conDefaults(d.borrador || { pasos: [] }) };
     firma.current = JSON.stringify(datos);
     setCargado(d);
-    setTitulo(datos.titulo); setDescripcion(datos.descripcion); setCont(datos.contenido);
+    setTitulo(datos.titulo); setDescripcion(datos.descripcion); setSeccion(datos.seccion); setCont(datos.contenido);
     setPasoId((p) => (datos.contenido.pasos.some((x) => x.id === p) ? p : datos.contenido.pasos[0]?.id || null));
     rev.current = d.rev; setGuardado({ estado: 'ok', at: d.guardado_at });
   }, []);
@@ -116,7 +117,7 @@ export default function ConstructorFormulario() {
   // Quien no puede editar (solo publica o asigna) lo ve sin guardar nada.
   const mis = cargado?.mis_permisos || {};
   const datosListos = !!cargado && cargado.id === id && cont.pasos.length > 0 && !!mis.editar;
-  ultimo.current = datosListos ? { titulo, descripcion, contenido: cont } : null;
+  ultimo.current = datosListos ? { titulo, descripcion, seccion, contenido: cont } : null;
   const sinGuardar = () => !!ultimo.current && firma.current !== null && JSON.stringify(ultimo.current) !== firma.current;
 
   // ---- guardado automático -------------------------------------------------
@@ -147,14 +148,14 @@ export default function ConstructorFormulario() {
 
   useEffect(() => {
     if (!datosListos || firma.current === null) return;
-    if (JSON.stringify({ titulo, descripcion, contenido: cont }) === firma.current) {
+    if (JSON.stringify({ titulo, descripcion, seccion, contenido: cont }) === firma.current) {
       setGuardado((g) => (g.estado === 'pendiente' ? { ...g, estado: 'ok' } : g));
       return;
     }
     setGuardado((g) => (g.estado === 'choque' || g.estado === 'guardando' ? g : { ...g, estado: 'pendiente' }));
     clearTimeout(timer.current);
     timer.current = setTimeout(() => { cola.current = cola.current.then(guardarAhora); }, ESPERA_GUARDADO);
-  }, [titulo, descripcion, cont, guardarAhora, datosListos]);
+  }, [titulo, descripcion, seccion, cont, guardarAhora, datosListos]);
 
   useEffect(() => {
     const antes = (e) => { if (sinGuardar()) { e.preventDefault(); e.returnValue = ''; } };
@@ -665,6 +666,7 @@ export default function ConstructorFormulario() {
       )}
 
       <Configuracion open={verConfig} onOpenChange={setVerConfig} descripcion={descripcion} setDescripcion={setDescripcion}
+        seccion={seccion} setSeccion={setSeccion}
         seguimientos={cont.seguimientos} setSeguimientos={cambiarSeguimientos} />
       <VistaPrevia open={verPrevia} onOpenChange={setVerPrevia} form={{ id, titulo, descripcion, contenido: cont, version: 'previa' }} />
       <PublicarDialog open={verPublicar} onOpenChange={setVerPublicar} formId={id} antesDe={guardarYa}
@@ -852,7 +854,7 @@ function AjustesSeguimientos({ seguimientos, setSeguimientos }) {
   );
 }
 
-function Configuracion({ open, onOpenChange, descripcion, setDescripcion, seguimientos, setSeguimientos }) {
+function Configuracion({ open, onOpenChange, descripcion, setDescripcion, seccion, setSeccion, seguimientos, setSeguimientos }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[520px] rounded-2xl max-h-[90dvh] overflow-y-auto">
@@ -863,6 +865,15 @@ function Configuracion({ open, onOpenChange, descripcion, setDescripcion, seguim
         <div className="space-y-4">
           <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">Descripción (la ve quien llena)
             <Textarea rows={3} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} maxLength={1000} className="text-sm text-foreground" />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">Sección en la pantalla Formularios
+            <select value={seccion} onChange={(e) => setSeccion(e.target.value)} data-testid="constructor-seccion"
+              className="h-9 rounded-md border bg-background px-2 text-sm text-foreground">
+              <option value="ECCP">ECCP</option>
+              <option value="Tienda">Tienda</option>
+              <option value="Otras">Otras</option>
+            </select>
+            <span className="font-normal">Ahí lo encuentra quien lo llena. Cambiarla no pide volver a publicar.</span>
           </label>
           {seguimientos && <AjustesSeguimientos seguimientos={seguimientos} setSeguimientos={setSeguimientos} />}
           <div className="flex justify-end"><Button className="rounded-xl" onClick={() => onOpenChange(false)}>Listo</Button></div>
